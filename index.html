@@ -1792,8 +1792,9 @@ const COMISIONES = {
                     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
                     if (data.length > 2) {
-                        tomasData[sheetName] = procesarDatosToma(data);
-                        tomaSelect.innerHTML += `<option value="${sheetName}">${sheetName}</option>`;
+                        const tomaName = normalizarNombreTomaUI(sheetName);
+                        tomasData[tomaName] = procesarDatosToma(data);
+                        tomaSelect.innerHTML += `<option value="${escapeHtml(tomaName)}">${escapeHtml(tomaName)}</option>`;
                     }
                 });
 
@@ -1836,7 +1837,7 @@ const COMISIONES = {
             };
 
             const registrarToma = (tomaNameRaw, sheetName, usuarios) => {
-                const tomaName = asegurarNombreUnico(tomaNameRaw, sheetName);
+                const tomaName = asegurarNombreUnico(normalizarNombreTomaUI(tomaNameRaw), sheetName);
                 usedNames.add(tomaName);
 
                 tomasData[tomaName] = usuarios || [];
@@ -3745,12 +3746,12 @@ function generarMatrizCultivosTomaPrint(tipo, deudaMax) {
     
     // ✅ CORREGIDO: Orden específico de tomas por grupos (con sub-tomas inmediatamente después)
 const ordenTomas = [
-    // GRUPO 1: SD3 a SD8 (con SD8.1 después de SD8)
-    "SD3", "SI3", "SD4", "SI4", "SD5", "SI5", "SD6", "SD7", "SD8", "SD8.1",
+    // GRUPO 1: SD3 a SD8
+    "SD3", "SI3", "SD4", "SI4", "SD5", "SI5", "SD6", "SD7", "SD8",
     // GRUPO 2: SI6 a SD14.1 (con SD12.1 después de SD12, SD14.1 después de SD14)
-    "SI6", "SD9", "SD10", "SD11", "SI7", "SD12", "SD12.1", "SD13", "SD14", "SD14.1",
-    // GRUPO 3: Agroaurora y Agrícola del Chira
-    "AGROAURORA", "AGRICOLA DEL CHIRA"
+    "SD8.1", "SI6", "SD9", "SD10", "SD11", "SI7", "SD12", "SD12.1", "SD13", "SD14", "SD14.1",
+    // GRUPO 3: Agroaurora y El Lobo
+    "AGROAURORA", "EL LOBO"
 ];
     
     // ✅ NUEVO: Ordenar tomas según el orden definido, manteniendo solo las que existen en datos
@@ -3758,13 +3759,11 @@ const ordenTomas = [
     
     // Primero agregar las tomas del orden definido que existen en los datos
     ordenTomas.forEach(tomaOrden => {
-        // Buscar si existe esta toma en los datos (coincidencia exacta o parcial)
+        // Buscar si existe esta toma en los datos (coincidencia exacta)
         const tomaEncontrada = Object.keys(datosPorToma).find(tomaData => {
-            const dataUpper = tomaData.toUpperCase().trim();
-            const ordenUpper = tomaOrden.toUpperCase().trim();
-            return dataUpper === ordenUpper || 
-                   dataUpper.includes(ordenUpper) || 
-                   ordenUpper.includes(dataUpper);
+            const dataUpper = normalizarClaveToma(tomaData);
+            const ordenUpper = normalizarClaveToma(tomaOrden);
+            return dataUpper === ordenUpper;
         });
         
         if (tomaEncontrada && !tomasConDatos.includes(tomaEncontrada)) {
@@ -3882,16 +3881,31 @@ const ordenTomas = [
     
     return htmlTotal;
 }
+function normalizarNombreTomaUI(nombre) {
+    const limpio = (nombre ?? '').toString().trim();
+    if (limpio.toUpperCase() === 'AGRICOLA DEL CHIRA') return 'EL LOBO';
+    return limpio;
+}
+
+function normalizarClaveToma(nombre) {
+    return normalizarNombreTomaUI(nombre)
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // ✅ NUEVA FUNCIÓN GLOBAL: Obtener tomas ordenadas según los 3 grupos
 function obtenerTomasOrdenadasPorGrupo(tomasDisponibles) {
     // Orden definido por el usuario
     const ordenTomas = [
-        // GRUPO 1: SD3 a SD8 (con SD8.1 después de SD8)
-        "SD3", "SI3", "SD4", "SI4", "SD5", "SI5", "SD6", "SD7", "SD8", "SD8.1",
+        // GRUPO 1: SD3 a SD8
+        "SD3", "SI3", "SD4", "SI4", "SD5", "SI5", "SD6", "SD7", "SD8",
         // GRUPO 2: SI6 a SD14.1 (con SD12.1 después de SD12, SD14.1 después de SD14)
-        "SI6", "SD9", "SD10", "SD11", "SI7", "SD12", "SD12.1", "SD13", "SD14", "SD14.1",
-        // GRUPO 3: Agroaurora y Agrícola del Chira
-        "AGROAURORA", "AGRICOLA DEL CHIRA"
+        "SD8.1", "SI6", "SD9", "SD10", "SD11", "SI7", "SD12", "SD12.1", "SD13", "SD14", "SD14.1",
+        // GRUPO 3: Agroaurora y El Lobo
+        "AGROAURORA", "EL LOBO"
     ];
     
     const tomasOrdenadas = [];
@@ -3899,11 +3913,9 @@ function obtenerTomasOrdenadasPorGrupo(tomasDisponibles) {
     // Primero agregar las tomas del orden definido que existen en los datos
     ordenTomas.forEach(tomaOrden => {
         const tomaEncontrada = tomasDisponibles.find(tomaData => {
-            const dataUpper = tomaData.toUpperCase().trim();
-            const ordenUpper = tomaOrden.toUpperCase().trim();
-            return dataUpper === ordenUpper || 
-                   dataUpper.includes(ordenUpper) || 
-                   ordenUpper.includes(dataUpper);
+            const dataUpper = normalizarClaveToma(tomaData);
+            const ordenUpper = normalizarClaveToma(tomaOrden);
+            return dataUpper === ordenUpper;
         });
         
         if (tomaEncontrada && !tomasOrdenadas.includes(tomaEncontrada)) {
@@ -5596,7 +5608,7 @@ function obtenerDefinicionGrupo(numeroGrupo) {
             return {
                 numero: 3,
                 nombre: "GRUPO 3 (RÍO CHIRA)",
-                tomas: ["AGROAURORA", "AGRICOLA DEL CHIRA"]
+                tomas: ["AGROAURORA", "EL LOBO"]
             };
         default:
             return null;
@@ -5605,11 +5617,10 @@ function obtenerDefinicionGrupo(numeroGrupo) {
 
 function construirOpcionesToma(tomasLista) {
     return (tomasLista || []).map(toma => {
+        const tomaLabel = normalizarNombreTomaUI(toma);
         let tieneDatos = false;
         for (let hoja in tomasData) {
-            if (hoja.toUpperCase().includes(toma.toUpperCase()) ||
-                toma.toUpperCase().includes(hoja.toUpperCase()) ||
-                hoja === toma) {
+            if (normalizarClaveToma(hoja) === normalizarClaveToma(tomaLabel)) {
                 tieneDatos = true;
                 break;
             }
@@ -5617,7 +5628,7 @@ function construirOpcionesToma(tomasLista) {
 
         const estado = tieneDatos ? '✅' : '⚠️';
         const color = tieneDatos ? '' : 'style="color: #999;"';
-        return `<option value="${toma}" ${!tieneDatos ? 'disabled' : ''} ${color}>${estado} ${toma}</option>`;
+        return `<option value="${escapeHtml(tomaLabel)}" ${!tieneDatos ? 'disabled' : ''} ${color}>${estado} ${escapeHtml(tomaLabel)}</option>`;
     }).join('');
 }
 
@@ -5637,6 +5648,33 @@ function actualizarSelectorTomasDesdeModal(tomasLista) {
         <option value="">-- Selecciona una toma --</option>
         ${construirOpcionesToma(tomasLista)}
     `;
+}
+
+function cambiarVistaSelectorGrupo(enGrupo, tituloGrupo = '—') {
+    const botones = document.getElementById('botonesGruposTomas');
+    const volver = document.getElementById('btnVolverGruposTomas');
+    const select = document.getElementById('selectTomaEspecificaFinal');
+    const lbl = document.getElementById('lblGrupoActual');
+
+    if (lbl) lbl.textContent = tituloGrupo;
+    if (botones) botones.style.display = enGrupo ? 'none' : 'grid';
+    if (volver) volver.style.display = enGrupo ? 'block' : 'none';
+    if (select) select.size = enGrupo ? Math.min(Math.max(select.options.length, 2), 8) : 1;
+}
+
+function volverAGruposTomas() {
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const esCieneguillo = comisionKey === 'CIENEGUILLO';
+    const tomasKeys = Object.keys(tomasData || {});
+    const tomasDisponibles = esCieneguillo ? ordenarAlfabeticoES(tomasKeys) : obtenerTomasOrdenadasPorGrupo(tomasKeys);
+
+    window._selectorTomas = window._selectorTomas || { agrupar: true, grupo: null, tomasVisibles: tomasDisponibles };
+    window._selectorTomas.agrupar = true;
+    window._selectorTomas.grupo = null;
+    window._selectorTomas.tomasVisibles = tomasDisponibles;
+
+    actualizarSelectorTomasDesdeModal(tomasDisponibles);
+    cambiarVistaSelectorGrupo(false);
 }
 
 function mostrarSelectorDeGrupos() {
@@ -5701,7 +5739,10 @@ function mostrarSelectorDeGrupos() {
                     <div style="font-size:12px; color:#4a5568; margin-bottom:10px;">
                         ${esCieneguillo ? 'Pestaña seleccionada:' : 'Grupo seleccionado:'} <strong id="lblGrupoActual">—</strong>
                     </div>
-                    <div style="display:grid; gap:10px;">
+                    <button type="button" id="btnVolverGruposTomas" onclick="volverAGruposTomas()" class="btn btn-secondary" style="display:none; width: 100%; margin-bottom: 10px;">
+                        ← Volver a grupos
+                    </button>
+                    <div id="botonesGruposTomas" style="display:grid; gap:10px;">
                         ${botonesGruposExcelHTML}
                     </div>
                 </div>
@@ -5749,13 +5790,13 @@ function toggleAgruparTomas() {
     if (!chk.checked) {
         window._selectorTomas.grupo = null;
         window._selectorTomas.tomasVisibles = tomasDisponibles;
-        const lbl = document.getElementById('lblGrupoActual');
-        if (lbl) lbl.textContent = '—';
+        cambiarVistaSelectorGrupo(false);
         cont.style.display = 'none';
     } else {
         cont.style.display = 'block';
         // Si aún no selecciona grupo, mantener todas visibles
         window._selectorTomas.tomasVisibles = tomasDisponibles;
+        cambiarVistaSelectorGrupo(false);
     }
 
     actualizarSelectorTomasDesdeModal(window._selectorTomas.tomasVisibles);
@@ -5767,17 +5808,15 @@ function seleccionarGrupo(numeroGrupo) {
 
     const tomasDisponibles = obtenerTomasOrdenadasPorGrupo(Object.keys(tomasData || {}));
     const tomasFiltradas = def.tomas
-        .map(t => tomasDisponibles.find(td => td.toUpperCase().trim() === t.toUpperCase().trim() || td.toUpperCase().includes(t.toUpperCase()) || t.toUpperCase().includes(td.toUpperCase())) || t);
+        .map(t => tomasDisponibles.find(td => normalizarClaveToma(td) === normalizarClaveToma(t)) || t);
 
     window._selectorTomas = window._selectorTomas || { agrupar: true, grupo: null, tomasVisibles: tomasDisponibles };
     window._selectorTomas.agrupar = true;
     window._selectorTomas.grupo = def;
     window._selectorTomas.tomasVisibles = tomasFiltradas;
 
-    const lbl = document.getElementById('lblGrupoActual');
-    if (lbl) lbl.textContent = def.nombre;
-
     actualizarSelectorTomasDesdeModal(tomasFiltradas);
+    cambiarVistaSelectorGrupo(true, def.nombre);
 }
 
 function seleccionarGrupoExcel(nombreGrupo) {
@@ -5792,10 +5831,8 @@ function seleccionarGrupoExcel(nombreGrupo) {
     window._selectorTomas.grupo = { nombre: nombreGrupo, tomas: tomasFiltradas, origen: 'excel' };
     window._selectorTomas.tomasVisibles = tomasFiltradas.length ? tomasFiltradas : tomasDisponibles;
 
-    const lbl = document.getElementById('lblGrupoActual');
-    if (lbl) lbl.textContent = nombreGrupo;
-
     actualizarSelectorTomasDesdeModal(window._selectorTomas.tomasVisibles);
+    cambiarVistaSelectorGrupo(true, nombreGrupo);
 }
 
 function confirmarTomaEspecificaFinal() {
@@ -5922,7 +5959,7 @@ function generarAvanceSiembraPorGrupo(tomasGrupo, nombreGrupo) {
         "SD8":1.2,"SD8.1":0.5,"SD9":0.25,"SD10":0.3,"SD11":0.45,
         "SD12":0.35,"SD12.1":0.095,"SD13":0.35,"SD14":0.3,
         "SD14.1":0.3,"SI3":0.29,"SI4":0.1,"SI5":0.25,
-        "SI6":1.1,"SI7":0.05,"AGROAURORA":3.2,"AGRICOLA DEL CHIRA":2.5,
+        "SI6":1.1,"SI7":0.05,"AGROAURORA":3.2,"EL LOBO":2.5,
         "SIFON TAPIA 13+652":0.01,"SIFON PALOMINO SD10":0,"SIFON HERRERA SI7":0
     };
 
@@ -6348,7 +6385,7 @@ function generarAvanceSiembraPorTomaEspecifica(tomaSeleccionada) {
         "SD8":1.2,"SD8.1":0.5,"SD9":0.25,"SD10":0.3,"SD11":0.45,
         "SD12":0.35,"SD12.1":0.095,"SD13":0.35,"SD14":0.3,
         "SD14.1":0.3,"SI3":0.29,"SI4":0.1,"SI5":0.25,
-        "SI6":1.1,"SI7":0.05,"AGROAURORA":3.2,"AGRICOLA DEL CHIRA":2.5,
+        "SI6":1.1,"SI7":0.05,"AGROAURORA":3.2,"EL LOBO":2.5,
         "SIFON TAPIA 13+652":0.01,"SIFON PALOMINO SD10":0,"SIFON HERRERA SI7":0
     };
     
@@ -6442,7 +6479,7 @@ function generarAvanceSiembraPorGrupo(tomasGrupo, nombreGrupo) {
         "SD8":1.2,"SD8.1":0.5,"SD9":0.25,"SD10":0.3,"SD11":0.45,
         "SD12":0.35,"SD12.1":0.095,"SD13":0.35,"SD14":0.3,
         "SD14.1":0.3,"SI3":0.29,"SI4":0.1,"SI5":0.25,
-        "SI.6":1.1,"SI 7":0.05,"AGROAURORA":3.2,"AGRICOLA DEL CHIRA":2.5,
+        "SI.6":1.1,"SI 7":0.05,"AGROAURORA":3.2,"EL LOBO":2.5,
         "SIFON TAPIA 13+652":0.01,"SIFON PALOMINO SD10":0,"SIFON HERRERA SI7":0
     };
 
@@ -9523,7 +9560,7 @@ function generarDatosAnexoG2() {
         'SD8': 'SD8', 'SD8.1': 'SD8.1', 'SI6': 'SI.6', 'SD9': 'SD9',
         'SD10': 'SD10', 'SD11': 'SD11', 'SI7': 'SI 7', 'SD12': 'SD12',
         'SD12.1': 'SD12.1', 'SD13': 'SD13', 'SD14': 'SD14', 'SD14.1': 'SD14.I',
-        'AGROAURORA': 'AGROAURORA', 'AGRICOLA DEL CHIRA': 'AGRICOLA DEL CHIRA',
+        'AGROAURORA': 'AGROAURORA', 'EL LOBO': 'EL LOBO',
         'SIFON TAPIA 13+652': 'SIFON TAPIA 13+652',
         'SIFON PALOMINO SD10': 'SIFON PALOMINO SD10',
         'SIFON HERRERA SI7': 'SIFON HERRERA SI7'
@@ -11101,6 +11138,10 @@ function renderizarTomaG3(tomaIdx) {
             <button onclick="mostrarAnexoG2()" title="Ver Anexo G-2"
                 style="padding:7px 14px;background:#7b2d8b;color:white;border:none;border-left:3px solid #e056fd;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;">
                 📋 Ver G-2
+            </button>
+            <button onclick="verMapaG3()"
+                style="padding:7px 14px;background:#155e75;color:white;border:none;border-left:3px solid #22d3ee;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;">
+                🗺️ Ver mapa
             </button>
             <button onclick="imprimirG3()"
                 style="padding:7px 14px;background:#003876;color:white;border:none;border-left:3px solid #c8a84b;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;">
@@ -12754,6 +12795,226 @@ function imprimirG3() {
         </body></html>`);
     ventana.document.close();
     setTimeout(() => { ventana.print(); ventana.close(); }, 600);
+}
+
+const MAPAS_G3_KML = [
+    'mapas/BLOQUE_MIRAFLORES.kml',
+    'mapas/BLOQUE_DE_RIEGO_PUCUSULA.kml',
+    'mapas/BLOQUE_DE_RIEGO_VIVIATE.kml'
+];
+
+function normalizarClaveMapa(value) {
+    const raw = (value ?? '').toString().trim();
+    const limpio = raw
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^0-9A-Za-z]/g, '')
+        .toUpperCase();
+    return limpio.replace(/^0+/, '') || (limpio ? '0' : '');
+}
+
+function claveUsuarioMapa(usuario) {
+    const uc = normalizarClaveMapa(usuario?.unidadCatastral);
+    if (uc) return 'UC:' + uc;
+    return 'NOMBRE:' + (usuario?.nombre || '').toString().trim().toUpperCase();
+}
+
+function obtenerUsuariosBaseMapaG3() {
+    const tomasG3 = window._tomasG3Data || [];
+    const usuarios = new Map();
+
+    tomasG3.forEach(tomaG3 => {
+        const nombreToma = (tomaG3?.nombreToma || tomaG3?.toma || '').toString().trim();
+
+        (tomaG3?.usuarios || []).forEach(u => {
+            const key = claveUsuarioMapa(u);
+            if (!usuarios.has(key)) {
+                usuarios.set(key, {
+                    ...u,
+                    toma: nombreToma || u.toma || '',
+                    estadoMapa: u.esNoApto ? 'no_apto' : 'derecho'
+                });
+            }
+        });
+
+        let usuariosToma = tomasData?.[nombreToma] || null;
+
+        if (!usuariosToma) {
+            const tomaNorm = normalizarClaveToma(nombreToma);
+            const hoja = Object.keys(tomasData || {}).find(k => normalizarClaveToma(k) === tomaNorm);
+            if (hoja) usuariosToma = tomasData[hoja];
+        }
+
+        (usuariosToma || []).forEach(u => {
+            const key = claveUsuarioMapa(u);
+            if (!usuarios.has(key)) {
+                usuarios.set(key, {
+                    ...u,
+                    toma: nombreToma || u.toma || '',
+                    estadoMapa: 'no_apto'
+                });
+            }
+        });
+    });
+
+    return usuarios;
+}
+
+function obtenerUsuariosConDerechoMapaG3() {
+    const conDerecho = new Map();
+    (window._tomasG3Data || []).forEach(toma => {
+        (toma?.usuarios || []).forEach(u => {
+            if (u?.esNoApto) return;
+            conDerecho.set(claveUsuarioMapa(u), u);
+        });
+    });
+    return conDerecho;
+}
+
+function textoSimpleData(placemark, nombreCampo) {
+    const nodos = placemark.getElementsByTagName('SimpleData');
+    for (let i = 0; i < nodos.length; i++) {
+        if ((nodos[i].getAttribute('name') || '').toUpperCase() === nombreCampo.toUpperCase()) {
+            return (nodos[i].textContent || '').trim();
+        }
+    }
+    return '';
+}
+
+function obtenerClavesPoligonoMapa(placemark) {
+    return [
+        normalizarClaveMapa(textoSimpleData(placemark, 'CODCAT')),
+        normalizarClaveMapa(textoSimpleData(placemark, 'CLAVECAT'))
+    ].filter(Boolean);
+}
+
+function insertarStyleUrlPlacemark(placemarkXml, styleId) {
+    const styleTag = `<styleUrl>#${styleId}</styleUrl>`;
+    if (/<styleUrl>[\s\S]*?<\/styleUrl>/i.test(placemarkXml)) {
+        return placemarkXml.replace(/<styleUrl>[\s\S]*?<\/styleUrl>/i, styleTag);
+    }
+    return placemarkXml.replace(/<Placemark([^>]*)>/i, `<Placemark$1>${styleTag}`);
+}
+
+function descripcionMapaG3(usuario, estadoTexto) {
+    const filas = [
+        ['Estado', estadoTexto],
+        ['Usuario', usuario?.nombre || ''],
+        ['Unidad catastral', usuario?.unidadCatastral || ''],
+        ['Toma', usuario?.toma || ''],
+        ['Deuda total', usuario?.deudaTotal ?? usuario?.deuda ?? ''],
+        ['Al día', usuario?.alDia || '']
+    ];
+    return '<![CDATA[<table border="1" cellspacing="0" cellpadding="4">' +
+        filas.map(([k, v]) => `<tr><th align="left">${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join('') +
+        '</table>]]>';
+}
+
+function insertarDescripcionPlacemark(placemarkXml, usuario, estadoTexto) {
+    const desc = `<description>${descripcionMapaG3(usuario, estadoTexto)}</description>`;
+    if (/<description>[\s\S]*?<\/description>/i.test(placemarkXml)) {
+        return placemarkXml.replace(/<description>[\s\S]*?<\/description>/i, desc);
+    }
+    return placemarkXml.replace(/(<name>[\s\S]*?<\/name>)/i, `$1${desc}`);
+}
+
+async function verMapaG3() {
+    try {
+        const usuariosBase = obtenerUsuariosBaseMapaG3();
+        const usuariosConDerecho = obtenerUsuariosConDerechoMapaG3();
+
+        if (!usuariosBase.size) {
+            alert('No hay usuarios cargados para generar el mapa del Anexo G-3.');
+            return;
+        }
+
+        usuariosConDerecho.forEach((_, key) => {
+            const u = usuariosBase.get(key);
+            if (u) u.estadoMapa = 'derecho';
+        });
+
+        const serializer = new XMLSerializer();
+        const placemarksExportados = [];
+        const usuariosConPoligono = new Set();
+
+        for (const ruta of MAPAS_G3_KML) {
+            const resp = await fetch(ruta);
+            if (!resp.ok) throw new Error('No se pudo cargar ' + ruta);
+            const xml = new DOMParser().parseFromString(await resp.text(), 'application/xml');
+            const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+
+            placemarks.forEach(pm => {
+                const keys = obtenerClavesPoligonoMapa(pm);
+                let usuario = null;
+                for (const key of keys) {
+                    usuario = usuariosBase.get('UC:' + key) || usuario;
+                    if (usuario) break;
+                }
+                if (!usuario) return;
+
+                const usuarioKey = claveUsuarioMapa(usuario);
+                usuariosConPoligono.add(usuarioKey);
+
+                const estadoTexto = usuario.estadoMapa === 'derecho'
+                    ? 'CON DERECHO DE USO DE AGUA'
+                    : 'SIN DERECHO / NO APTO';
+                const styleId = usuario.estadoMapa === 'derecho' ? 'poligonoDerecho' : 'poligonoNoDerecho';
+                let pmXml = serializer.serializeToString(pm);
+                pmXml = insertarStyleUrlPlacemark(pmXml, styleId);
+                pmXml = insertarDescripcionPlacemark(pmXml, usuario, estadoTexto);
+                placemarksExportados.push(pmXml);
+            });
+        }
+
+        const usuariosSinPoligono = Array.from(usuariosBase.values())
+            .filter(u => !usuariosConPoligono.has(claveUsuarioMapa(u)));
+
+        if (!placemarksExportados.length) {
+            alert('No se encontraron polígonos que coincidan con los usuarios cargados.');
+            return;
+        }
+
+        const semana = (window._tomasG3Data?.[0]?.semanaInicio || new Date().toISOString().slice(0, 10)).toString();
+        const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+    <name>Mapa G-3 CUSSHMI ${escapeHtml(semana)}</name>
+    <Style id="poligonoDerecho">
+        <LineStyle><color>ff2e7d32</color><width>1.4</width></LineStyle>
+        <PolyStyle><color>992e7d32</color><fill>1</fill><outline>1</outline></PolyStyle>
+    </Style>
+    <Style id="poligonoNoDerecho">
+        <LineStyle><color>ff1c1c9b</color><width>1.4</width></LineStyle>
+        <PolyStyle><color>991c1c9b</color><fill>1</fill><outline>1</outline></PolyStyle>
+    </Style>
+    <Folder>
+        <name>Usuarios G-3 con cruce de polígonos</name>
+        ${placemarksExportados.join('\n')}
+    </Folder>
+</Document>
+</kml>`;
+
+        const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const nombreArchivo = `Mapa_G3_CUSSHMI_${semana}.kml`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nombreArchivo;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+
+        alert(
+            `Mapa generado: ${placemarksExportados.length} polígonos.\n\n` +
+            `Usuarios sin polígono: ${usuariosSinPoligono.length}.\n\n` +
+            `Abre el archivo ${nombreArchivo} en Google Earth para visualizarlo.`
+        );
+    } catch (error) {
+        console.error(error);
+        alert('No se pudo generar el mapa. Verifica que los archivos KML base estén publicados en la carpeta mapas.');
+    }
 }
 
 function exportarG3Excel() {
