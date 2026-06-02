@@ -12797,12 +12797,6 @@ function imprimirG3() {
     setTimeout(() => { ventana.print(); ventana.close(); }, 600);
 }
 
-var MAPAS_G3_KML = [
-    'mapas/BLOQUE_MIRAFLORES.kml',
-    'mapas/BLOQUE_DE_RIEGO_PUCUSULA.kml',
-    'mapas/BLOQUE_DE_RIEGO_VIVIATE.kml'
-];
-
 function normalizarClaveMapa(value) {
     const raw = (value ?? '').toString().trim();
     const limpio = raw
@@ -12937,6 +12931,11 @@ async function verMapaG3() {
         const placemarksExportados = [];
         const usuariosConPoligono = new Set();
 
+        const MAPAS_G3_KML = [
+            'mapas/BLOQUE_MIRAFLORES.kml',
+            'mapas/BLOQUE_DE_RIEGO_PUCUSULA.kml',
+            'mapas/BLOQUE_DE_RIEGO_VIVIATE.kml'
+        ];
         for (const ruta of MAPAS_G3_KML) {
             const resp = await fetch(ruta);
             if (!resp.ok) throw new Error('No se pudo cargar ' + ruta);
@@ -13065,11 +13064,3 @@ function exportarG3Excel() {
     </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
