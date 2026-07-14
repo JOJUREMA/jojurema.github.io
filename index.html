@@ -2617,7 +2617,7 @@ const COMISIONES = {
                         font-size:16px;
                         margin-bottom:8px;
                     ">
-                        CAMPAÑA AGRÍCOLA 2026 - I
+                        CAMPAÑA AGRÍCOLA 2026 - II
                     </div>
 
                     <div style="
@@ -2750,11 +2750,51 @@ const COMISIONES = {
 
     fila.querySelector(".volBruto").innerText = volumenBruto.toFixed(2);
     fila.querySelector(".volCorregido").innerText = volumenCorregido.toFixed(2);
-    fila.querySelector(".qTeorico").innerText = qTeorico.toFixed(3);
-    
+    const qTeoricoEl = fila.querySelector(".qTeorico");
+    if (qTeoricoEl) {
+        // El campo Q Teórico puede ser un <td> (pantallas viejas) o un <input> editable
+        // (pantallas nuevas, ver recalcularDesdeQTeorico) — se escribe según corresponda.
+        if (qTeoricoEl.tagName === 'INPUT') qTeoricoEl.value = qTeorico.toFixed(3);
+        else qTeoricoEl.innerText = qTeorico.toFixed(3);
+    }
+
     // ✅ LLAMAR A ACTUALIZAR TOTALES FINALES
     actualizarTotalesFinales();
 }
+
+// Recálculo inverso: el usuario edita Q Teórico manualmente y el Módulo se
+// ajusta para mantener coherencia con área semanal, eficiencia y volumen
+// corregido — misma fórmula que recalcularAvance(), despejada al revés.
+function recalcularDesdeQTeorico(input) {
+    const fila = input.closest("tr");
+
+    const areaSemanaInput = fila.querySelector(".area-semana");
+    const moduloInput = fila.querySelector(".modulo");
+    const eficienciaInput = fila.querySelector(".eficiencia");
+
+    const areaSemana = parseFloat(areaSemanaInput?.value) || 0;
+    const eficienciaPorcentaje = parseFloat(eficienciaInput?.value) || 0;
+    const eficienciaDecimal = eficienciaPorcentaje / 100;
+    const qTeorico = parseFloat(input.value) || 0;
+
+    if (areaSemana > 0) {
+        fila.style.backgroundColor = "white";
+        fila.classList.remove('totals-row');
+    }
+
+    const volumenCorregido = qTeorico * 7 * 86400;
+    const volumenBruto = volumenCorregido * eficienciaDecimal;
+    const modulo = areaSemana > 0 ? volumenBruto / areaSemana : 0;
+
+    if (moduloInput) moduloInput.value = modulo.toFixed(2);
+    const volBrutoEl = fila.querySelector(".volBruto");
+    const volCorregidoEl = fila.querySelector(".volCorregido");
+    if (volBrutoEl) volBrutoEl.innerText = volumenBruto.toFixed(2);
+    if (volCorregidoEl) volCorregidoEl.innerText = volumenCorregido.toFixed(2);
+
+    actualizarTotalesFinales();
+}
+
 function abrirProgramacionNoAptosToma() {
     console.log("=== ABRIR PROGRAMACION NO APTOS TOMA ===");
     
@@ -3214,7 +3254,7 @@ function actualizarSumatoriaToma(nombreToma) {
         const areaSemana = parseFloat(fila.querySelector('.area-semana')?.value) || 0;
         const volBruto = parseNumeroSeguro(fila.querySelector('.volBruto')?.innerText);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         
         console.log(`Fila ${index}: Área=${areaSemana}, VolBruto=${volBruto}, VolCorregido=${volCorregido}, QTeorico=${qTeorico}`);
         
@@ -6630,7 +6670,7 @@ function mostrarAvanceSiembraConTomaEspecifica(tomaSeleccionada, resumen, qMax) 
                 font-size:16px;
                 margin-bottom:8px;
             ">
-                CAMPAÑA AGRÍCOLA 2026 - I
+                CAMPAÑA AGRÍCOLA 2026 - II
             </div>
 
             <div style="
@@ -6776,18 +6816,18 @@ function mostrarAvanceSiembraConTomaEspecifica(tomaSeleccionada, resumen, qMax) 
 </td>
                     <td><input class="input-mini pase-input" oninput="recalcularAvance(this)"></td>
                     <td>
-                        <input type="number" step="0.01" 
-                            class="input-mini modulo" 
+                        <input type="number" step="0.01"
+                            class="input-mini modulo"
                             oninput="recalcularAvance(this)">
                     </td>
                     <td>
-                        <input type="number" step="0.01" 
-                            class="input-mini eficiencia" 
+                        <input type="number" step="0.01"
+                            class="input-mini eficiencia"
                             oninput="recalcularAvance(this)">
                     </td>
                     <td class="volBruto">0.00</td>
                     <td class="volCorregido">0.00</td>
-                    <td class="qTeorico">0.000</td>
+                    <td><input type="number" step="0.001" class="input-mini qTeorico" oninput="recalcularDesdeQTeorico(this)" value="0.000"></td>
                 </tr>
             `;
         });
@@ -6854,7 +6894,7 @@ function actualizarTotalesFinales() {
         // Volúmenes y caudal (de las celdas calculadas)
         const volBruto = parseNumeroSeguro(fila.querySelector('.volBruto')?.innerText);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         
         sumaVolBruto += volBruto;
         sumaVolCorregido += volCorregido;
@@ -7178,7 +7218,7 @@ function mostrarAvanceSiembraGrupo(nombreGrupo, tomasGrupo, resumenPorToma) {
                 font-size:16px;
                 margin-bottom:8px;
             ">
-                CAMPAÑA AGRÍCOLA 2026 - I
+                CAMPAÑA AGRÍCOLA 2026 - II
             </div>
 
             <div style="
@@ -7341,18 +7381,18 @@ function mostrarAvanceSiembraGrupo(nombreGrupo, tomasGrupo, resumenPorToma) {
 </td>
                     <td><input class="input-mini pase-input" oninput="recalcularAvance(this)"></td>
                     <td>
-                        <input type="number" step="0.01" 
-                            class="input-mini modulo" 
+                        <input type="number" step="0.01"
+                            class="input-mini modulo"
                             oninput="recalcularAvance(this)">
                     </td>
                     <td>
-                        <input type="number" step="0.01" 
-                            class="input-mini eficiencia" 
+                        <input type="number" step="0.01"
+                            class="input-mini eficiencia"
                             oninput="recalcularAvance(this)">
                     </td>
                     <td class="volBruto">0.00</td>
                     <td class="volCorregido">0.00</td>
-                    <td class="qTeorico">0.000</td>
+                    <td><input type="number" step="0.001" class="input-mini qTeorico" oninput="recalcularDesdeQTeorico(this)" value="0.000"></td>
                 </tr>
             `;
         });
@@ -7426,6 +7466,7 @@ function restaurarFilaCultivoGuardada(fila, cultivoGuardado) {
     if (!fila || !cultivoGuardado) return;
 
     const inputArea = fila.querySelector('.area-semana');
+    const inputPase = fila.querySelector('.pase-input');
     const inputModulo = fila.querySelector('.modulo');
     const inputEficiencia = fila.querySelector('.eficiencia');
 
@@ -7436,6 +7477,7 @@ function restaurarFilaCultivoGuardada(fila, cultivoGuardado) {
         inputArea.classList.remove('area-semana-sin-area', 'area-semana-con-area');
         inputArea.classList.add(areaSemana > 0 ? 'area-semana-con-area' : 'area-semana-sin-area');
     }
+    if (inputPase && cultivoGuardado.pase) inputPase.value = cultivoGuardado.pase;
     if (inputModulo && cultivoGuardado.modulo) inputModulo.value = cultivoGuardado.modulo;
     if (inputEficiencia && cultivoGuardado.eficiencia) inputEficiencia.value = cultivoGuardado.eficiencia;
 
@@ -7449,7 +7491,7 @@ function restaurarFilaCultivoGuardada(fila, cultivoGuardado) {
     const qT = fila.querySelector('.qTeorico');
     if (volB) volB.innerText = (parseFloat(cultivoGuardado.volBruto) || 0).toFixed(2);
     if (volC) volC.innerText = (parseFloat(cultivoGuardado.volCorregido) || 0).toFixed(2);
-    if (qT) qT.innerText = (parseFloat(cultivoGuardado.qTeorico) || 0).toFixed(3);
+    if (qT) qT.value = (parseFloat(cultivoGuardado.qTeorico) || 0).toFixed(3);
 }
 
 // Restaura en la tabla visible (individual o de grupo) los valores ya guardados en el Consolidado
@@ -7490,10 +7532,17 @@ function generarBannerTomaYaProgramada(guardado, nombreToma) {
                 ✅ <strong>Esta toma ya fue programada</strong> para la semana en curso (${dias} día(s) programados).<br>
                 <small>Último guardado: ${fecha}. Los valores de Área Semana, Módulo y Eficiencia mostrados abajo corresponden a lo ya registrado — puedes editarlos y volver a guardar.</small>
             </div>
-            <button onclick="mostrarAnexoG3(false)"
-                style="padding:8px 16px; background:#155e75; color:white; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap;">
-                📄 Ver Anexo G-3 de ${nombreToma}
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button onclick="mostrarAnexoG3(false)"
+                    style="padding:8px 16px; background:#155e75; color:white; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap;">
+                    📄 Ver Anexo G-3 de ${nombreToma}
+                </button>
+                ${esAdmin ? `
+                <button onclick="eliminarProgramacionTomaUI('${nombreToma.replace(/'/g, "\\'")}')"
+                    style="padding:8px 16px; background:#c0392b; color:white; border:none; border-radius:6px; font-weight:700; font-size:12px; cursor:pointer; white-space:nowrap;">
+                    🗑️ Eliminar programación
+                </button>` : ''}
+            </div>
         </div>`;
 }
 
@@ -7805,7 +7854,7 @@ function calcularTotalesTurnosRiegoGrupo() {
         
         if (areaSemana > 0) {
             const volCorregido = parseFloat(fila.querySelector('.volCorregido')?.innerText) || 0;
-            const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.innerText) || 0;
+            const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.value) || 0;
             
             totalVolCorregido += volCorregido;
             totalQTeorico += qTeorico;
@@ -7849,7 +7898,7 @@ function solicitarDiasTurnadosGrupo() {
         let volumenCorregidoTotal = 0;
         const cultivosDemanda = [];
         filasToma.forEach(fila => {
-            const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.innerText) || 0;
+            const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.value) || 0;
             const volCorregido = parseFloat(fila.querySelector('.volCorregido')?.innerText) || 0;
             if (qTeorico > 0) {
                 volumenCorregidoTotal += volCorregido;
@@ -7888,7 +7937,7 @@ function solicitarDiasTurnados() {
     const cultivosDemanda = [];
 
     filas.forEach(fila => {
-        const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.innerText) || 0;
+        const qTeorico = parseFloat(fila.querySelector('.qTeorico')?.value) || 0;
         const volCorregido = parseFloat(fila.querySelector('.volCorregido')?.innerText) || 0;
         if (qTeorico > 0) {
             hayDatos = true;
@@ -7958,7 +8007,7 @@ function mostrarToastResumenCultivosGuardado(toma) {
         if (fila.classList.contains('fila-totales-finales')) return;
         const cultivo = fila.querySelector('.cultivo-nombre')?.innerText?.trim();
         if (!cultivo) return;
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         if (qTeorico <= 0) return;
         const sel = obtenerUsuariosG3Seleccionados(toma, cultivo).length;
         items.push({ cultivo, sel });
@@ -8067,7 +8116,7 @@ function asegurarUsuariosG3PorDefectoParaToma(toma) {
         const cultivo = fila.querySelector('.cultivo-nombre')?.innerText?.trim();
         if (!cultivo) return;
 
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         const areaSemana = parseFloat(fila.querySelector('.area-semana')?.value) || 0;
         if (qTeorico <= 0 || areaSemana <= 0) return;
 
@@ -8094,7 +8143,7 @@ function mostrarModalResumenCultivosAntesG3() {
         if (fila.classList.contains('fila-totales-finales')) return;
         const cultivo = fila.querySelector('.cultivo-nombre')?.innerText?.trim();
         if (!cultivo) return;
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         if (qTeorico <= 0) return;
 
         const areaSemana = parseFloat(fila.querySelector('.area-semana')?.value) || 0;
@@ -8605,7 +8654,8 @@ async function mostrarModalHorasPorDia() {
 
     const columnasCultivoHeader = cultivos.map(c =>
         `<th style="padding:9px;text-align:center;font-size:11.5px;">${c.cultivo}<br><small style="font-weight:400;">(m³/s)</small></th>
-         <th style="padding:9px;text-align:center;font-size:11.5px;">${c.cultivo}<br><small style="font-weight:400;">Horas</small></th>`
+         <th style="padding:9px;text-align:center;font-size:11.5px;">${c.cultivo}<br><small style="font-weight:400;">Horas</small></th>
+         <th style="padding:9px;text-align:center;font-size:11.5px;">${c.cultivo}<br><small style="font-weight:400;">Orden</small></th>`
     ).join('');
 
     const filasHTML = diasSem.map((dia, idx) => {
@@ -8622,6 +8672,12 @@ async function mostrarModalHorasPorDia() {
                     value="24"
                     style="width:62px;padding:5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12.5px;"
                     oninput="recalcularCaudalAutomatico()">
+            </td>
+            <td style="padding:8px 6px;text-align:center;">
+                <input type="number" id="ordenCultivo_${dia}_${cIdx}" min="1" step="1"
+                    value="${cIdx + 1}" disabled
+                    title="Orden de turno ese día (solo aplica si el día NO es simultáneo)"
+                    style="width:44px;padding:5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:12.5px;">
             </td>`).join('');
         return `<tr style="background:${bg}">
             <td style="padding:8px 10px;font-weight:600;font-size:13px;">${dia}</td>
@@ -8629,18 +8685,23 @@ async function mostrarModalHorasPorDia() {
                 <input type="checkbox" id="diaActivo_${dia}" checked
                     onchange="recalcularCaudalAutomatico()">
             </td>
+            <td style="padding:8px 10px;text-align:center;">
+                <input type="checkbox" id="simultaneo_${dia}" checked
+                    title="Marcado: los cultivos de este día riegan a la vez (el Total suma sus caudales). Desmarcado: riegan por turnos (el Total es el mayor caudal, nunca la suma)."
+                    onchange="recalcularCaudalAutomatico()">
+            </td>
             ${inputsCultivo}
             <td style="padding:8px 10px;text-align:center;">
                 <input type="number" id="caudalDia_${dia}" step="0.0001" min="0" readonly
                     value="${caudalAuto.toFixed(4)}"
                     style="width:90px;padding:5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:13px;font-weight:700;color:#003876;background:#f0f0f0;"
-                    title="Suma de los caudales por cultivo de este día (calculado automáticamente)">
+                    title="Simultáneo: suma de los caudales por cultivo. Por turnos: el mayor caudal entre los cultivos de ese día.">
             </td>
             <td style="padding:8px 10px;text-align:center;">
                 <input type="number" id="horas_${dia}" min="0" max="24" step="0.5" readonly
                     value="24"
                     style="width:70px;padding:5px;border:1px solid #ccc;border-radius:4px;text-align:center;font-size:13px;background:#f0f0f0;"
-                    title="Mayor cantidad de horas entre los cultivos programados este día (calculado automáticamente)">
+                    title="Simultáneo: la mayor cantidad de horas entre cultivos. Por turnos: la suma de las horas de cada cultivo.">
             </td>
             <td style="padding:8px 10px;text-align:right;font-size:13px;font-weight:600;"
                 id="volDia_${dia}">${volDiaAuto.toFixed(2)}</td>
@@ -8662,9 +8723,10 @@ async function mostrarModalHorasPorDia() {
                         <tr style="background:#003876;color:white;">
                             <th style="padding:9px;text-align:left;">Día</th>
                             <th style="padding:9px;text-align:center;">Programar</th>
+                            <th style="padding:9px;text-align:center;">¿Simultáneo?</th>
                             ${columnasCultivoHeader}
                             <th style="padding:9px;text-align:center;">Total<br><small style="font-weight:400;">(m³/s)</small></th>
-                            <th style="padding:9px;text-align:center;">Horas del día<br><small style="font-weight:400;">(máx. entre cultivos)</small></th>
+                            <th style="padding:9px;text-align:center;">Horas del día</th>
                             <th style="padding:9px;text-align:right;">Volumen día (m³)</th>
                         </tr>
                     </thead>
@@ -8749,9 +8811,16 @@ async function mostrarModalHorasPorDia() {
 
             const caudalGuardadoDelDia = activo ? (parseFloat(item.caudal) || 0) : 0;
 
-            // Restaurar las horas de cada cultivo para este día
+            // Restaurar si el día es simultáneo o por turnos. Los registros guardados antes de
+            // esta función (sin el campo) se tratan como simultáneo=true, igual que se veían.
+            const chkSimul = document.getElementById('simultaneo_' + dia);
+            const esSimultaneoGuardado = !item || item.simultaneo !== false;
+            if (chkSimul) chkSimul.checked = esSimultaneoGuardado;
+
+            // Restaurar las horas y el orden de cada cultivo para este día
             cultivos.forEach((c, cIdx) => {
                 const inpHorasCultivo = document.getElementById('horasCultivo_' + dia + '_' + cIdx);
+                const inpOrden = document.getElementById('ordenCultivo_' + dia + '_' + cIdx);
                 if (!inpHorasCultivo) return;
                 if (item && item.horasPorCultivo) {
                     // Dato nuevo: ya viene desglosado por cultivo
@@ -8760,6 +8829,11 @@ async function mostrarModalHorasPorDia() {
                 } else {
                     // Dato antiguo (una sola hora compartida para el día): se copia a todos los cultivos
                     inpHorasCultivo.value = activo ? (parseFloat(item.horas) || 0) : 0;
+                }
+                if (inpOrden) {
+                    const ordenGuardado = item && item.ordenPorCultivo ? item.ordenPorCultivo[_normCultivo(c.cultivo)] : null;
+                    inpOrden.value = Number.isFinite(parseFloat(ordenGuardado)) ? parseFloat(ordenGuardado) : (cIdx + 1);
+                    inpOrden.disabled = !activo || esSimultaneoGuardado;
                 }
             });
 
@@ -8813,30 +8887,52 @@ function recalcularCaudalAutomatico() {
 
     diasSem.forEach(dia => {
         const chk  = document.getElementById('diaActivo_' + dia);
+        const chkSimul = document.getElementById('simultaneo_' + dia);
         const inpH = document.getElementById('horas_' + dia);
         const inpC = document.getElementById('caudalDia_' + dia);
         const elV  = document.getElementById('volDia_' + dia);
         if (!chk || !inpH || !inpC) return;
 
         const activo = chk.checked;
-        inpH.disabled = true; // siempre de solo lectura: es el agregado (máximo) entre cultivos
+        const esSimultaneo = !chkSimul || chkSimul.checked; // por defecto simultáneo (compatibilidad)
+        inpH.disabled = true; // siempre de solo lectura: es el agregado (calculado) entre cultivos
+        if (chkSimul) chkSimul.disabled = !activo;
 
-        // Sumar el caudal de cada cultivo y calcular el volumen del día como la suma de los
-        // volúmenes por cultivo (cada uno con su propio caudal y sus propias horas).
+        // Volumen del día = suma de los volúmenes por cultivo (caudal propio × horas propias),
+        // esto NO cambia según el modo — el volumen entregado a cada cultivo no depende de si
+        // comparte horario con otros o no.
+        //
+        // Total (m³/s) y Horas del día SÍ dependen del modo:
+        //   Simultáneo: los cultivos riegan a la vez → Total = suma de sus caudales,
+        //               Horas del día = la mayor duración entre ellos (el canal está abierto
+        //               tanto como el que más tarda, todos en paralelo).
+        //   Por turnos: los cultivos NUNCA riegan a la vez → Total = el mayor caudal entre
+        //               ellos (el canal jamás necesita más que eso), Horas del día = suma de
+        //               sus horas (el canal está abierto el tiempo de un turno más el siguiente).
         let caudalDelDia = 0;
         let volDelDia = 0;
-        let horasDelDia = 0; // máximo entre los cultivos con caudal y horas > 0 ese día
+        let horasDelDia = 0;
         cultivos.forEach((c, cIdx) => {
             const inpCultivo = document.getElementById('caudalCultivo_' + dia + '_' + cIdx);
             const inpHorasCultivo = document.getElementById('horasCultivo_' + dia + '_' + cIdx);
+            const inpOrden = document.getElementById('ordenCultivo_' + dia + '_' + cIdx);
             if (!inpCultivo || !inpHorasCultivo) return;
             inpCultivo.disabled = !activo;
             inpHorasCultivo.disabled = !activo;
+            if (inpOrden) inpOrden.disabled = !activo || esSimultaneo;
             const caudalCultivo = activo ? (parseFloat(inpCultivo.value) || 0) : 0;
             const horasCultivo = activo ? (parseFloat(inpHorasCultivo.value) || 0) : 0;
-            caudalDelDia += caudalCultivo;
             volDelDia += caudalCultivo * horasCultivo * 3600;
-            if (caudalCultivo > 0 && horasCultivo > horasDelDia) horasDelDia = horasCultivo;
+
+            if (esSimultaneo) {
+                // Un cultivo con 0 horas ese día no está regando, así que su caudal no debe
+                // sumar al Total del día aunque el campo tenga un valor > 0 cargado.
+                if (horasCultivo > 0) caudalDelDia += caudalCultivo;
+                if (caudalCultivo > 0 && horasCultivo > horasDelDia) horasDelDia = horasCultivo;
+            } else {
+                if (horasCultivo > 0 && caudalCultivo > caudalDelDia) caudalDelDia = caudalCultivo;
+                if (caudalCultivo > 0) horasDelDia += horasCultivo;
+            }
         });
         inpC.value = caudalDelDia.toFixed(4);
         inpH.value = horasDelDia;
@@ -8946,7 +9042,7 @@ function obtenerCultivosProgramablesDesdeAvance() {
         const cultivo = fila.querySelector('.cultivo-nombre')?.innerText?.trim();
         if (!cultivo) return;
 
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
         if (qTeorico <= 0 || volCorregido <= 0) return;
 
@@ -9364,32 +9460,40 @@ async function confirmarHorasPorDia() {
     let horasTotal = 0, diasActivos = 0, volProgTotal = 0;
     diasSem.forEach(dia => {
         const chk   = document.getElementById('diaActivo_' + dia);
+        const chkSimul = document.getElementById('simultaneo_' + dia);
         const inpC  = document.getElementById('caudalDia_' + dia);
+        const inpH  = document.getElementById('horas_' + dia);
         const activo = chk && chk.checked;
+        const esSimultaneo = !chkSimul || chkSimul.checked;
+        // Total y Horas del día ya vienen calculados por recalcularCaudalAutomatico() según el
+        // modo (simultáneo: suma/máximo; por turnos: máximo/suma) — se leen del mismo campo
+        // readonly que ve el programador, en vez de recalcularlos de nuevo acá.
         const caudal = activo ? (parseFloat(inpC?.value) || 0) : 0;
+        const horas = activo ? (parseFloat(inpH?.value) || 0) : 0;
 
-        // ✅ Caudal y horas programados por cultivo para este día (fuente que usará el Anexo G-3
-        // para asignar a cada usuario el caudal y las horas correspondientes a su cultivo).
         const caudalPorCultivo = {};
         const horasPorCultivo = {};
+        const ordenPorCultivo = {};
         let volDia = 0;
-        let horas = 0; // agregado del día = máximo entre los cultivos con caudal y horas > 0
         cultivos.forEach((c, cIdx) => {
             const inpCultivo = document.getElementById('caudalCultivo_' + dia + '_' + cIdx);
             const inpHorasCultivo = document.getElementById('horasCultivo_' + dia + '_' + cIdx);
+            const inpOrden = document.getElementById('ordenCultivo_' + dia + '_' + cIdx);
             const clave = _normCultivo(c.cultivo);
             const caudalCultivo = activo ? (parseFloat(inpCultivo?.value) || 0) : 0;
             const horasCultivo = activo ? (parseFloat(inpHorasCultivo?.value) || 0) : 0;
             caudalPorCultivo[clave] = caudalCultivo;
             horasPorCultivo[clave] = horasCultivo;
+            ordenPorCultivo[clave] = parseInt(inpOrden?.value, 10) || (cIdx + 1);
             volDia += caudalCultivo * horasCultivo * 3600;
-            if (caudalCultivo > 0 && horasCultivo > horas) horas = horasCultivo;
         });
 
         const claveDia = dia.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         distribucionDias[claveDia] = activo && horas > 0;
         caudalesPorDia[claveDia] = (activo && horas > 0) ? caudal : 0;
-        caudalesPorDiaDetallado[claveDia] = activo ? { horas, caudal, caudalPorCultivo, horasPorCultivo, volumen: volDia } : null;
+        caudalesPorDiaDetallado[claveDia] = activo
+            ? { horas, caudal, caudalPorCultivo, horasPorCultivo, ordenPorCultivo, simultaneo: esSimultaneo, volumen: volDia }
+            : null;
         if (activo && horas > 0) { horasTotal += horas; diasActivos++; volProgTotal += volDia; }
     });
 
@@ -9652,17 +9756,19 @@ function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgramacion
         
         const cultivo = fila.querySelector('.cultivo-nombre')?.innerText?.trim();
         const areaSemana = parseFloat(fila.querySelector('.area-semana')?.value) || 0;
+        const pase = fila.querySelector('.pase-input')?.value || '';
         const modulo = parseFloat(fila.querySelector('.modulo')?.value) || 0;
         const eficiencia = parseFloat(fila.querySelector('.eficiencia')?.value) || 0;
         const volBruto = parseNumeroSeguro(fila.querySelector('.volBruto')?.innerText);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
-        
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
+
         // SOLO guardar si tiene caudal teórico > 0
         if (qTeorico > 0) {
             cultivosGuardados.push({
                 cultivo: cultivo || '-',
                 areaSemana: areaSemana,
+                pase: pase,
                 modulo: modulo,
                 eficiencia: eficiencia,
                 volBruto: volBruto,
@@ -9822,7 +9928,7 @@ function guardarEnConsolidadoDemandasIndividual() {
         const eficiencia = parseFloat(fila.querySelector('.eficiencia')?.value) || 0;
         const volBruto = parseNumeroSeguro(fila.querySelector('.volBruto')?.innerText);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
         
         // SOLO guardar si tiene caudal teórico > 0
         if (qTeorico > 0) {
@@ -9913,7 +10019,7 @@ filas.forEach(fila => {
     const eficiencia = parseFloat(fila.querySelector('.eficiencia')?.value) || 0;
         const volBruto = parseNumeroSeguro(fila.querySelector('.volBruto')?.innerText);
         const volCorregido = parseNumeroSeguro(fila.querySelector('.volCorregido')?.innerText);
-        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.innerText);
+        const qTeorico = parseNumeroSeguro(fila.querySelector('.qTeorico')?.value);
     
     // SOLO guardar si tiene caudal teórico > 0
     if (qTeorico > 0) {
@@ -9997,6 +10103,67 @@ function mostrarMensajeGuardadoExitoso(nombreToma, cantidadCultivos, totalTomas 
     divModal.innerHTML = modalHTML;
     document.body.appendChild(divModal);
 }
+// Elimina por completo la programación de una toma (horas/caudales, selección
+// de usuarios del G3 e historial de versiones) — solo administrador, tanto en
+// la interfaz como reforzado en las políticas de la base de datos.
+async function eliminarProgramacionTomaUI(tomaNombre) {
+    if (!tomaNombre) return;
+    if (!esAdmin) { alert('Solo un administrador puede eliminar una programación.'); return; }
+
+    const confirmado = confirm(
+        '¿Eliminar COMPLETAMENTE la programación de la toma "' + tomaNombre + '"?\n\n' +
+        'Se borran sus horas/caudales, la selección de usuarios del Anexo G-3 y su historial de versiones. ' +
+        'No se puede deshacer. Las demás tomas no se ven afectadas.'
+    );
+    if (!confirmado) return;
+
+    if (!window.CusshmiDatos) { alert('Módulo de datos no disponible.'); return; }
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
+    const resultado = await CusshmiDatos.eliminarProgramacionToma(comisionKey, tomaNombre, semanaPDA?.fechaInicio);
+
+    if (!resultado.ok) {
+        alert('No se pudo eliminar la programación: ' + (resultado.error || 'error desconocido'));
+        return;
+    }
+
+    // Quitar de las estructuras locales para que la pantalla quede consistente.
+    const idx = consolidadoDemandas.findIndex(t => t.toma === tomaNombre);
+    if (idx >= 0) consolidadoDemandas.splice(idx, 1);
+    if (window.turnosDeRiego) delete window.turnosDeRiego[tomaNombre];
+    if (window.programacionPorToma) delete window.programacionPorToma[tomaNombre];
+    // Selección de usuarios del G3 de esa toma: se borra local para que, si se vuelve a abrir
+    // el selector, no aparezca nada premarcado — "como si nunca hubiera sido trabajada".
+    if (window.usuariosG3) {
+        Object.keys(window.usuariosG3)
+            .filter(k => k.split('|')[0].trim().toUpperCase() === tomaNombre.trim().toUpperCase())
+            .forEach(k => delete window.usuariosG3[k]);
+    }
+    if (window._usuariosG3Completo) {
+        Object.keys(window._usuariosG3Completo)
+            .filter(k => k.split('|')[0].trim().toUpperCase() === tomaNombre.trim().toUpperCase())
+            .forEach(k => delete window._usuariosG3Completo[k]);
+    }
+    guardarProgramacionPorTomaEnStorage();
+
+    if (window.CusshmiAuditoria) {
+        CusshmiAuditoria.registrarAuditoria('Eliminación', 'Programación', tomaNombre);
+    }
+
+    alert('Toma "' + tomaNombre + '" eliminada correctamente.');
+
+    // Si se eliminó desde la pantalla de una toma individual, se vuelve a esa misma pantalla
+    // (ya recalculada desde el Excel crudo, sin nada guardado que restaurar) en vez de saltar
+    // al Consolidado.
+    const estabaEnTablaIndividual = !!document.getElementById('tablaAvanceSiembra');
+    if (estabaEnTablaIndividual && typeof generarAvanceSiembraPorTomaEspecifica === 'function') {
+        generarAvanceSiembraPorTomaEspecifica(tomaNombre);
+    } else if (consolidadoDemandas.length > 0) {
+        mostrarConsolidadoDemandas();
+    } else {
+        volverAReporteActual();
+    }
+}
+
 async function mostrarConsolidadoDemandas() {
     // Fase 5: red de seguridad — por si esta pantalla se llega a abrir sin
     // haber pasado por confirmarSemanaAutomatica()/Simulada() (que ya
@@ -10052,6 +10219,18 @@ async function mostrarConsolidadoDemandas() {
                 ℹ️ Los volúmenes y caudales mostrados son promedios según los días programados
             </div>
         </div>
+
+        ${esAdmin ? `
+        <div style="margin:0 0 15px;padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label style="font-size:12px;font-weight:600;color:#7a5c00;">🗑️ Eliminar una toma programada por error (solo administrador):</label>
+            <select id="selectTomaEliminar" style="padding:5px;border-radius:4px;border:1px solid #ccc;">
+                ${consolidadoDemandas.map(t => `<option value="${t.toma}">${t.toma}</option>`).join('')}
+            </select>
+            <button onclick="eliminarProgramacionTomaUI(document.getElementById('selectTomaEliminar').value)"
+                style="padding:6px 14px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:12px;">
+                Eliminar programación
+            </button>
+        </div>` : ''}
 
         <div style="text-align:right; margin-bottom:15px;">
             <button onclick="exportarConsolidadoAExcel()" 
@@ -10785,6 +10964,31 @@ function generarDatosAnexoG2() {
         item++;
     });
 
+    // Orden fijo de las tomas del Canal Sur, confirmado por el usuario
+    // (coincide con el orden físico de las tomas a lo largo del canal,
+    // sifones incluidos en su posición real), sin importar en qué orden
+    // se fueron confirmando las programaciones.
+    const ORDEN_FIJO_CANAL_SUR = [
+        'SD3', 'SI3', 'SD4', 'SI4', 'SD5', 'SI5', 'SD6', 'SD7',
+        'SIFON TAPIA 13+652', 'SD8', 'SD8.1', 'SI6', 'SD9', 'SD10',
+        'SIFON PALOMINO SD10', 'SD11', 'SI7', 'SD12', 'SIFON HERRERA SI7',
+        'SD12.1', 'SD13', 'SD14', 'SD14.1'
+    ];
+    const ordenFijo = {};
+    ORDEN_FIJO_CANAL_SUR.forEach((n, idx) => { ordenFijo[n.toUpperCase()] = idx; });
+
+    // Respaldo: orden del desplegable "Seleccionar Toma", solo para tomas
+    // que no estén en la lista fija de arriba (p. ej. tomas nuevas).
+    const ordenTomaSelect = {};
+    const elTomaSelect = document.getElementById('tomaSelect');
+    if (elTomaSelect) {
+        Array.from(elTomaSelect.options).forEach((opt, idx) => {
+            if (opt.value && opt.value !== 'CONSOLIDADO') {
+                ordenTomaSelect[opt.value.toString().trim().toUpperCase()] = idx;
+            }
+        });
+    }
+
     // AGROAURORA y EL LOBO siempre van al final de la relación
     const nombresAlFinal = ['AGROAURORA', 'EL LOBO'];
     datosAnexoG2.sort((a, b) => {
@@ -10792,7 +10996,15 @@ function generarDatosAnexoG2() {
         const bAlFinal = nombresAlFinal.some(n => (b.nombreToma || '').toString().trim().toUpperCase().includes(n));
         if (aAlFinal && !bAlFinal) return 1;
         if (!aAlFinal && bAlFinal) return -1;
-        return 0; // conserva el orden relativo original para el resto
+        if (aAlFinal && bAlFinal) return 0;
+        const nombreA = (a.nombreToma || '').toString().trim().toUpperCase();
+        const nombreB = (b.nombreToma || '').toString().trim().toUpperCase();
+        const idxA = ordenFijo[nombreA] !== undefined ? ordenFijo[nombreA] : ordenTomaSelect[nombreA];
+        const idxB = ordenFijo[nombreB] !== undefined ? ordenFijo[nombreB] : ordenTomaSelect[nombreB];
+        if (idxA !== undefined && idxB !== undefined) return idxA - idxB;
+        if (idxA !== undefined) return -1; // tomas conocidas antes que las que no aparecen en ninguna lista
+        if (idxB !== undefined) return 1;
+        return 0; // conserva el orden relativo original si ninguna está identificada
     });
     // Renumerar el ítem tras el reordenamiento
     datosAnexoG2.forEach((fila, idx) => { fila.item = idx + 1; });
@@ -11917,9 +12129,23 @@ async function actualizarUsuariosG3DesdeSupabase(tomaNombre, cultivo) {
     const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
     const resultado = await CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKey, tomaNombre, semanaPDA.fechaInicio, cultivo);
     if (!resultado.ok || !resultado.usuarios) return;
+
+    // Compatibilidad: antes de esta función se guardaba solo el array de seleccionados
+    // (formato viejo). Ahora se guarda { seleccionados, completo } — se detecta cuál llegó.
+    const datosGuardados = resultado.usuarios;
+    const esFormatoNuevo = !Array.isArray(datosGuardados) && datosGuardados && Array.isArray(datosGuardados.seleccionados);
+    const seleccionados = esFormatoNuevo ? datosGuardados.seleccionados : (Array.isArray(datosGuardados) ? datosGuardados : []);
+    const completo = esFormatoNuevo ? datosGuardados.completo : null;
+
     window.usuariosG3 = window.usuariosG3 || {};
-    window.usuariosG3[tomaNombre + '|' + cultivo] = resultado.usuarios;
-    window.usuariosG3[claveUsuariosG3(tomaNombre, cultivo)] = resultado.usuarios;
+    window.usuariosG3[tomaNombre + '|' + cultivo] = seleccionados;
+    window.usuariosG3[claveUsuariosG3(tomaNombre, cultivo)] = seleccionados;
+
+    if (Array.isArray(completo) && completo.length > 0) {
+        window._usuariosG3Completo = window._usuariosG3Completo || {};
+        window._usuariosG3Completo[tomaNombre + '|' + cultivo] = completo;
+        window._usuariosG3Completo[claveUsuariosG3(tomaNombre, cultivo)] = completo;
+    }
 }
 
 async function abrirSelectorUsuariosCultivo(input) {
@@ -11951,69 +12177,81 @@ async function abrirSelectorUsuariosCultivo(input) {
         return;
     }
 
-    const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
-    const usuariosCultivo = [];
+    // Fase 5/6: trae la selección más reciente de Supabase (seleccionados + snapshot completo
+    // de clasificación, si existe) antes de decidir cómo armar la lista de usuarios.
+    await actualizarUsuariosG3DesdeSupabase(toma, cultivo);
+    const key = toma + '|' + cultivo;
 
     const cultivoUpper = cultivo.toUpperCase();
     const tomaUpper = (toma || '').toString().trim().toUpperCase();
 
-    // Detectar programados "No Aptos" para esta toma/cultivo (para permitir selección + resaltar)
-    const programadosWindow = window.usuariosProgramados || [];
-    const programadosGlobal = (typeof usuariosProgramados !== 'undefined' && Array.isArray(usuariosProgramados)) ? usuariosProgramados : [];
-    const programados = [...programadosWindow, ...programadosGlobal];
-    const setProgramados = new Set();
-    programados.forEach(p => {
-        const t = (p._tomaOrigen || p.toma || '').toString().trim().toUpperCase();
-        if (!t) return;
-        if (!(t === tomaUpper || t.includes(tomaUpper) || tomaUpper.includes(t))) return;
-        const c = (p._cultivoProgramado || p.cultivoProgramado || p.cultivo1 || '').toString().trim().toUpperCase();
-        const a = parseFloat(p._areaProgramada ?? p.areaProgramada ?? p.area1) || 0;
-        if (!c || a <= 0) return;
-        if (c !== cultivoUpper) return;
-        const nombre = (p.nombre || '-').toString();
-        const uc = (p.unidadCatastral || '-').toString();
-        setProgramados.add((nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase());
-    });
+    let usuariosCultivo;
+    const completoGuardado = window._usuariosG3Completo && window._usuariosG3Completo[key];
+    const usaSnapshotCongelado = Array.isArray(completoGuardado) && completoGuardado.length > 0;
 
-    usuariosToma.forEach(u => {
-        const deuda = parseFloat(u.deudaTotal) || 0;
-        const esNoApto = deuda > deudaMax;
-        const deudaPermitida = !esNoApto && deuda > 0;
-        const nombreBase = (u.nombre || '-').toString();
-        const ucBase = (u.unidadCatastral || '-').toString();
+    if (usaSnapshotCongelado) {
+        // Ya existe una clasificación guardada para esta toma+cultivo+semana: se usa tal cual
+        // quedó (aptos seleccionados, aptos no seleccionados, no aptos seleccionados), sin
+        // volver a calcular esNoApto contra el umbral de deuda que esté activo ahora mismo —
+        // así el reabrir muestra exactamente lo que se guardó, aunque el umbral haya cambiado.
+        usuariosCultivo = completoGuardado;
+    } else {
+        const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
+        usuariosCultivo = [];
 
-        for (let n = 1; n <= 10; n++) {
-            const c = (u[`cultivo${n}`] || '').toString().trim().toUpperCase();
-            const a = parseFloat(u[`area${n}`]) || 0;
-            if (c !== cultivoUpper || a <= 0) continue;
+        // Detectar programados "No Aptos" para esta toma/cultivo (para permitir selección + resaltar)
+        const programadosWindow = window.usuariosProgramados || [];
+        const programadosGlobal = (typeof usuariosProgramados !== 'undefined' && Array.isArray(usuariosProgramados)) ? usuariosProgramados : [];
+        const programados = [...programadosWindow, ...programadosGlobal];
+        const setProgramados = new Set();
+        programados.forEach(p => {
+            const t = (p._tomaOrigen || p.toma || '').toString().trim().toUpperCase();
+            if (!t) return;
+            if (!(t === tomaUpper || t.includes(tomaUpper) || tomaUpper.includes(t))) return;
+            const c = (p._cultivoProgramado || p.cultivoProgramado || p.cultivo1 || '').toString().trim().toUpperCase();
+            const a = parseFloat(p._areaProgramada ?? p.areaProgramada ?? p.area1) || 0;
+            if (!c || a <= 0) return;
+            if (c !== cultivoUpper) return;
+            const nombre = (p.nombre || '-').toString();
+            const uc = (p.unidadCatastral || '-').toString();
+            setProgramados.add((nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase());
+        });
 
-            const k = (nombreBase + '|' + ucBase + '|' + a.toFixed(4)).toUpperCase();
-            const programadoNoApto = esNoApto && setProgramados.has(k);
+        usuariosToma.forEach(u => {
+            const deuda = parseFloat(u.deudaTotal) || 0;
+            const esNoApto = deuda > deudaMax;
+            const deudaPermitida = !esNoApto && deuda > 0;
+            const nombreBase = (u.nombre || '-').toString();
+            const ucBase = (u.unidadCatastral || '-').toString();
 
-            usuariosCultivo.push({
-                nombre: nombreBase,
-                area: a,
-                unidadCatastral: ucBase,
-                deudaTotal: deuda,
-                esNoApto,
-                programadoNoApto,
-                deudaPermitida,
-            });
-        }
-    });
+            for (let n = 1; n <= 10; n++) {
+                const c = (u[`cultivo${n}`] || '').toString().trim().toUpperCase();
+                const a = parseFloat(u[`area${n}`]) || 0;
+                if (c !== cultivoUpper || a <= 0) continue;
 
-    console.log('G3: Usuarios encontrados para ' + cultivo + ':', usuariosCultivo.length);
+                const k = (nombreBase + '|' + ucBase + '|' + a.toFixed(4)).toUpperCase();
+                const programadoNoApto = esNoApto && setProgramados.has(k);
+
+                usuariosCultivo.push({
+                    nombre: nombreBase,
+                    area: a,
+                    unidadCatastral: ucBase,
+                    deudaTotal: deuda,
+                    esNoApto,
+                    programadoNoApto,
+                    deudaPermitida,
+                });
+            }
+        });
+    }
+
+    console.log('G3: Usuarios encontrados para ' + cultivo + ':', usuariosCultivo.length, usaSnapshotCongelado ? '(desde snapshot guardado)' : '(clasificados en vivo)');
 
     if (usuariosCultivo.length === 0) {
         alert('No se encontraron usuarios registrados con el cultivo "' + cultivo + '" en la toma ' + toma + '.');
         return;
     }
 
-    // Fase 5: trae la selección más reciente de Supabase antes de decidir qué
-    // casillas aparecen marcadas — no cambia nada de la lógica de abajo.
-    await actualizarUsuariosG3DesdeSupabase(toma, cultivo);
-
-    const key = toma + '|' + cultivo;
     const prevSeleccion = (window.usuariosG3[key] || []).flatMap(u => {
         const n = (u.nombre || '-').toString();
         const a = (parseFloat(u.area) || 0);
@@ -12027,15 +12265,19 @@ async function abrirSelectorUsuariosCultivo(input) {
 
     let rowsHtml = '';
     usuariosCultivo.forEach((u, idx) => {
-        // Si no hay selección previa, los aptos vienen marcados por defecto
+        // Si el usuario viene del snapshot congelado, ya trae su propio flag "seleccionado"
+        // (exactamente como quedó al guardar) — no se recalcula. Si no, se usa la lógica en
+        // vivo de siempre (selección previa por nombre/área, o aptos por defecto la primera vez).
         const haySeleccionPrevia = (window.usuariosG3[key] || []).length > 0;
         const claveSel = (u.nombre + '|' + (u.unidadCatastral || '-') + '|' + u.area).toUpperCase();
         const claveSelAlt = (u.nombre + '|' + u.area).toUpperCase();
-        const yaSeleccionado = u.programadoNoApto
-            ? true
-            : (haySeleccionPrevia
-                ? (prevSeleccion.includes(claveSel) || prevSeleccion.includes(claveSelAlt))
-                : (!u.esNoApto)); // primera vez: con derecho
+        const yaSeleccionado = (typeof u.seleccionado === 'boolean')
+            ? u.seleccionado
+            : (u.programadoNoApto
+                ? true
+                : (haySeleccionPrevia
+                    ? (prevSeleccion.includes(claveSel) || prevSeleccion.includes(claveSelAlt))
+                    : (!u.esNoApto))); // primera vez: con derecho
 
         const bg = u.programadoNoApto
             ? '#ede9fe'      // violeta: no apto programado
@@ -12161,10 +12403,21 @@ async function confirmarSeleccionUsuariosG3(toma, cultivo, usuariosCultivo) {
         }
     });
 
+    // Snapshot completo (aptos seleccionados, aptos no seleccionados, no aptos seleccionados)
+    // tal como quedó marcado en este momento — para poder restaurar exactamente este estado al
+    // reabrir, sin volver a clasificar contra el umbral de deuda que esté activo en ese momento.
+    const completo = usuariosCultivo.map((u, idx) => ({
+        ...u,
+        seleccionado: !!(checks[idx] && checks[idx].checked && !checks[idx].disabled),
+    }));
+
     const keyExact = toma + '|' + cultivo;
     const keyNorm = claveUsuariosG3(toma, cultivo);
     window.usuariosG3[keyExact] = seleccionados;
     window.usuariosG3[keyNorm] = seleccionados;
+    window._usuariosG3Completo = window._usuariosG3Completo || {};
+    window._usuariosG3Completo[keyExact] = completo;
+    window._usuariosG3Completo[keyNorm] = completo;
     cerrarSelectorUsuarios();
 
     // Calcular nueva área semana = suma de áreas de usuarios seleccionados
@@ -12206,7 +12459,8 @@ async function confirmarSeleccionUsuariosG3(toma, cultivo, usuariosCultivo) {
     if (window.CusshmiDatos) {
         const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
         const resultadoSync = await CusshmiDatos.guardarUsuariosG3Seleccionados(
-            comisionKey, toma, semanaPDA?.fechaInicio, semanaPDA?.fechaFin, cultivo, seleccionados
+            comisionKey, toma, semanaPDA?.fechaInicio, semanaPDA?.fechaFin, cultivo,
+            { seleccionados, completo }
         );
         if (!resultadoSync.ok) {
             alert('⚠️ La selección de usuarios se guardó en este navegador, pero no se pudo sincronizar con el servidor (' +
@@ -12298,6 +12552,8 @@ function mostrarAnexoG3(modoManual) {
         let caudalPorDiaOffset = {};
         let caudalPorCultivoPorDiaOffset = {}; // { offsetDia: { nombreCultivo: caudalM3s } }
         let horasPorCultivoPorDiaOffset = {}; // { offsetDia: { nombreCultivo: horas } }
+        let ordenPorCultivoPorDiaOffset = {}; // { offsetDia: { nombreCultivo: orden } }
+        let simultaneoPorDiaOffset = {}; // { offsetDia: boolean } — true = riegan a la vez, false = por turnos
         if (distribucionDias) {
             diasActivosOffsets = diasSemanaKeys
                 .map((k, i) => distribucionDias[k] ? i : null)
@@ -12308,6 +12564,10 @@ function mostrarAnexoG3(modoManual) {
                 caudalPorDiaOffset[i] = info ? (parseFloat(info.caudal) || 0) : caudalTotalM3s;
                 caudalPorCultivoPorDiaOffset[i] = (info && info.caudalPorCultivo) ? info.caudalPorCultivo : null;
                 horasPorCultivoPorDiaOffset[i] = (info && info.horasPorCultivo) ? info.horasPorCultivo : null;
+                ordenPorCultivoPorDiaOffset[i] = (info && info.ordenPorCultivo) ? info.ordenPorCultivo : null;
+                // Registros guardados antes de esta función no tienen el campo — se tratan como
+                // simultáneo (true), igual que se comportaban.
+                simultaneoPorDiaOffset[i] = !info || info.simultaneo !== false;
             });
         }
 
@@ -12433,6 +12693,8 @@ function mostrarAnexoG3(modoManual) {
             caudalPorDiaOffset: caudalPorDiaOffset,
             caudalPorCultivoPorDiaOffset: caudalPorCultivoPorDiaOffset,
             horasPorCultivoPorDiaOffset: horasPorCultivoPorDiaOffset,
+            ordenPorCultivoPorDiaOffset: ordenPorCultivoPorDiaOffset,
+            simultaneoPorDiaOffset: simultaneoPorDiaOffset,
             diasActivosPorCultivo: diasActivosPorCultivo,
             nombreComision: nombreComision,
             cultivosProgramados: (toma.cultivos || []).map(c => c.cultivo),
@@ -14021,6 +14283,8 @@ function recalcularProgramacionG3Desde(tomaIdx, startIdx, minutosInicioForzado) 
         : null; // null = sin restricción (toda la semana disponible)
     const horasPorDiaOffset = toma.horasPorDiaOffset || {};
     const horasPorCultivoPorDiaOffset = toma.horasPorCultivoPorDiaOffset || {};
+    const ordenPorCultivoPorDiaOffset = toma.ordenPorCultivoPorDiaOffset || {};
+    const simultaneoPorDiaOffset = toma.simultaneoPorDiaOffset || {};
     const diasActivosPorCultivo = toma.diasActivosPorCultivo || {};
 
     // ⚠️ El día "activo" se evalúa PARA EL CULTIVO del usuario, no para la toma completa: un
@@ -14037,9 +14301,31 @@ function recalcularProgramacionG3Desde(tomaIdx, startIdx, minutosInicioForzado) 
         const horasDia = Number.isFinite(horasCultivoEspecificas)
             ? horasCultivoEspecificas
             : (Number.isFinite(horasPorDiaOffset[diaOffset]) ? horasPorDiaOffset[diaOffset] : 24);
-        const inicioDelDia = diaOffset * 1440 + horaInicioBaseMin;
+
+        // Si el día NO es simultáneo, cada cultivo riega en su propia sub-ventana dentro del
+        // día, desplazada por la suma de horas de los cultivos con orden MENOR (turnos
+        // consecutivos, nunca al mismo tiempo). Si es simultáneo (o no hay orden guardado —
+        // programaciones de antes de este cambio), todos comparten el mismo inicio de día,
+        // como siempre.
+        let desplazamientoMin = 0;
+        const esSimultaneoDia = simultaneoPorDiaOffset[diaOffset] !== false;
+        const ordenMap = ordenPorCultivoPorDiaOffset[diaOffset];
+        if (!esSimultaneoDia && claveCultivo && ordenMap && horasCultivoMap && Number.isFinite(ordenMap[claveCultivo])) {
+            const miOrden = ordenMap[claveCultivo];
+            Object.keys(ordenMap).forEach(otraClave => {
+                if (otraClave === claveCultivo) return;
+                if ((parseFloat(ordenMap[otraClave]) || 0) < miOrden) {
+                    desplazamientoMin += (parseFloat(horasCultivoMap[otraClave]) || 0) * 60;
+                }
+            });
+        }
+
+        const inicioDelDia = diaOffset * 1440 + horaInicioBaseMin + desplazamientoMin;
         const finDelDia = inicioDelDia + horasDia * 60;
-        if (esActivo && minAbs < finDelDia) return minAbs; // sigue dentro del día activo actual (para este cultivo)
+        // Sigue dentro de la ventana activa de este cultivo — pero nunca antes de que empiece
+        // su propio turno (relevante solo en días por turnos, donde el cursor puede llegar
+        // "temprano" heredado del inicio común del día).
+        if (esActivo && minAbs < finDelDia) return Math.max(minAbs, inicioDelDia);
         // Buscar el siguiente día activo PARA ESTE CULTIVO y saltar directamente a su hora de inicio
         const siguiente = diasDelCultivo.find(o => o > diaOffset);
         if (siguiente === undefined) return minAbs; // no hay más días programados para este cultivo: se deja tal cual
@@ -14556,6 +14842,10 @@ function imprimirG3(modoFormato) {
 
     // Quitar del impreso la variación de volumen (Δ), dejando solo el tiempo de uso
     clon.querySelectorAll('[id^="deltaVol_"]').forEach(el => el.remove());
+
+    // Los avisos de descuadre de caudal/horas son ayudas para el programador mientras
+    // trabaja en pantalla — no forman parte del formato oficial del Anexo G-3 impreso.
+    clon.querySelectorAll('#avisoCaudalCultivoG3, #avisoHorasDescuadreG3').forEach(el => el.remove());
 
     // ⚠️ Quitar FÍSICAMENTE la columna "Simultáneo" (no solo con CSS display:none).
     // Ocultarla solo con CSS dejaba una celda "fantasma" en el conteo de columnas de la tabla,

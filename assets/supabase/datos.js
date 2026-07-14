@@ -298,6 +298,34 @@
         };
     }
 
+    // ── Eliminar una programación completa ──────────────────────────────────
+    // Borra la fila de programaciones_semanales de esa toma+semana; por
+    // ON DELETE CASCADE se lleva también su turno de riego, la selección de
+    // usuarios del G3 y su historial de versiones. Protegido a nivel de base
+    // de datos por la política prog_sem_delete (solo rol admin) — aunque
+    // alguien evadiera el botón, Supabase igual rechazaría el borrado.
+    async function eliminarProgramacionToma(comisionKey, tomaNombre, semanaInicio) {
+        if (!comisionKey || !tomaNombre || !semanaInicio) {
+            return { ok: false, error: 'Falta comisión, toma o semana activa.' };
+        }
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
+
+        let client;
+        try {
+            client = window.CusshmiSupabase.getClient();
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+
+        const { error, count } = await client.from('programaciones_semanales')
+            .delete({ count: 'exact' })
+            .eq('comision_id', comisionId).eq('toma_nombre', tomaNombre).eq('semana_inicio', semanaInicio);
+        if (error) return { ok: false, error: error.message };
+        if (!count) return { ok: false, error: 'No se encontró una programación para esa toma en esta semana.' };
+        return { ok: true };
+    }
+
     window.CusshmiDatos = {
         cargarNotaAnexoG2,
         guardarNotaAnexoG2,
@@ -307,5 +335,6 @@
         cargarTodasLasProgramaciones,
         guardarUsuariosG3Seleccionados,
         cargarUsuariosG3Seleccionados,
+        eliminarProgramacionToma,
     };
 })();
