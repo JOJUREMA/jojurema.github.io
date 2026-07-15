@@ -11196,7 +11196,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
     return html;
 }
 
-function mostrarAnexoG2() {
+async function mostrarAnexoG2() {
     if (window.CusshmiAuditoria) {
         CusshmiAuditoria.registrarAuditoria('Generación de Anexo G2', 'Anexo G2', semanaPDA?.fechaInicio || null);
     }
@@ -11205,7 +11205,24 @@ function mostrarAnexoG2() {
     datosAnexoG2 = [];
     // Habilitar botón G3
     // G3 se genera desde el consolidado
-    
+
+    // El N° de usuarios del G2 se cuenta desde window.usuariosG3 (la selección guardada
+    // por toma/cultivo), pero esa variable solo se llena en memoria cuando se abre el
+    // Anexo G-3 de esa toma. Si se entra directo al G2 (sesión nueva, o sin haber
+    // visitado el G-3 de todas las tomas) window.usuariosG3 queda vacío y el G2 mostraba
+    // 0 usuarios en todas las tomas aunque sí hubiera programación guardada en Supabase.
+    // Por eso, antes de contar, se refresca cada toma/cultivo del consolidado desde ahí.
+    if (window.CusshmiDatos && semanaPDA?.fechaInicio && typeof actualizarUsuariosG3DesdeSupabase === 'function') {
+        contentArea.innerHTML = '<p style="text-align:center;padding:40px;color:#666;">Cargando usuarios programados...</p>';
+        const pares = [];
+        consolidadoDemandas.forEach(toma => {
+            (toma.cultivos || []).forEach(cultObj => {
+                if (cultObj?.cultivo) pares.push([toma.toma, cultObj.cultivo]);
+            });
+        });
+        await Promise.all(pares.map(([tomaNombre, cultivo]) => actualizarUsuariosG3DesdeSupabase(tomaNombre, cultivo)));
+    }
+
     const datos = generarDatosAnexoG2();
     if (!datos) return;
     
