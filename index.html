@@ -12668,26 +12668,56 @@ function mostrarAnexoG3(modoManual) {
             });
         });
 
-        // ── Igualar el TOTAL de la toma al volumen y horas ya confirmados en
-        // "HORAS DE RIEGO POR DÍA" (turno.volumenProgramado / turno.horasTotales).
-        // Sin esto, cada usuario recibía solo el mínimo que necesita según su
-        // propia área (área × módulo), dejando sin repartir el margen que el
-        // programador ya asignó al canal — el G-3 terminaba con menos volumen
-        // y horas que lo realmente programado. El caudal de cada usuario NO se
-        // toca (sigue siendo el de "HORAS DE RIEGO POR DÍA"); solo se escala el
-        // volumen/tiempo de cada usuario en la misma proporción para que la
-        // suma de todos cubra exactamente lo programado.
-        if (turno && turno.volumenProgramado > 0) {
-            const sumaVolBase = usuariosFinales.reduce((s, u) => s + (u.volCorregido || 0), 0);
-            if (sumaVolBase > 0) {
-                const factorVol = turno.volumenProgramado / sumaVolBase;
-                usuariosFinales.forEach(u => {
-                    u.volCorregido = u.volCorregido * factorVol;
-                    u.qTeorico = u.qTeorico * factorVol;
-                    u.tiempo = u.tiempo * factorVol;
-                });
+        // ── Igualar el volumen de CADA CULTIVO (no de toda la toma junta) al que
+        // realmente se programó para ese cultivo en "HORAS DE RIEGO POR DÍA". Antes
+        // se escalaba la toma completa con un único factor, lo que repartía el
+        // volumen entre cultivos según la necesidad mínima de cada uno en vez de
+        // respetar la proporción ya definida por día/cultivo en la ventana de horas
+        // (ej. dos cultivos regando simultáneo con el mismo caudal deben recibir el
+        // mismo volumen, no uno mucho más que el otro) — eso hacía que un cultivo se
+        // alargara más allá de la semana programada mientras el otro se quedaba corto.
+        // El caudal de cada usuario no se toca, solo el volumen/tiempo, en la misma
+        // proporción, para que la suma de cada cultivo cubra exactamente lo suyo.
+        const nombresCultivosToma = Array.from(new Set((toma.cultivos || []).map(c => _normCultivo(c.cultivo))));
+        const soloUnCultivo = nombresCultivosToma.length <= 1;
+        nombresCultivosToma.forEach(claveCultivo => {
+            const usuariosCultivo = usuariosFinales.filter(u => _normCultivo(u.cultivo) === claveCultivo);
+            if (usuariosCultivo.length === 0) return;
+
+            const diasDelCultivo = diasActivosPorCultivo[claveCultivo] || diasActivosOffsets || [];
+            let volumenObjetivo = 0;
+            diasDelCultivo.forEach(offset => {
+                const mapaCaudal = caudalPorCultivoPorDiaOffset[offset];
+                const mapaHoras = horasPorCultivoPorDiaOffset[offset];
+                // Con un solo cultivo en la toma, su "porción" del día es el día
+                // completo aunque no haya un desglose por cultivo guardado
+                // (programaciones de antes de esta función) — mismo caudal/horas
+                // que ya usaba la toma para ese día.
+                const caudalDia = (mapaCaudal && Number.isFinite(mapaCaudal[claveCultivo]))
+                    ? mapaCaudal[claveCultivo]
+                    : (soloUnCultivo && Number.isFinite(caudalPorDiaOffset[offset]) ? caudalPorDiaOffset[offset] : null);
+                const horasDia = (mapaHoras && Number.isFinite(mapaHoras[claveCultivo]))
+                    ? mapaHoras[claveCultivo]
+                    : (soloUnCultivo && Number.isFinite(horasPorDiaOffset[offset]) ? horasPorDiaOffset[offset] : null);
+                if (caudalDia !== null && horasDia !== null) volumenObjetivo += caudalDia * horasDia * 3600;
+            });
+
+            if (volumenObjetivo > 0) {
+                const sumaVolBaseCultivo = usuariosCultivo.reduce((s, u) => s + (u.volCorregido || 0), 0);
+                if (sumaVolBaseCultivo > 0) {
+                    const factor = volumenObjetivo / sumaVolBaseCultivo;
+                    usuariosCultivo.forEach(u => {
+                        u.volCorregido = u.volCorregido * factor;
+                        u.qTeorico = u.qTeorico * factor;
+                        u.tiempo = u.tiempo * factor;
+                    });
+                }
             }
-        }
+            // Si no hay forma de determinar el volumen objetivo de este cultivo
+            // (toma con varios cultivos y sin desglose diario propio, dato guardado
+            // antes de esta función), se deja el volumen mínimo calculado por área,
+            // igual que el comportamiento anterior — sin escalar a ciegas.
+        });
 
         // ── LOG DE DEPURACIÓN: programación por cultivo antes de generar el G-3 ──
         console.log(`%c[G3 · ${toma.toma}] Cultivos programados: ${toma.cultivos.length}`, 'font-weight:bold;color:#003876;');
@@ -14333,7 +14363,15 @@ function recalcularProgramacionG3Desde(tomaIdx, startIdx, minutosInicioForzado) 
     function ajustarADiaActivo(minAbs, claveCultivo) {
         const diasDelCultivo = (claveCultivo && diasActivosPorCultivo[claveCultivo]) || diasActivosOffsets;
         if (!diasDelCultivo) return minAbs;
-        const diaOffset = Math.floor(minAbs / 1440);
+        // ⚠️ Cada día programado abre a las "horaInicioBaseMin" (normalmente 08:00) y
+        // dura 24h, es decir su ventana real va de 08:00 a 08:00 del día siguiente — NO
+        // coincide con el día calendario (medianoche a medianoche). Si un turno termina
+        // en la madrugada (ej. domingo 00:23), esos minutos siguen dentro de la ventana
+        // del día ANTERIOR (sábado 08:00 → domingo 08:00), no en la del domingo. Restar
+        // "horaInicioBaseMin" antes de dividir entre 1440 clasifica el minuto en la
+        // ventana de 24h a la que realmente pertenece, evitando un salto artificial
+        // hasta las 08:00 (que le restaba horas al cierre real de la semana).
+        const diaOffset = Math.floor((minAbs - horaInicioBaseMin) / 1440);
         const esActivo = diasDelCultivo.indexOf(diaOffset) !== -1;
         const horasCultivoMap = horasPorCultivoPorDiaOffset[diaOffset];
         const horasCultivoEspecificas = claveCultivo && horasCultivoMap ? horasCultivoMap[claveCultivo] : undefined;
@@ -14402,7 +14440,10 @@ function recalcularProgramacionG3Desde(tomaIdx, startIdx, minutosInicioForzado) 
         // "HORAS DE RIEGO POR DÍA" en el que cae el inicio de su turno (ya determinado arriba por
         // ajustarADiaActivo), dividido entre simultáneos. Nunca se usa un caudal promedio único
         // para toda la toma ni un caudal de otro cultivo.
-        const diaOffsetUsuario = Math.floor(inicioMinAbs / 1440);
+        // Misma clasificación por ventana de 24h (08:00→08:00) que usa ajustarADiaActivo,
+        // no por día calendario — para que un inicio en la madrugada siga tomando el
+        // caudal del día programado al que realmente pertenece su turno.
+        const diaOffsetUsuario = Math.floor((inicioMinAbs - horaInicioBaseMin) / 1440);
         const mapaCultivoDelDia = toma.caudalPorCultivoPorDiaOffset ? toma.caudalPorCultivoPorDiaOffset[diaOffsetUsuario] : null;
         const claveCultivoUsuario = _normCultivo(u.cultivo);
         const caudalCultivoUsuario = (mapaCultivoDelDia && Number.isFinite(mapaCultivoDelDia[claveCultivoUsuario]))
