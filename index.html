@@ -12668,6 +12668,27 @@ function mostrarAnexoG3(modoManual) {
             });
         });
 
+        // ── Igualar el TOTAL de la toma al volumen y horas ya confirmados en
+        // "HORAS DE RIEGO POR DÍA" (turno.volumenProgramado / turno.horasTotales).
+        // Sin esto, cada usuario recibía solo el mínimo que necesita según su
+        // propia área (área × módulo), dejando sin repartir el margen que el
+        // programador ya asignó al canal — el G-3 terminaba con menos volumen
+        // y horas que lo realmente programado. El caudal de cada usuario NO se
+        // toca (sigue siendo el de "HORAS DE RIEGO POR DÍA"); solo se escala el
+        // volumen/tiempo de cada usuario en la misma proporción para que la
+        // suma de todos cubra exactamente lo programado.
+        if (turno && turno.volumenProgramado > 0) {
+            const sumaVolBase = usuariosFinales.reduce((s, u) => s + (u.volCorregido || 0), 0);
+            if (sumaVolBase > 0) {
+                const factorVol = turno.volumenProgramado / sumaVolBase;
+                usuariosFinales.forEach(u => {
+                    u.volCorregido = u.volCorregido * factorVol;
+                    u.qTeorico = u.qTeorico * factorVol;
+                    u.tiempo = u.tiempo * factorVol;
+                });
+            }
+        }
+
         // ── LOG DE DEPURACIÓN: programación por cultivo antes de generar el G-3 ──
         console.log(`%c[G3 · ${toma.toma}] Cultivos programados: ${toma.cultivos.length}`, 'font-weight:bold;color:#003876;');
         toma.cultivos.forEach(cObj => {
@@ -12957,8 +12978,13 @@ function renderizarTomaG3(tomaIdx) {
             </table>
         </div>
 
-        <!-- Botón marcar programada -->
-        <div style="text-align:center;margin-top:10px;padding-bottom:20px;">
+        <!-- Botones finales -->
+        <div style="text-align:center;margin-top:10px;padding-bottom:20px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button onclick="volverACalculoDemandasDesdeG3(${tomaIdx})"
+                style="padding:9px 22px;background:#475569;color:white;border:none;border-radius:6px;
+                       font-weight:700;font-size:13px;cursor:pointer;">
+                ⬅️ Cálculo de Demandas
+            </button>
             <button onclick="marcarTomaProgramadaG3(${tomaIdx})"
                 style="padding:9px 28px;background:#2e7d32;color:white;border:none;border-radius:6px;
                        font-weight:700;font-size:13px;cursor:pointer;">
@@ -13046,6 +13072,19 @@ function volverAHorasPorDiaDesdeG3() {
     };
     window._volverHorasDiaDestino = 'g3';
     mostrarModalHorasPorDia();
+}
+
+// Vuelve a la ventana "CÁLCULO DE LAS DEMANDAS DE AGUA SEMANAL" de la toma que se está
+// trabajando en el G-3, con área/módulos/eficiencias/PASE y la selección de usuarios ya
+// guardada restaurada tal cual (misma función que usa el desplegable "Seleccionar Toma").
+function volverACalculoDemandasDesdeG3(tomaIdx) {
+    const t = window._tomasG3Data?.[tomaIdx];
+    if (!t) return;
+
+    const elTomaSelect = document.getElementById('tomaSelect');
+    if (elTomaSelect) elTomaSelect.value = t.nombreToma;
+
+    generarAvanceSiembraPorTomaEspecifica(t.nombreToma);
 }
 
 function _formatearFechaLargaEs(fecha) {
