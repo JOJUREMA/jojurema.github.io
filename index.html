@@ -4061,12 +4061,19 @@ if (incluirGraficos.checked) {
 
         usuarios.forEach(usuario => {
             if (debeExcluirse(usuario)) return;
+            // El área del usuario debe incluir su segundo cultivo (área2) si lo tiene, igual
+            // que ya hace la matriz de HOJA 1/HOJA 2 (generarMatrizCultivosTomaPrint suma
+            // cultivo1 Y cultivo2). Antes esta suma solo tomaba área1, dejando fuera el
+            // segundo cultivo y descuadrando el "Área Aptos/No Aptos" de HOJA 3 frente al
+            // TOTAL de las otras dos hojas en cualquier toma con usuarios de 2 cultivos.
+            const area2Valida = usuario.cultivo2 && usuario.cultivo2.toString().trim() !== '' && usuario.area2 > 0;
+            const areaUsuario = (usuario.area1 || 0) + (area2Valida ? usuario.area2 : 0);
             if (esUsuarioApto(usuario, deudaMax)) {
                 aptos++;
-                areaAptos += usuario.area1;
+                areaAptos += areaUsuario;
             } else {
                 noAptos++;
-                areaNoAptos += usuario.area1;
+                areaNoAptos += areaUsuario;
                 deudaToma += usuario.deudaTotal;
             }
         });
