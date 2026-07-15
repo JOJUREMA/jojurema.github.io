@@ -12584,7 +12584,14 @@ function mostrarAnexoG3(modoManual) {
                     const mapa = caudalPorCultivoPorDiaOffset[offset];
                     if (!mapa) return true; // sin desglose por cultivo: se conserva el día tal cual
                     const val = mapa[nombreCultivo];
-                    return Number.isFinite(val) && val > 0;
+                    // El caudal por sí solo no basta: un cultivo puede tener un caudal
+                    // editado en la celda pero 0 horas ese día (no riega realmente). Si
+                    // se contara ese día como "activo", el motor de turnos podía saltar
+                    // ahí primero (en vez del día donde el cultivo sí tiene horas),
+                    // adelantando su inicio incorrectamente.
+                    const mapaHoras = horasPorCultivoPorDiaOffset[offset];
+                    const horas = mapaHoras ? mapaHoras[nombreCultivo] : undefined;
+                    return Number.isFinite(val) && val > 0 && Number.isFinite(horas) && horas > 0;
                 });
                 // Si por alguna razón ningún día quedó con caudal > 0 para este cultivo, no se
                 // restringe (se usan todos los días activos de la toma) para no dejar al cultivo
