@@ -10872,7 +10872,11 @@ function generarDatosAnexoG2() {
             const seleccionados = (typeof obtenerUsuariosG3Seleccionados === 'function')
                 ? (obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [])
                 : [];
-            numUsuariosAptos += seleccionados.length;
+            // window.usuariosG3[toma|cultivo] también guarda los no aptos agregados
+            // manualmente (programadoNoApto:true) — se excluyen aquí porque ya se cuentan
+            // aparte en numUsuariosNoAptos; si no, quedaban contados dos veces (una como
+            // apto y otra como no apto), igual que pasaba en el Anexo G-3.
+            numUsuariosAptos += seleccionados.filter(u => !u.programadoNoApto && !u.esNoApto).length;
         });
 
         // ✅ CONTAR USUARIOS NO APTOS PROGRAMADOS DE ESTA TOMA (VARIABLES GLOBALES ACTUALES)
@@ -12682,7 +12686,15 @@ function mostrarAnexoG3(modoManual) {
 
         // ── Usuarios aptos seleccionados por cultivo ──
         toma.cultivos.forEach(cultObj => {
-            const seleccionados = obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [];
+            // obtenerUsuariosG3Seleccionados() lee window.usuariosG3[toma|cultivo], que
+            // también recibe los usuarios NO APTOS agregados manualmente (vía
+            // agregarNoAptoProgramadoAUsuariosG3, guardados ahí con programadoNoApto:true
+            // para persistir su selección junto con los aptos). Sin este filtro, esos
+            // mismos usuarios se agregaban aquí OTRA VEZ (mal etiquetados como aptos) y
+            // luego una segunda vez más abajo como "no aptos" — apareciendo duplicados en
+            // el Anexo G-3. Los no aptos se agregan una sola vez, en el bloque de abajo.
+            const seleccionados = (obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [])
+                .filter(u => !u.programadoNoApto && !u.esNoApto);
             const modulo = cultObj.modulo || 0;
             const eficienciaDecimal = cultObj.eficiencia > 0 ? cultObj.eficiencia / 100 : 0;
 
