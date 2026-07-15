@@ -12757,6 +12757,13 @@ function mostrarAnexoG3(modoManual) {
             nombreComision: nombreComision,
             cultivosProgramados: (toma.cultivos || []).map(c => c.cultivo),
             usuarios: usuariosFinales,
+            // Horas totales YA confirmadas en "HORAS DE RIEGO POR DÍA" (turno.horasTotales):
+            // es el tiempo real que el canal opera en la semana (máx. 168h), sin importar
+            // cuántos cultivos comparten el canal. Sumar el "Tiempo de Uso del Agua" de cada
+            // usuario de TODOS los cultivos sobrecuenta cuando dos o más cultivos riegan
+            // simultáneo (cada uno usa su propia porción de caudal al mismo tiempo, no en
+            // secuencia) — por eso el TOTAL del G-3 debe mostrar este valor, no esa suma.
+            horasTotalesConfirmadas: (turno && Number.isFinite(turno.horasTotales)) ? turno.horasTotales : null,
         });
     });
 
@@ -12869,7 +12876,14 @@ function renderizarTomaG3(tomaIdx) {
 
     const totalArea = toma.usuarios.reduce((s,u) => s + u.area, 0);
     const totalVolC = toma.usuarios.reduce((s,u) => s + u.volCorregido, 0);
-    const totalTiempoInicial = toma.usuarios.reduce((s,u) => s + (parseFloat(u.tiempo) || 0), 0);
+    // El canal solo opera 168h/semana como máximo, sin importar cuántos cultivos la
+    // comparten (cada uno usa su propia porción de caudal al mismo tiempo, no en
+    // secuencia) — se usa el total ya confirmado en "HORAS DE RIEGO POR DÍA" en vez de
+    // sumar el tiempo de cada usuario de todos los cultivos, que sobrecuenta cuando hay
+    // dos o más cultivos simultáneos.
+    const totalTiempoInicial = Number.isFinite(toma.horasTotalesConfirmadas)
+        ? toma.horasTotalesConfirmadas
+        : toma.usuarios.reduce((s,u) => s + (parseFloat(u.tiempo) || 0), 0);
 
     // Leyenda de cultivos (solo visualización)
     const cultivosBase = Array.isArray(toma.cultivosProgramados) && toma.cultivosProgramados.length > 0
@@ -14619,6 +14633,16 @@ function actualizarTotalTiempoG3Display(tomaIdx) {
 
     const toma = window._tomasG3Data && window._tomasG3Data[tomaIdx];
     if (!toma) return;
+
+    // Mientras no haya una redistribución manual del Total (edición manual del programador),
+    // se muestra el total ya confirmado en "HORAS DE RIEGO POR DÍA" (el canal solo opera
+    // 168h/semana como máximo, así haya dos o más cultivos simultáneos) en vez de sumar el
+    // tiempo de cada usuario de todos los cultivos, que sobrecuenta en ese caso. Si el
+    // programador ya redistribuyó manualmente el Total, se respeta lo que él fijó.
+    if (!window._g3EdicionManual && Number.isFinite(toma.horasTotalesConfirmadas)) {
+        inputTotal.value = toma.horasTotalesConfirmadas.toFixed(2);
+        return;
+    }
 
     let suma = 0;
     toma.usuarios.forEach((u, uIdx) => {
