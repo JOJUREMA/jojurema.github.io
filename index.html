@@ -14188,18 +14188,45 @@ function marcarTomaProgramadaG3(tomaIdx) {
     if (!window._g3Programadas) window._g3Programadas = {};
     window._g3Programadas[tomaIdx] = true;
     guardarProgramacionPorTomaEnStorage();
-    const tomasG3 = window._tomasG3Data;
-    // Buscar siguiente toma no programada
-    let siguiente = -1;
-    for (let i = tomaIdx + 1; i < tomasG3.length; i++) {
-        if (!window._g3Programadas[i]) { siguiente = i; break; }
+
+    const toma = window._tomasG3Data && window._tomasG3Data[tomaIdx];
+    const nombreToma = toma ? toma.nombreToma : '';
+
+    // En vez de saltar automáticamente a la siguiente toma sin programar, se le pregunta
+    // al programador qué hacer a continuación — la confirmación de una toma no debe
+    // arrastrarlo directo al Anexo G-3 de otra sin que él lo decida.
+    const otraToma = confirm(`✅ Toma "${nombreToma}" marcada como programada.\n\n¿Deseas programar otra toma?`);
+    if (otraToma) {
+        irAMenuTomas();
+        return;
     }
-    if (siguiente >= 0) {
-        renderizarTomaG3(siguiente);
-    } else {
-        alert('✅ Todas las tomas han sido programadas.');
-        renderizarTomaG3(tomaIdx);
+
+    const irG2 = confirm('¿Deseas ir al Anexo G-2?');
+    if (irG2) {
+        mostrarAnexoG2();
+        return;
     }
+
+    mostrarPantallaBienvenida();
+}
+
+// Regresa a la pantalla de bienvenida inicial (sin borrar el Excel cargado ni las tomas
+// ya programadas — a diferencia de "Limpiar Datos", esto es solo una salida visual).
+function mostrarPantallaBienvenida() {
+    contentArea.innerHTML = `
+        <div class="welcome-screen">
+            <div class="welcome-icon">💧</div>
+            <h2>Bienvenido al Sistema de Gestión de Riego</h2>
+            <p>Carga tu archivo Excel TOMAS.xlsx para comenzar a generar reportes<br>
+            de usuarios con derecho de uso de agua para riego.</p>
+            <div class="alert alert-info" style="text-align: left; max-width: 600px; margin: 30px auto;">
+                <strong>📌 Instrucciones:</strong><br>
+                1. Arrastra o selecciona tu archivo TOMAS.xlsx<br>
+                2. Elige la toma que deseas analizar<br>
+                3. Configura el tipo de reporte y deuda mínima<br>
+                4. Haz clic en "Generar Reporte"
+            </div>
+        </div>`;
 }
 
 function irAMenuTomas() {
