@@ -5116,7 +5116,72 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
             });
         }
 
+        // Convierte una <table> del DOM a filas planas (array de arrays), igual que ya
+        // hacía el export de un solo reporte (vía XLSX.utils.table_to_sheet + decode_range).
+        function _tablaAFilas(table) {
+            const data = XLSX.utils.table_to_sheet(table);
+            const filas = [];
+            if (!data['!ref']) return filas;
+            const range = XLSX.utils.decode_range(data['!ref']);
+            for (let R = range.s.r; R <= range.e.r; ++R) {
+                const row = [];
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cell = data[XLSX.utils.encode_cell({ c: C, r: R })];
+                    row.push(cell ? cell.v : '');
+                }
+                filas.push(row);
+            }
+            return filas;
+        }
+
         document.getElementById('btnExportExcel').addEventListener('click', () => {
+            const printContainer = document.getElementById('printContainer');
+
+            // Reporte Consolidado (📑): son 3 hojas distintas en pantalla/impresión — Usuarios
+            // con derecho, Usuarios sin derecho y Resumen por toma. Antes el Excel solo tomaba
+            // la PRIMERA tabla del documento (document.querySelector solo agarra una), dejando
+            // fuera las otras dos. Ahora se exporta cada hoja (.hoja-print) como una pestaña
+            // separada del mismo libro, con todas sus tablas (una hoja puede tener más de una
+            // tabla si hay muchos cultivos y se dividen en grupos).
+            if (printContainer) {
+                const hojas = Array.from(printContainer.querySelectorAll('.hoja-print'));
+                if (hojas.length === 0) {
+                    alert('No hay reporte para exportar');
+                    return;
+                }
+                const wb = XLSX.utils.book_new();
+                hojas.forEach((hoja, idx) => {
+                    const tablas = Array.from(hoja.querySelectorAll('.report-table'));
+                    if (tablas.length === 0) return;
+
+                    const parrafoTitulo = Array.from(hoja.querySelectorAll('.encabezado-hoja p'))
+                        .find(p => p.textContent.includes('HOJA'));
+                    const tituloHoja = (parrafoTitulo?.textContent || `HOJA ${idx + 1}`)
+                        .replace(/📋/g, '').trim();
+
+                    const ws_data = [];
+                    ws_data.push(['COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA']);
+                    ws_data.push(['CUSSHMI']);
+                    ws_data.push(['']);
+                    ws_data.push(['ÁREA ENCARGADA: Unidad de Operación y Tarifas']);
+                    ws_data.push(['']);
+                    ws_data.push(['REPORTE: ' + tituloHoja]);
+                    ws_data.push(['Fecha de generación: ' + new Date().toLocaleString('es-PE')]);
+                    ws_data.push(['']);
+
+                    tablas.forEach((tabla, tIdx) => {
+                        if (tIdx > 0) ws_data.push(['']);
+                        _tablaAFilas(tabla).forEach(fila => ws_data.push(fila));
+                    });
+
+                    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                    const nombreHoja = `Hoja ${idx + 1}`.slice(0, 31);
+                    XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
+                });
+                XLSX.writeFile(wb, `Reporte_Consolidado_${new Date().toISOString().split('T')[0]}.xlsx`);
+                return;
+            }
+
             const table = document.querySelector('.report-table');
             if (!table) {
                 alert('No hay reporte para exportar');
@@ -5124,9 +5189,8 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
             }
 
             const wb = XLSX.utils.book_new();
-            const data = XLSX.utils.table_to_sheet(table);
             const ws_data = [];
-            
+
             ws_data.push(['COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA']);
             ws_data.push(['CUSSHMI']);
             ws_data.push(['']);
@@ -5135,19 +5199,8 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
             ws_data.push(['REPORTE: USUARIOS CON DERECHO DE USO DE AGUA PARA RIEGO']);
             ws_data.push(['Fecha de generación: ' + new Date().toLocaleString('es-PE')]);
             ws_data.push(['']);
-            
-            const range = XLSX.utils.decode_range(data['!ref']);
-            for (let R = range.s.r; R <= range.e.r; ++R) {
-                const row = [];
-                for (let C = range.s.c; C <= range.e.c; ++C) {
-                    const cell_address = {c:C, r:R};
-                    const cell_ref = XLSX.utils.encode_cell(cell_address);
-                    const cell = data[cell_ref];
-                    row.push(cell ? cell.v : '');
-                }
-                ws_data.push(row);
-            }
-            
+            _tablaAFilas(table).forEach(fila => ws_data.push(fila));
+
             const ws = XLSX.utils.aoa_to_sheet(ws_data);
             XLSX.utils.book_append_sheet(wb, ws, "Reporte");
             XLSX.writeFile(wb, `Reporte_Riego_${new Date().toISOString().split('T')[0]}.xlsx`);
