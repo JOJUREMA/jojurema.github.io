@@ -9794,7 +9794,7 @@ function cerrarModalProgramacionDias() {
         modal.remove();
     }
 }
-function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgramacion) {
+async function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgramacion) {
     const tomaActual = window.tomaActualSeleccionada;
     if (!tomaActual) {
         alert('No se pudo identificar la toma actual');
@@ -9894,7 +9894,28 @@ function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgramacion
 
     // ✅ Persistir de inmediato para no perder la programación al recargar o volver a entrar
     guardarProgramacionPorTomaEnStorage();
-    
+
+    // Sincronizar con Supabase la selección de usuarios de CADA cultivo (window.usuariosG3),
+    // incluidos los usuarios no aptos agregados manualmente vía "Programar Usuarios No
+    // Aptos". Antes esto solo se guardaba en Supabase al confirmar la selección desde el
+    // modal de "usuarios aptos" (confirmarSeleccionUsuariosG3) — si un cultivo se programó
+    // únicamente con no aptos, esa selección nunca llegaba al servidor, y al reabrir la
+    // toma (otra sesión, otro dispositivo) el Anexo G-3 aparecía sin usuarios aunque el
+    // área/volumen sí se hubiera guardado.
+    if (window.CusshmiDatos) {
+        const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
+        await Promise.all(cultivosGuardados.map(c => {
+            const keyExact = tomaActual + '|' + c.cultivo;
+            const seleccionados = window.usuariosG3?.[keyExact] || [];
+            if (seleccionados.length === 0) return Promise.resolve();
+            const completo = window._usuariosG3Completo?.[keyExact] || null;
+            return CusshmiDatos.guardarUsuariosG3Seleccionados(
+                comisionKey, tomaActual, semanaPDA?.fechaInicio, semanaPDA?.fechaFin, c.cultivo,
+                { seleccionados, completo }
+            );
+        }));
+    }
+
     // Limpiar Anexo G2 para forzar regeneración
     datosAnexoG2 = [];
     
@@ -10867,45 +10888,50 @@ function generarDatosAnexoG2() {
         // esta semana (los que efectivamente aparecen en el Anexo G-3), no el padrón completo de
         // usuarios registrados en la toma. Se cuenta desde la MISMA fuente que usa el Anexo G-3
         // para generar sus filas: la selección guardada por cultivo (window.usuariosG3).
+        // window.usuariosG3[toma|cultivo] es la fuente que se sincroniza con Supabase (ver
+        // agregarNoAptoProgramadoAUsuariosG3 y guardarEnConsolidadoDemandasIndividualConProgramacion),
+        // e incluye tanto aptos seleccionados como no aptos agregados manualmente
+        // (programadoNoApto:true) — se separan por esa etiqueta, igual que en el Anexo G-3.
         let numUsuariosAptos = 0;
+        let numUsuariosNoAptos = 0;
+        const noAptosYaContados = []; // {cultivo, nombre, area} — para no duplicar contra usuariosProgramados
         (toma.cultivos || []).forEach(cultObj => {
             const seleccionados = (typeof obtenerUsuariosG3Seleccionados === 'function')
                 ? (obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [])
                 : [];
-            // window.usuariosG3[toma|cultivo] también guarda los no aptos agregados
-            // manualmente (programadoNoApto:true) — se excluyen aquí porque ya se cuentan
-            // aparte en numUsuariosNoAptos; si no, quedaban contados dos veces (una como
-            // apto y otra como no apto), igual que pasaba en el Anexo G-3.
-            numUsuariosAptos += seleccionados.filter(u => !u.programadoNoApto && !u.esNoApto).length;
+            seleccionados.forEach(u => {
+                if (u.programadoNoApto || u.esNoApto) {
+                    numUsuariosNoAptos++;
+                    noAptosYaContados.push({
+                        cultivo: (cultObj.cultivo || '').toUpperCase(),
+                        nombre: (u.nombre || '-').toString(),
+                        area: parseFloat(u.area) || 0,
+                    });
+                } else {
+                    numUsuariosAptos++;
+                }
+            });
         });
 
-        // ✅ CONTAR USUARIOS NO APTOS PROGRAMADOS DE ESTA TOMA (VARIABLES GLOBALES ACTUALES)
-        let numUsuariosNoAptos = 0;
-        
-        // Verificar en window.usuariosProgramados (contexto toma individual)
-        const programadosWindow = window.usuariosProgramados || [];
-        const deEstaTomaWindow = programadosWindow.filter(u => {
-            const tomaUsuario = (u._tomaOrigen || '').toString().trim().toUpperCase();
-            const tomaActual = nombreToma.toString().trim().toUpperCase();
-            return tomaUsuario === tomaActual || 
-                   tomaUsuario.includes(tomaActual) || 
-                   tomaActual.includes(tomaUsuario);
-        }).length;
-        numUsuariosNoAptos += deEstaTomaWindow;
-        
-        // Verificar en usuariosProgramados (variable global)
+        // usuariosProgramados es memoria de sesión (no se sincroniza con Supabase) — se
+        // suman aquí solo los que no hayan quedado ya contados arriba, por si algún no
+        // apto se agregó en esta sesión pero aún no se refleja en window.usuariosG3.
         const programadosGlobal = usuariosProgramados || [];
-        const deEstaTomaGlobal = programadosGlobal.filter(u => {
+        programadosGlobal.forEach(u => {
             const tomaUsuario = (u._tomaOrigen || u.toma || '').toString().trim().toUpperCase();
             const tomaActual = nombreToma.toString().trim().toUpperCase();
-            return tomaUsuario === tomaActual || 
-                   tomaUsuario.includes(tomaActual) || 
-                   tomaActual.includes(tomaUsuario);
-        }).length;
-        
-        // Usar el máximo de ambos conteos (evitar duplicados)
-        numUsuariosNoAptos = Math.max(numUsuariosNoAptos, deEstaTomaGlobal);
-        
+            const perteneceATomasActual = tomaUsuario === tomaActual ||
+                tomaUsuario.includes(tomaActual) || tomaActual.includes(tomaUsuario);
+            if (!perteneceATomasActual) return;
+
+            const areaU = parseFloat(u.area1 || u.area || 0);
+            const cultivoU = (u.cultivo1 || u.cultivo || '').toUpperCase();
+            const yaContado = noAptosYaContados.some(nc =>
+                nc.cultivo === cultivoU && nc.nombre === (u.nombre || '-').toString() && Math.abs(nc.area - areaU) < 0.001
+            );
+            if (!yaContado) numUsuariosNoAptos++;
+        });
+
         console.log(`   Usuarios no aptos programados encontrados: ${numUsuariosNoAptos}`);
         
         // Total de usuarios beneficiados
@@ -12684,17 +12710,13 @@ function mostrarAnexoG3(modoManual) {
         const usuariosFinales = [];
         let nOrden = 1;
 
-        // ── Usuarios aptos seleccionados por cultivo ──
+        // ── Usuarios aptos seleccionados por cultivo (incluye los no aptos agregados
+        // manualmente, que también quedan guardados en window.usuariosG3[toma|cultivo]
+        // vía agregarNoAptoProgramadoAUsuariosG3, con programadoNoApto:true — esta es la
+        // fuente que SÍ se sincroniza con Supabase, así que se respeta su propia etiqueta
+        // en vez de asumir que todo lo que viene de aquí es apto) ──
         toma.cultivos.forEach(cultObj => {
-            // obtenerUsuariosG3Seleccionados() lee window.usuariosG3[toma|cultivo], que
-            // también recibe los usuarios NO APTOS agregados manualmente (vía
-            // agregarNoAptoProgramadoAUsuariosG3, guardados ahí con programadoNoApto:true
-            // para persistir su selección junto con los aptos). Sin este filtro, esos
-            // mismos usuarios se agregaban aquí OTRA VEZ (mal etiquetados como aptos) y
-            // luego una segunda vez más abajo como "no aptos" — apareciendo duplicados en
-            // el Anexo G-3. Los no aptos se agregan una sola vez, en el bloque de abajo.
-            const seleccionados = (obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [])
-                .filter(u => !u.programadoNoApto && !u.esNoApto);
+            const seleccionados = obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [];
             const modulo = cultObj.modulo || 0;
             const eficienciaDecimal = cultObj.eficiencia > 0 ? cultObj.eficiencia / 100 : 0;
 
@@ -12722,12 +12744,16 @@ function mostrarAnexoG3(modoManual) {
                     inicioHora: '07:00',
                     finDia: tiempos.finDia,
                     finHora: '07:00',
-                    esNoApto: false,
+                    esNoApto: !!(u.esNoApto || u.programadoNoApto),
                 });
             });
         });
 
-        // ── Usuarios no aptos programados manualmente ──
+        // ── Usuarios no aptos programados manualmente en ESTA sesión (usuariosProgramados
+        // es solo memoria de sesión, no se sincroniza con Supabase). Se agregan aquí solo
+        // si no quedaron ya incluidos arriba vía window.usuariosG3 — evita duplicarlos
+        // cuando ambas fuentes coinciden (caso normal, misma sesión) sin dejar de mostrar
+        // los que sí se guardaron pero aún no se reflejan en window.usuariosG3 (caso raro). ──
         const noAptosToma = usuariosProgramados.filter(u => {
             const to = (u._tomaOrigen || '').toUpperCase();
             const tn = toma.toma.toUpperCase();
@@ -12737,6 +12763,15 @@ function mostrarAnexoG3(modoManual) {
         noAptosToma.forEach(u => {
             const areaU = parseFloat(u.area1 || u.area || 0);
             const cultivoU = (u.cultivo1 || u.cultivo || '').toUpperCase();
+
+            const yaIncluido = usuariosFinales.some(uf =>
+                uf.esNoApto &&
+                (uf.cultivo || '').toUpperCase() === cultivoU &&
+                (uf.nombre || '-').toString() === (u.nombre || '-').toString() &&
+                Math.abs((uf.area || 0) - areaU) < 0.001
+            );
+            if (yaIncluido) return;
+
             const cultObj = toma.cultivos.find(c => c.cultivo.toUpperCase() === cultivoU);
             const modulo = cultObj ? (cultObj.modulo || 0) : 0;
             const eficienciaDecimal = cultObj && cultObj.eficiencia > 0 ? cultObj.eficiencia / 100 : 0;
