@@ -13119,7 +13119,7 @@ function renderizarTomaG3(tomaIdx) {
         toma.usuarios.forEach((u, uIdx) => {
             const bgNoApto = u.esNoApto ? 'background:#fff8f0;' : '';
             const badgeNoApto = u.esNoApto
-                ? '<span style="font-size:10px;background:#fef3e2;color:#92600a;padding:1px 5px;border-radius:2px;margin-left:4px;">No Apto</span>'
+                ? '<span class="badge-no-apto-g3" style="font-size:10px;background:#fef3e2;color:#92600a;padding:1px 5px;border-radius:2px;margin-left:4px;">No Apto</span>'
                 : '';
             const cultivoAttr = (u.cultivo || '').toString().replace(/"/g, '&quot;');
             const isFirst = uIdx === 0;
@@ -15286,6 +15286,10 @@ function imprimirG3(modoFormato) {
     // Los avisos de descuadre de caudal/horas son ayudas para el programador mientras
     // trabaja en pantalla — no forman parte del formato oficial del Anexo G-3 impreso.
     clon.querySelectorAll('#avisoCaudalCultivoG3, #avisoHorasDescuadreG3').forEach(el => el.remove());
+
+    // La etiqueta "No Apto" junto al nombre es una ayuda visual en pantalla — el formato
+    // oficial impreso solo debe mostrar el nombre del usuario, sin marcas de clasificación.
+    clon.querySelectorAll('.badge-no-apto-g3').forEach(el => el.remove());
 
     // ⚠️ Quitar FÍSICAMENTE la columna "Simultáneo" (no solo con CSS display:none).
     // Ocultarla solo con CSS dejaba una celda "fantasma" en el conteo de columnas de la tabla,
