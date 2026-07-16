@@ -12293,20 +12293,22 @@ async function actualizarUsuariosG3DesdeSupabase(tomaNombre, cultivo) {
 // misma lógica que antes vivía inline en abrirSelectorUsuariosCultivo la primera vez que
 // se abría esa ventana (sin snapshot guardado todavía). Extraída para reutilizarla también
 // desde reconciliarNoAptosEnSnapshot().
-function clasificarUsuariosCultivoEnVivo(toma, cultivo) {
-    const usuariosToma = tomasData[toma];
-    if (!usuariosToma || usuariosToma.length === 0) return [];
-
-    const cultivoUpper = cultivo.toUpperCase();
+// Lee usuariosProgramados/window.usuariosProgramados (la lista de sesión que llena
+// "Programar Usuarios No Aptos", ver programarUsuario/programarUsuarioTomaEspecifica/
+// programarUsuarioGrupo/programarUsuarioTomaSimple) y devuelve los que corresponden a esta
+// toma+cultivo, ya con la forma de entrada de usuariosCultivo/snapshot. Es la fuente
+// autoritativa de "qué no aptos están vigentes ahora mismo": a diferencia de
+// window.usuariosG3[toma|cultivo], esta lista NUNCA se sobreescribe por
+// actualizarUsuariosG3DesdeSupabase() (que sí puede pisar window.usuariosG3 con lo último
+// guardado en Supabase, anterior a un no apto agregado en esta sesión y aún no sincronizado).
+function obtenerNoAptosProgramadosParaCultivo(toma, cultivo) {
+    const cultivoUpper = (cultivo || '').toString().trim().toUpperCase();
     const tomaUpper = (toma || '').toString().trim().toUpperCase();
-    const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
-    const usuariosCultivo = [];
-
-    // Detectar programados "No Aptos" para esta toma/cultivo (para permitir selección + resaltar)
     const programadosWindow = window.usuariosProgramados || [];
     const programadosGlobal = (typeof usuariosProgramados !== 'undefined' && Array.isArray(usuariosProgramados)) ? usuariosProgramados : [];
     const programados = [...programadosWindow, ...programadosGlobal];
-    const setProgramados = new Set();
+    const vistos = new Set();
+    const resultado = [];
     programados.forEach(p => {
         const t = (p._tomaOrigen || p.toma || '').toString().trim().toUpperCase();
         if (!t) return;
@@ -12317,8 +12319,31 @@ function clasificarUsuariosCultivoEnVivo(toma, cultivo) {
         if (c !== cultivoUpper) return;
         const nombre = (p.nombre || '-').toString();
         const uc = (p.unidadCatastral || '-').toString();
-        setProgramados.add((nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase());
+        const k = (nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase();
+        if (vistos.has(k)) return;
+        vistos.add(k);
+        resultado.push({
+            nombre, area: a, unidadCatastral: uc,
+            deudaTotal: parseFloat(p.deudaTotal) || 0,
+            esNoApto: true, programadoNoApto: true, deudaPermitida: false,
+        });
     });
+    return resultado;
+}
+
+function clasificarUsuariosCultivoEnVivo(toma, cultivo) {
+    const usuariosToma = tomasData[toma];
+    if (!usuariosToma || usuariosToma.length === 0) return [];
+
+    const cultivoUpper = cultivo.toUpperCase();
+    const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
+    const usuariosCultivo = [];
+
+    const setProgramados = new Set(
+        obtenerNoAptosProgramadosParaCultivo(toma, cultivo).map(p =>
+            (p.nombre + '|' + p.unidadCatastral + '|' + p.area.toFixed(4)).toUpperCase()
+        )
+    );
 
     usuariosToma.forEach(u => {
         const deuda = parseFloat(u.deudaTotal) || 0;
@@ -12364,13 +12389,14 @@ function reconciliarNoAptosEnSnapshot(toma, cultivo) {
         (u.nombre || '-').toString() + '|' + (u.unidadCatastral || '-').toString() + '|' + (parseFloat(u.area) || 0).toFixed(4)
     ).toUpperCase();
 
-    // Usa la búsqueda robusta ya existente (exacta, normalizada, y de respaldo por clave
-    // normalizada entre todas las guardadas) en vez de indexar window.usuariosG3[keyExact]
-    // directo — un cultivo con distinta mayúscula/espacio entre cuando se programó el no
-    // apto y cuando se reabre Área Semana no encontraba la entrada y el "programado" se
-    // perdía silenciosamente, aunque siguiera visible en el panel de No Aptos.
-    const seleccionActual = obtenerUsuariosG3Seleccionados(toma, cultivo) || [];
-    const noAptosVigentes = seleccionActual.filter(u => u.programadoNoApto);
+    // Los no aptos vigentes se leen de usuariosProgramados (ver obtenerNoAptosProgramadosParaCultivo),
+    // NO de window.usuariosG3: justo antes de llamar a esta función, abrirSelectorUsuariosCultivo
+    // ya hizo await actualizarUsuariosG3DesdeSupabase(), que SOBREESCRIBE window.usuariosG3[toma|cultivo]
+    // con lo último guardado en Supabase — si el no apto se programó en esta sesión pero
+    // todavía no se sincronizó (eso solo pasa al confirmar Área Semana o al Guardar), esa
+    // sobreescritura lo borraba de window.usuariosG3 justo antes de reconciliar.
+    // usuariosProgramados es memoria de sesión pura, nunca se toca por esa sincronización.
+    const noAptosVigentes = obtenerNoAptosProgramadosParaCultivo(toma, cultivo);
 
     let completo = (window._usuariosG3Completo && (window._usuariosG3Completo[keyExact] || window._usuariosG3Completo[keyNorm]));
     if (!Array.isArray(completo) || completo.length === 0) {
