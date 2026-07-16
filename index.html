@@ -1195,6 +1195,9 @@
                 <button class="btn btn-primary" id="btnAvanceSiembra" disabled>
                     📅 Programar PDA
                 </button>
+                <button class="btn btn-primary" id="btnAnexoG2Directo" disabled>
+                    📄 Anexo G2
+                </button>
 
                 <button class="btn btn-secondary" id="btnLimpiar">
                     🔄 Limpiar Datos
@@ -2274,6 +2277,7 @@ const COMISIONES = {
                 btnGenerar.disabled = false;
                 btnConsolidado.disabled = false;
                 document.getElementById('btnAvanceSiembra').disabled = false;
+            document.getElementById('btnAnexoG2Directo').disabled = false;
                 return;
             }
 
@@ -2351,6 +2355,7 @@ const COMISIONES = {
             btnGenerar.disabled = false;
             btnConsolidado.disabled = false;
             document.getElementById('btnAvanceSiembra').disabled = false;
+            document.getElementById('btnAnexoG2Directo').disabled = false;
         }
 
         // Procesar datos de una toma específica
@@ -3677,6 +3682,14 @@ function expandirUsuarioNoAptoPorCultivos(usuarioBase) {
     // Ir directo a seleccionar la semana PDA
     tomaPendiente = null; // Se determinará después
     abrirModalSemanaPDA();
+});
+
+document.getElementById('btnAnexoG2Directo').addEventListener('click', () => {
+    if (!consolidadoDemandas || consolidadoDemandas.length === 0) {
+        alert('No existe información programada para generar el Anexo G2 de la semana seleccionada.');
+        return;
+    }
+    mostrarAnexoG2();
 });
 
         function generarReporteIndividual(nombreToma) {
@@ -11155,7 +11168,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         html += `
             <tr style="background-color: #ffffff;">
                 <td style="border: 1px solid #000000; padding: 5px; font-weight: 600; color:#000000;">${fila.canalPrincipal}</td>
-                <td style="border: 1px solid #000000; padding: 5px; color:#000000;">${fila.nombreToma}</td>
+                <td style="border: 1px solid #000000; padding: 5px; color:#000000;"><a href="javascript:void(0)" onclick="abrirG3DesdeTomaG2('${fila.nombreToma.toString().replace(/'/g,"\\'")}')" style="color:#0070c0;text-decoration:underline;cursor:pointer;" title="Ver Anexo G-3 de esta toma">${fila.nombreToma}</a></td>
                 <td style="border: 1px solid #000000; padding: 5px; color:#000000;">${fila.nombreCanalDistribucion || ''}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center; color:#000000;" title="Aptos: ${fila.numUsuariosAptos}, No Aptos Programados: ${fila.numUsuariosNoAptos}">
     ${fila.numUsuarios > 0 ? fila.numUsuarios : '-'}
@@ -11227,6 +11240,14 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
 }
 
 async function mostrarAnexoG2() {
+    // ✅ Verificar ANTES de tocar contentArea — si no, el mensaje de "Cargando..."
+    // de más abajo quedaba trabado para siempre (generarDatosAnexoG2() solo mostraba
+    // un alert y retornaba null, sin restaurar la pantalla).
+    if (consolidadoDemandas.length === 0) {
+        alert('No existe información programada para generar el Anexo G2 de la semana seleccionada.');
+        return;
+    }
+
     if (window.CusshmiAuditoria) {
         CusshmiAuditoria.registrarAuditoria('Generación de Anexo G2', 'Anexo G2', semanaPDA?.fechaInicio || null);
     }
@@ -11288,9 +11309,9 @@ async function mostrarAnexoG2() {
                 style="background:#dc3545; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; margin-right:8px; font-size:12px;">
                 🖨️ Imprimir
             </button>
-            <button onclick="volverAConsolidado()" 
+            <button onclick="volverAG3DesdeG2()"
                 style="background:#6c757d; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px;">
-                ⬅️ Volver a Consolidado
+                ⬅️ Volver al Anexo G3
             </button>
         </div>
     `;
@@ -11318,9 +11339,6 @@ async function mostrarAnexoG2() {
             Área Total: ${totalArea.toFixed(2)} ha
         </div>
     `;
-    
-    // Guardar referencia al consolidado para poder volver
-    window.contenidoConsolidado = contentArea.innerHTML;
     
     contentArea.innerHTML = html;
     exportButtons.classList.remove('show');
@@ -11370,13 +11388,19 @@ function manejarCambioNotaAnexoG2(valor) {
     CusshmiDatos.guardarNotaAnexoG2Debounced(comisionKey, semanaInicio, semanaPDA?.fechaFin, valor, pintarEstado);
 }
 
-function volverAConsolidado() {
-    if (window.contenidoConsolidado) {
-        contentArea.innerHTML = window.contenidoConsolidado;
-        exportButtons.classList.remove('show');
-    } else {
-        mostrarConsolidadoDemandas();
-    }
+// Vuelve directo al Anexo G-3 de la toma desde la que se entró al G-2, conservando
+// semana/consolidado ya cargados (mostrarAnexoG3 recalcula en memoria, sin red).
+// window._tomaParaAbrirG3 ya lo mantiene actualizado el resto del flujo (ver
+// guardarEnConsolidadoDemandasIndividualConProgramacion y abrirG3DesdeTomaG2).
+function volverAG3DesdeG2() {
+    mostrarAnexoG3(false);
+}
+
+// Hipervínculo (solo vista HTML del G2, nunca en impresión/Excel) del nombre de una
+// toma hacia su propio Anexo G-3, misma semana ya cargada en consolidadoDemandas.
+function abrirG3DesdeTomaG2(nombreToma) {
+    window._tomaParaAbrirG3 = nombreToma;
+    mostrarAnexoG3(false);
 }
 // Construye una hoja del Anexo G2 con formato oficial completo (fusión de celdas, bordes, relleno gris, alineación)
 function construirHojaG2ExcelJS(wb, datosSeccion, nombreHoja, tituloSeccion, mesNombre, semanaTexto, notaTexto) {
