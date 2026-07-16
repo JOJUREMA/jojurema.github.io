@@ -9922,6 +9922,12 @@ async function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgra
         const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
         await Promise.all(cultivosGuardados.map(c => {
             const keyExact = tomaActual + '|' + c.cultivo;
+            // Reconciliar antes de leer: si se programaron/quitaron no aptos sin haber
+            // vuelto a abrir la ventana Área Semana, esto asegura que lo que se guarda ya
+            // los incluye (ver reconciliarNoAptosEnSnapshot).
+            if (typeof reconciliarNoAptosEnSnapshot === 'function') {
+                reconciliarNoAptosEnSnapshot(tomaActual, c.cultivo);
+            }
             const seleccionados = window.usuariosG3?.[keyExact] || [];
             if (seleccionados.length === 0) return Promise.resolve();
             const completo = window._usuariosG3Completo?.[keyExact] || null;
@@ -12282,6 +12288,116 @@ async function actualizarUsuariosG3DesdeSupabase(tomaNombre, cultivo) {
     }
 }
 
+// Clasifica en vivo (aptos/no aptos según deuda vs. umbral, marcando programadoNoApto
+// cruzando contra usuariosProgramados) los usuarios de un cultivo, leyendo tomasData —
+// misma lógica que antes vivía inline en abrirSelectorUsuariosCultivo la primera vez que
+// se abría esa ventana (sin snapshot guardado todavía). Extraída para reutilizarla también
+// desde reconciliarNoAptosEnSnapshot().
+function clasificarUsuariosCultivoEnVivo(toma, cultivo) {
+    const usuariosToma = tomasData[toma];
+    if (!usuariosToma || usuariosToma.length === 0) return [];
+
+    const cultivoUpper = cultivo.toUpperCase();
+    const tomaUpper = (toma || '').toString().trim().toUpperCase();
+    const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
+    const usuariosCultivo = [];
+
+    // Detectar programados "No Aptos" para esta toma/cultivo (para permitir selección + resaltar)
+    const programadosWindow = window.usuariosProgramados || [];
+    const programadosGlobal = (typeof usuariosProgramados !== 'undefined' && Array.isArray(usuariosProgramados)) ? usuariosProgramados : [];
+    const programados = [...programadosWindow, ...programadosGlobal];
+    const setProgramados = new Set();
+    programados.forEach(p => {
+        const t = (p._tomaOrigen || p.toma || '').toString().trim().toUpperCase();
+        if (!t) return;
+        if (!(t === tomaUpper || t.includes(tomaUpper) || tomaUpper.includes(t))) return;
+        const c = (p._cultivoProgramado || p.cultivoProgramado || p.cultivo1 || '').toString().trim().toUpperCase();
+        const a = parseFloat(p._areaProgramada ?? p.areaProgramada ?? p.area1) || 0;
+        if (!c || a <= 0) return;
+        if (c !== cultivoUpper) return;
+        const nombre = (p.nombre || '-').toString();
+        const uc = (p.unidadCatastral || '-').toString();
+        setProgramados.add((nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase());
+    });
+
+    usuariosToma.forEach(u => {
+        const deuda = parseFloat(u.deudaTotal) || 0;
+        const esNoApto = deuda > deudaMax;
+        const deudaPermitida = !esNoApto && deuda > 0;
+        const nombreBase = (u.nombre || '-').toString();
+        const ucBase = (u.unidadCatastral || '-').toString();
+
+        for (let n = 1; n <= 10; n++) {
+            const c = (u[`cultivo${n}`] || '').toString().trim().toUpperCase();
+            const a = parseFloat(u[`area${n}`]) || 0;
+            if (c !== cultivoUpper || a <= 0) continue;
+
+            const k = (nombreBase + '|' + ucBase + '|' + a.toFixed(4)).toUpperCase();
+            const programadoNoApto = esNoApto && setProgramados.has(k);
+
+            usuariosCultivo.push({
+                nombre: nombreBase,
+                area: a,
+                unidadCatastral: ucBase,
+                deudaTotal: deuda,
+                esNoApto,
+                programadoNoApto,
+                deudaPermitida,
+            });
+        }
+    });
+
+    return usuariosCultivo;
+}
+
+// Mantiene window._usuariosG3Completo[toma|cultivo] (snapshot congelado que usa la ventana
+// Área Semana para restaurar exactamente aptos seleccionados + aptos no seleccionados + no
+// aptos seleccionados) sincronizado con los no aptos agregados/quitados desde "Programar
+// Usuarios No Aptos" (window.usuariosG3[toma|cultivo], que SÍ se actualiza en vivo con cada
+// agregarNoAptoProgramadoAUsuariosG3/quitarNoAptoProgramadoDeUsuariosG3). Sin esto, el
+// snapshot quedaba desactualizado y al reabrir Área Semana el no apto desaparecía de la
+// lista, perdiendo su aporte al área al confirmar de nuevo.
+function reconciliarNoAptosEnSnapshot(toma, cultivo) {
+    const keyExact = toma + '|' + cultivo;
+    const keyNorm = claveUsuariosG3(toma, cultivo);
+    const claveUsuario = (u) => (
+        (u.nombre || '-').toString() + '|' + (u.unidadCatastral || '-').toString() + '|' + (parseFloat(u.area) || 0).toFixed(4)
+    ).toUpperCase();
+
+    const seleccionActual = (window.usuariosG3 && window.usuariosG3[keyExact]) || [];
+    const noAptosVigentes = seleccionActual.filter(u => u.programadoNoApto);
+
+    let completo = window._usuariosG3Completo && window._usuariosG3Completo[keyExact];
+    if (!Array.isArray(completo) || completo.length === 0) {
+        // Nunca se confirmó Área Semana para este cultivo: la base es la clasificación en
+        // vivo completa (aptos + no aptos), con los aptos marcados seleccionados por
+        // defecto — mismo criterio que ya usaba abrirSelectorUsuariosCultivo la primera vez.
+        completo = clasificarUsuariosCultivoEnVivo(toma, cultivo).map(u => ({
+            ...u,
+            seleccionado: u.programadoNoApto ? true : !u.esNoApto,
+        }));
+    }
+
+    // Quitar del snapshot los no aptos que ya no están vigentes (se "deshicieron" desde la
+    // tabla de programados).
+    completo = completo.filter(u => !u.programadoNoApto || noAptosVigentes.some(v => claveUsuario(v) === claveUsuario(u)));
+
+    // Agregar/actualizar en el snapshot los no aptos vigentes.
+    noAptosVigentes.forEach(v => {
+        const idx = completo.findIndex(u => claveUsuario(u) === claveUsuario(v));
+        const entrada = { ...v, esNoApto: true, programadoNoApto: true, seleccionado: true };
+        if (idx >= 0) completo[idx] = entrada;
+        else completo.push(entrada);
+    });
+
+    if (completo.length > 0) {
+        window._usuariosG3Completo = window._usuariosG3Completo || {};
+        window._usuariosG3Completo[keyExact] = completo;
+        window._usuariosG3Completo[keyNorm] = completo;
+    }
+    return completo;
+}
+
 async function abrirSelectorUsuariosCultivo(input) {
     const fila = input.closest('tr');
     if (!fila) { console.error('G3: No se encontró la fila TR'); return; }
@@ -12316,70 +12432,13 @@ async function abrirSelectorUsuariosCultivo(input) {
     await actualizarUsuariosG3DesdeSupabase(toma, cultivo);
     const key = toma + '|' + cultivo;
 
-    const cultivoUpper = cultivo.toUpperCase();
-    const tomaUpper = (toma || '').toString().trim().toUpperCase();
+    // Reconcilia el snapshot congelado (aptos seleccionados/no seleccionados + no aptos
+    // seleccionados) con los no aptos agregados/quitados desde "Programar Usuarios No
+    // Aptos" — así la ventana siempre muestra la unión exacta de las tres listas, sin
+    // perder ni duplicar nada al reabrir (ver reconciliarNoAptosEnSnapshot).
+    const usuariosCultivo = reconciliarNoAptosEnSnapshot(toma, cultivo);
 
-    let usuariosCultivo;
-    const completoGuardado = window._usuariosG3Completo && window._usuariosG3Completo[key];
-    const usaSnapshotCongelado = Array.isArray(completoGuardado) && completoGuardado.length > 0;
-
-    if (usaSnapshotCongelado) {
-        // Ya existe una clasificación guardada para esta toma+cultivo+semana: se usa tal cual
-        // quedó (aptos seleccionados, aptos no seleccionados, no aptos seleccionados), sin
-        // volver a calcular esNoApto contra el umbral de deuda que esté activo ahora mismo —
-        // así el reabrir muestra exactamente lo que se guardó, aunque el umbral haya cambiado.
-        usuariosCultivo = completoGuardado;
-    } else {
-        const deudaMax = parseFloat(document.getElementById('deudaMinima')?.value) || 0;
-        usuariosCultivo = [];
-
-        // Detectar programados "No Aptos" para esta toma/cultivo (para permitir selección + resaltar)
-        const programadosWindow = window.usuariosProgramados || [];
-        const programadosGlobal = (typeof usuariosProgramados !== 'undefined' && Array.isArray(usuariosProgramados)) ? usuariosProgramados : [];
-        const programados = [...programadosWindow, ...programadosGlobal];
-        const setProgramados = new Set();
-        programados.forEach(p => {
-            const t = (p._tomaOrigen || p.toma || '').toString().trim().toUpperCase();
-            if (!t) return;
-            if (!(t === tomaUpper || t.includes(tomaUpper) || tomaUpper.includes(t))) return;
-            const c = (p._cultivoProgramado || p.cultivoProgramado || p.cultivo1 || '').toString().trim().toUpperCase();
-            const a = parseFloat(p._areaProgramada ?? p.areaProgramada ?? p.area1) || 0;
-            if (!c || a <= 0) return;
-            if (c !== cultivoUpper) return;
-            const nombre = (p.nombre || '-').toString();
-            const uc = (p.unidadCatastral || '-').toString();
-            setProgramados.add((nombre + '|' + uc + '|' + a.toFixed(4)).toUpperCase());
-        });
-
-        usuariosToma.forEach(u => {
-            const deuda = parseFloat(u.deudaTotal) || 0;
-            const esNoApto = deuda > deudaMax;
-            const deudaPermitida = !esNoApto && deuda > 0;
-            const nombreBase = (u.nombre || '-').toString();
-            const ucBase = (u.unidadCatastral || '-').toString();
-
-            for (let n = 1; n <= 10; n++) {
-                const c = (u[`cultivo${n}`] || '').toString().trim().toUpperCase();
-                const a = parseFloat(u[`area${n}`]) || 0;
-                if (c !== cultivoUpper || a <= 0) continue;
-
-                const k = (nombreBase + '|' + ucBase + '|' + a.toFixed(4)).toUpperCase();
-                const programadoNoApto = esNoApto && setProgramados.has(k);
-
-                usuariosCultivo.push({
-                    nombre: nombreBase,
-                    area: a,
-                    unidadCatastral: ucBase,
-                    deudaTotal: deuda,
-                    esNoApto,
-                    programadoNoApto,
-                    deudaPermitida,
-                });
-            }
-        });
-    }
-
-    console.log('G3: Usuarios encontrados para ' + cultivo + ':', usuariosCultivo.length, usaSnapshotCongelado ? '(desde snapshot guardado)' : '(clasificados en vivo)');
+    console.log('G3: Usuarios encontrados para ' + cultivo + ':', usuariosCultivo.length);
 
     if (usuariosCultivo.length === 0) {
         alert('No se encontraron usuarios registrados con el cultivo "' + cultivo + '" en la toma ' + toma + '.');
@@ -12458,6 +12517,11 @@ async function abrirSelectorUsuariosCultivo(input) {
                 </label>
                 <span style="font-size:11px;color:#718096;">No aptos solo se habilitan si fueron programados en "Programar Usuarios No Aptos"</span>
             </div>
+            <div style="padding:10px 20px 0;background:#f4f5f7;">
+                <input type="text" id="buscadorUsuariosAreaSemana" placeholder="🔎 Buscar por nombre o apellido..."
+                    oninput="filtrarUsuariosAreaSemana()"
+                    style="width:100%;padding:8px 10px;border:1px solid #d0d5dd;border-radius:4px;font-size:13px;box-sizing:border-box;">
+            </div>
             <div style="overflow-y:auto;flex:1;padding:0 20px;">
                 <table style="width:100%;border-collapse:collapse;margin:12px 0;">
                     <thead><tr style="background:#f4f5f7;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#4a5568;">
@@ -12526,6 +12590,17 @@ function cerrarSelectorUsuarios() {
     const w = document.getElementById('wrapperSelectorUsuarios');
     if (w) w.remove();
     window._usuariosCultivoTemp = null;
+}
+
+// Filtro en tiempo real por nombre/apellido dentro del selector de usuarios de Área
+// Semana — mismo patrón que filtrarNoAptosTomaSimple(). Solo cambia visibilidad de filas,
+// nunca el estado de los checkboxes.
+function filtrarUsuariosAreaSemana() {
+    const texto = (document.getElementById('buscadorUsuariosAreaSemana')?.value || '').toLowerCase();
+    document.querySelectorAll('#modalSelectorUsuarios tbody tr').forEach(fila => {
+        const nombre = (fila.children[1]?.innerText || '').toLowerCase();
+        fila.style.display = nombre.includes(texto) ? '' : 'none';
+    });
 }
 
 async function confirmarSeleccionUsuariosG3(toma, cultivo, usuariosCultivo) {
