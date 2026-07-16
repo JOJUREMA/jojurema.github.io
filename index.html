@@ -10964,13 +10964,22 @@ function generarDatosAnexoG2() {
         
         // Determinar qué volumen usar: programado (si existe) o original
         const tieneProgramacion = toma.programacion && toma.programacion.diasProgramados > 0;
-        
+
+        // turnoToma = lo confirmado en "HORAS DE RIEGO POR DÍA" (caudal × horas × 3600 por
+        // día, sumado) — es la MISMA fuente que ya usa el Anexo G-3 para su TOTAL de volumen
+        // (ver el escalado por cultivo en mostrarAnexoG3), así que usándola acá el G2 y el G3
+        // siempre coinciden en el mismo número.
+        const turnoToma = window.turnosDeRiego && window.turnosDeRiego[nombreToma];
+
         // Calcular totales de la toma
-        const volumenOriginal = toma.totalVolCorregido; // Siempre el de 7 días
-        // ✅ El volumen del G2 debe coincidir SIEMPRE con el TOTAL del Anexo G-3 (misma fuente:
-        // la suma del volumen corregido de cada usuario, toma.totalVolCorregido). No se usa
-        // "programacion.volumenProgramado" porque puede quedar desactualizado tras editar el G-3.
-        const volumenProgramado = toma.totalVolCorregido;
+        const volumenOriginal = toma.totalVolCorregido; // Vol. autorizado: derecho de agua de 7 días (área × módulo ÷ eficiencia)
+        // ✅ Vol. programado: el que realmente se confirmó en "HORAS DE RIEGO POR DÍA", mismo
+        // valor que ya usa el Anexo G-3 como su TOTAL de volumen. Si por alguna razón esa
+        // programación no existe todavía (turno no generado), se usa el autorizado como
+        // respaldo — mismo comportamiento que antes en ese caso.
+        const volumenProgramado = (turnoToma && Number.isFinite(turnoToma.volumenProgramado) && turnoToma.volumenProgramado > 0)
+            ? turnoToma.volumenProgramado
+            : toma.totalVolCorregido;
         const areaTotal = toma.totalArea;
         
         // Calcular caudal ajustado según la programación
@@ -11000,7 +11009,7 @@ function generarDatosAnexoG2() {
         //    y término = último día activo + las horas asignadas a ese día; si hay días sin
         //    riego en medio (ej. lunes, miércoles, viernes), esos días NO suman al término,
         //    igual que el salto automático de día en el Anexo G-3) ──
-        const turnoToma = window.turnosDeRiego && window.turnosDeRiego[nombreToma];
+        // (turnoToma ya se calculó arriba, antes de determinar volumenProgramado)
         const diasSemanaClaves = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
         let primerDiaOffset = 0;
         let ultimoDiaOffset = 6;
