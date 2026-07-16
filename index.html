@@ -9920,22 +9920,36 @@ async function guardarEnConsolidadoDemandasIndividualConProgramacion(datosProgra
     // área/volumen sí se hubiera guardado.
     if (window.CusshmiDatos) {
         const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
-        await Promise.all(cultivosGuardados.map(c => {
+        const cultivosConError = [];
+        await Promise.all(cultivosGuardados.map(async c => {
             const keyExact = tomaActual + '|' + c.cultivo;
             // Reconciliar antes de leer: si se programaron/quitaron no aptos sin haber
             // vuelto a abrir la ventana Área Semana, esto asegura que lo que se guarda ya
-            // los incluye (ver reconciliarNoAptosEnSnapshot).
-            if (typeof reconciliarNoAptosEnSnapshot === 'function') {
-                reconciliarNoAptosEnSnapshot(tomaActual, c.cultivo);
-            }
-            const seleccionados = window.usuariosG3?.[keyExact] || [];
-            if (seleccionados.length === 0) return Promise.resolve();
-            const completo = window._usuariosG3Completo?.[keyExact] || null;
-            return CusshmiDatos.guardarUsuariosG3Seleccionados(
+            // los incluye (ver reconciliarNoAptosEnSnapshot). Se lee el resultado que
+            // devuelve la propia función (el snapshot ya reconciliado) en vez de
+            // window.usuariosG3[keyExact] directo, para que "seleccionados" y "completo"
+            // queden consistentes entre sí.
+            const completo = typeof reconciliarNoAptosEnSnapshot === 'function'
+                ? reconciliarNoAptosEnSnapshot(tomaActual, c.cultivo)
+                : (window._usuariosG3Completo?.[keyExact] || null);
+            const seleccionados = Array.isArray(completo)
+                ? completo.filter(u => u.seleccionado)
+                : (window.usuariosG3?.[keyExact] || []);
+            if (seleccionados.length === 0) return;
+            const resultadoSync = await CusshmiDatos.guardarUsuariosG3Seleccionados(
                 comisionKey, tomaActual, semanaPDA?.fechaInicio, semanaPDA?.fechaFin, c.cultivo,
                 { seleccionados, completo }
             );
+            if (!resultadoSync.ok) cultivosConError.push(c.cultivo);
         }));
+        // Mismo aviso no bloqueante que ya usa confirmarSeleccionUsuariosG3 cuando falla su
+        // propia sincronización — antes este bloque fallaba en silencio, dejando al usuario
+        // sin saber que la selección de usuarios no llegó al servidor.
+        if (cultivosConError.length > 0) {
+            alert('⚠️ La programación se guardó en este navegador, pero la selección de usuarios de ' +
+                cultivosConError.join(', ') + ' no se pudo sincronizar con el servidor. ' +
+                'Otros programadores no la verán hasta que se sincronice.');
+        }
     }
 
     // Limpiar Anexo G2 para forzar regeneración
@@ -12398,14 +12412,31 @@ function reconciliarNoAptosEnSnapshot(toma, cultivo) {
         (u.nombre || '-').toString() + '|' + (u.unidadCatastral || '-').toString() + '|' + (parseFloat(u.area) || 0).toFixed(4)
     ).toUpperCase();
 
-    // Los no aptos vigentes se leen de usuariosProgramados (ver obtenerNoAptosProgramadosParaCultivo),
-    // NO de window.usuariosG3: justo antes de llamar a esta función, abrirSelectorUsuariosCultivo
-    // ya hizo await actualizarUsuariosG3DesdeSupabase(), que SOBREESCRIBE window.usuariosG3[toma|cultivo]
-    // con lo último guardado en Supabase — si el no apto se programó en esta sesión pero
-    // todavía no se sincronizó (eso solo pasa al confirmar Área Semana o al Guardar), esa
-    // sobreescritura lo borraba de window.usuariosG3 justo antes de reconciliar.
-    // usuariosProgramados es memoria de sesión pura, nunca se toca por esa sincronización.
-    const noAptosVigentes = obtenerNoAptosProgramadosParaCultivo(toma, cultivo);
+    // Los no aptos vigentes se arman combinando DOS fuentes, cada una cubre un caso que la
+    // otra no:
+    // 1) obtenerNoAptosProgramadosParaCultivo(): memoria de sesión pura (usuariosProgramados).
+    //    Es la única fuente cuando el no apto se acaba de programar y todavía no se sincronizó
+    //    con Supabase (eso solo pasa al confirmar Área Semana o al Guardar) — justo antes de
+    //    llamar a esta función, abrirSelectorUsuariosCultivo ya hizo
+    //    await actualizarUsuariosG3DesdeSupabase(), que SOBREESCRIBE window.usuariosG3[toma|cultivo]
+    //    con lo último guardado en Supabase, perdiendo ese no apto recién agregado si se
+    //    leyera solo de ahí.
+    // 2) window.usuariosG3[toma|cultivo] (vía obtenerUsuariosG3Seleccionados, la búsqueda
+    //    robusta): es la única fuente que sobrevive a un cambio de toma o a recargar la
+    //    página en el mismo navegador — usuariosProgramados NUNCA se guarda en localStorage
+    //    (ver guardarProgramacionPorTomaEnStorage), pero window.usuariosG3 sí. Sin esto, el no
+    //    apto desaparecía de Área Semana al volver a la toma o al recargar, aunque siguiera
+    //    correctamente guardado.
+    const desdeMemoria = obtenerNoAptosProgramadosParaCultivo(toma, cultivo);
+    const desdeUsuariosG3 = (obtenerUsuariosG3Seleccionados(toma, cultivo) || []).filter(u => u.programadoNoApto);
+    const noAptosVigentes = [];
+    const vistosVigentes = new Set();
+    [...desdeMemoria, ...desdeUsuariosG3].forEach(u => {
+        const k = claveUsuario(u);
+        if (vistosVigentes.has(k)) return;
+        vistosVigentes.add(k);
+        noAptosVigentes.push(u);
+    });
 
     let completo = (window._usuariosG3Completo && (window._usuariosG3Completo[keyExact] || window._usuariosG3Completo[keyNorm]));
     if (!Array.isArray(completo) || completo.length === 0) {
