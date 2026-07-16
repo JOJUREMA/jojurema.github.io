@@ -12364,10 +12364,15 @@ function reconciliarNoAptosEnSnapshot(toma, cultivo) {
         (u.nombre || '-').toString() + '|' + (u.unidadCatastral || '-').toString() + '|' + (parseFloat(u.area) || 0).toFixed(4)
     ).toUpperCase();
 
-    const seleccionActual = (window.usuariosG3 && window.usuariosG3[keyExact]) || [];
+    // Usa la búsqueda robusta ya existente (exacta, normalizada, y de respaldo por clave
+    // normalizada entre todas las guardadas) en vez de indexar window.usuariosG3[keyExact]
+    // directo — un cultivo con distinta mayúscula/espacio entre cuando se programó el no
+    // apto y cuando se reabre Área Semana no encontraba la entrada y el "programado" se
+    // perdía silenciosamente, aunque siguiera visible en el panel de No Aptos.
+    const seleccionActual = obtenerUsuariosG3Seleccionados(toma, cultivo) || [];
     const noAptosVigentes = seleccionActual.filter(u => u.programadoNoApto);
 
-    let completo = window._usuariosG3Completo && window._usuariosG3Completo[keyExact];
+    let completo = (window._usuariosG3Completo && (window._usuariosG3Completo[keyExact] || window._usuariosG3Completo[keyNorm]));
     if (!Array.isArray(completo) || completo.length === 0) {
         // Nunca se confirmó Área Semana para este cultivo: la base es la clasificación en
         // vivo completa (aptos + no aptos), con los aptos marcados seleccionados por
