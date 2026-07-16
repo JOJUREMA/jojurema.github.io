@@ -1195,9 +1195,6 @@
                 <button class="btn btn-primary" id="btnAvanceSiembra" disabled>
                     📅 Programar PDA
                 </button>
-                <button class="btn btn-primary" id="btnAnexoG2Directo" disabled>
-                    📄 Anexo G2
-                </button>
 
                 <button class="btn btn-secondary" id="btnLimpiar">
                     🔄 Limpiar Datos
@@ -2277,7 +2274,6 @@ const COMISIONES = {
                 btnGenerar.disabled = false;
                 btnConsolidado.disabled = false;
                 document.getElementById('btnAvanceSiembra').disabled = false;
-            document.getElementById('btnAnexoG2Directo').disabled = false;
                 return;
             }
 
@@ -2355,7 +2351,6 @@ const COMISIONES = {
             btnGenerar.disabled = false;
             btnConsolidado.disabled = false;
             document.getElementById('btnAvanceSiembra').disabled = false;
-            document.getElementById('btnAnexoG2Directo').disabled = false;
         }
 
         // Procesar datos de una toma específica
@@ -3684,13 +3679,6 @@ function expandirUsuarioNoAptoPorCultivos(usuarioBase) {
     abrirModalSemanaPDA();
 });
 
-document.getElementById('btnAnexoG2Directo').addEventListener('click', () => {
-    if (!consolidadoDemandas || consolidadoDemandas.length === 0) {
-        alert('No existe información programada para generar el Anexo G2 de la semana seleccionada.');
-        return;
-    }
-    mostrarAnexoG2();
-});
 
         function generarReporteIndividual(nombreToma) {
             const usuarios = tomasData[nombreToma];
@@ -6483,6 +6471,10 @@ function mostrarSelectorDeGrupos() {
                     ✅ Confirmar y Continuar
                 </button>
 
+                <button onclick="abrirAnexoG2DesdeSelectorToma()" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+                    📄 Anexo G2
+                </button>
+
                 <button onclick="cerrarModalGrupos()" class="btn btn-secondary" style="margin-top: 10px; width: 100%;">
                     ❌ Cancelar
                 </button>
@@ -6672,6 +6664,17 @@ function cerrarModalGrupos() {
         modalGrupos.remove();
     }
     tomaPendiente = null;
+}
+
+// Botón "Anexo G2" del modal "Seleccionar Toma": abre el G2 de la semana en curso si ya
+// hay tomas programadas, o avisa en vez de dejar una pantalla en blanco.
+function abrirAnexoG2DesdeSelectorToma() {
+    if (!consolidadoDemandas || consolidadoDemandas.length === 0) {
+        alert('No existe información programada para generar el Anexo G2 de la semana seleccionada.');
+        return;
+    }
+    cerrarModalGrupos();
+    mostrarAnexoG2();
 }
 
 function generarAvanceSiembraPorGrupo(tomasGrupo, nombreGrupo) {
