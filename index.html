@@ -7628,11 +7628,16 @@ function limpiarDatosPrevios() {
     usuariosProgramados = [];
     usuariosNoAptosDisponibles = [];
     
-    // Limpiar turnos de riego de la toma anterior si existe
-    if (window.turnosDeRiego && window.tomaActualSeleccionada) {
-        delete window.turnosDeRiego[window.tomaActualSeleccionada];
-    }
-    
+    // ⚠️ NO borrar window.turnosDeRiego[tomaActualSeleccionada] acá: turnosDeRiego no es solo
+    // "borrador" de esta pantalla — es la fuente en memoria que leen mostrarAnexoG3() y
+    // generarDatosAnexoG2() para el volumen/caudal YA CONFIRMADO en "Horas de riego por día"
+    // (no vuelven a pedirlo a Supabase). Borrarlo al cambiar de toma (ej. al elegir "programar
+    // otra toma" desde "Marcar toma como programada") hacía que el G3/G2 de esa toma, si se
+    // regeneraban en la misma sesión, cayeran a su respaldo (el volumen autorizado) en vez del
+    // programado. No hace falta este borrado: todo acceso a turnosDeRiego es por nombre de
+    // toma explícito, nunca por un puntero "actual" implícito, así que no hay riesgo de que
+    // la entrada de una toma distinta se mezcle con la que se está por cargar.
+
     // Eliminar paneles de usuarios no aptos si existen
     const contenedorPaneles = document.getElementById('contenedorPanelesNoAptos');
     if (contenedorPaneles) {
