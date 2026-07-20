@@ -1,0 +1,26 @@
+{
+  "name": "CUSSHMI Móvil — Junta de Usuarios Chira",
+  "short_name": "CUSSHMI",
+  "description": "Versión móvil de consulta del Sistema de Gestión de Pedido de Agua — Junta de Usuarios Chira.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#003876",
+  "theme_color": "#003876",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

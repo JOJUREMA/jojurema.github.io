@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CUSSHMI">
+
+    <!-- Núcleo compartido con el escritorio (Fase 0 PWA) — misma fuente de datos, -->
+    <!-- nunca se duplica lógica ni cálculos aquí. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+            background: #003876;
+            background: linear-gradient(180deg, #003876 0%, #002555 100%);
+            color: #ffffff;
+        }
+        .pantalla {
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 24px;
+            text-align: center;
+        }
+        .logo {
+            width: 108px;
+            height: 108px;
+            border-radius: 50%;
+            background: #ffffff;
+            padding: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 0 0 6px;
+            letter-spacing: 0.3px;
+        }
+        .subtitulo {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            opacity: 0.75;
+            margin: 0 0 32px;
+        }
+        .aviso {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(200, 168, 75, 0.5);
+            border-radius: 10px;
+            padding: 16px 18px;
+            max-width: 320px;
+        }
+        .aviso p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        .franja {
+            width: 36px;
+            height: 2px;
+            background: #c8a84b;
+            margin: 18px auto;
+        }
+        .estado {
+            margin-top: 28px;
+            font-size: 11px;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <img class="logo" src="icons/icon-192.png" alt="Comisión de Usuarios S.S.H. Margen Izquierda">
+        <h1>CUSSHMI Móvil</h1>
+        <p class="subtitulo">Junta de Usuarios Chira</p>
+        <div class="franja"></div>
+        <div class="aviso">
+            <p>La versión móvil de consulta está en construcción. Muy pronto podrás ver aquí tu Condición de Usuario, el Pedido de Agua programado y el mapa de tu predio.</p>
+        </div>
+        <div class="estado" id="estadoCascaron">Cargando…</div>
+    </div>
+
+    <script>
+        // Prueba de instalabilidad: registrar el service worker del cascarón.
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(function (e) {
+                console.warn('No se pudo registrar el service worker:', e);
+            });
+        }
+
+        // Prueba de que el núcleo compartido (Fase 0) resuelve correctamente
+        // un nivel más abajo — no ejecuta ningún flujo real todavía.
+        (function verificarNucleoCompartido() {
+            var el = document.getElementById('estadoCascaron');
+            var ok = typeof esUsuarioApto === 'function' &&
+                     typeof normalizarCultivoNombre === 'function' &&
+                     typeof generarDatosAnexoG2 === 'function';
+            el.textContent = ok ? 'Cascarón listo' : 'Aviso: el núcleo compartido no cargó correctamente';
+        })();
+    </script>
+</body>
+</html>

@@ -2,6 +2,35 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <script>
+    // ══ Gateway de enrutamiento por dispositivo (Fase 1 PWA) ══
+    // Corre antes de pintar nada: si detecta un celular, envía a la versión
+    // móvil de consulta (movil/). Sin selector visible — el escape hatch
+    // ?vista=escritorio (para soporte) queda guardado en sessionStorage para
+    // no tener que repetirlo en cada navegación. Cualquier error en la
+    // detección se atrapa y se queda en escritorio (falla segura).
+    (function () {
+        try {
+            var params = new URLSearchParams(location.search);
+            if (params.get('vista') === 'escritorio') {
+                sessionStorage.setItem('cusshmi_forzar_escritorio', '1');
+                return;
+            }
+            if (sessionStorage.getItem('cusshmi_forzar_escritorio') === '1') return;
+            if (location.pathname.indexOf('/movil/') !== -1) return;
+
+            var esMovilPorViewport = window.matchMedia('(max-width: 820px)').matches &&
+                window.matchMedia('(pointer: coarse)').matches;
+            var esMovilPorUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+            if (esMovilPorViewport || esMovilPorUA) {
+                location.replace('movil/');
+            }
+        } catch (e) {
+            // Falla segura: se queda en el escritorio si algo sale mal.
+        }
+    })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Gestión de Riego - CUSSHMI</title>
     <style>
