@@ -12,9 +12,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="CUSSHMI">
+    <link rel="stylesheet" href="estilos.css">
 
-    <!-- Núcleo compartido con el escritorio (Fase 0 PWA) — misma fuente de datos, -->
-    <!-- nunca se duplica lógica ni cálculos aquí. -->
+    <!-- Núcleo compartido con el escritorio (Fases 0-1 PWA) — misma fuente -->
+    <!-- de datos y de autenticación, nunca se duplica lógica aquí. -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script src="../assets/supabase/supabase-config.js"></script>
     <script src="../assets/supabase/supabase-client.js"></script>
@@ -27,102 +28,145 @@
     <script src="../assets/core/clasificacion.js"></script>
     <script src="../assets/core/utilidades.js"></script>
     <script src="../assets/core/anexoG2.js"></script>
-
-    <style>
-        * { box-sizing: border-box; }
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #003876;
-            background: linear-gradient(180deg, #003876 0%, #002555 100%);
-            color: #ffffff;
-        }
-        .pantalla {
-            min-height: 100dvh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 32px 24px;
-            text-align: center;
-        }
-        .logo {
-            width: 108px;
-            height: 108px;
-            border-radius: 50%;
-            background: #ffffff;
-            padding: 10px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-            margin-bottom: 24px;
-        }
-        h1 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0 0 6px;
-            letter-spacing: 0.3px;
-        }
-        .subtitulo {
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1.2px;
-            opacity: 0.75;
-            margin: 0 0 32px;
-        }
-        .aviso {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(200, 168, 75, 0.5);
-            border-radius: 10px;
-            padding: 16px 18px;
-            max-width: 320px;
-        }
-        .aviso p {
-            margin: 0;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-        .franja {
-            width: 36px;
-            height: 2px;
-            background: #c8a84b;
-            margin: 18px auto;
-        }
-        .estado {
-            margin-top: 28px;
-            font-size: 11px;
-            opacity: 0.6;
-        }
-    </style>
 </head>
 <body>
     <div class="pantalla">
-        <img class="logo" src="icons/icon-192.png" alt="Comisión de Usuarios S.S.H. Margen Izquierda">
+        <img class="logo-chico" src="icons/icon-192.png" alt="Comisión de Usuarios S.S.H. Margen Izquierda">
         <h1>CUSSHMI Móvil</h1>
         <p class="subtitulo">Junta de Usuarios Chira</p>
         <div class="franja"></div>
-        <div class="aviso">
-            <p>La versión móvil de consulta está en construcción. Muy pronto podrás ver aquí tu Condición de Usuario, el Pedido de Agua programado y el mapa de tu predio.</p>
+
+        <!-- ── Pantalla de login ── -->
+        <div id="pantallaLogin" class="tarjeta" style="display:none;">
+            <div id="errorLogin" class="mensaje-error"></div>
+            <div class="campo">
+                <label for="loginUsuario">Usuario (nombre y apellido)</label>
+                <input type="text" id="loginUsuario" autocomplete="username" placeholder="ej. juan perez">
+            </div>
+            <div class="campo">
+                <label for="loginPassword">Contraseña</label>
+                <input type="password" id="loginPassword" autocomplete="current-password">
+            </div>
+            <button class="boton" id="btnLogin">Iniciar sesión</button>
         </div>
-        <div class="estado" id="estadoCascaron">Cargando…</div>
+
+        <!-- ── Menú principal (tras iniciar sesión) ── -->
+        <div id="pantallaMenu" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="saludo">
+                <div class="nombre" id="saludoNombre"></div>
+                <div class="comision" id="saludoComision"></div>
+            </div>
+            <div class="menu-grid">
+                <a class="tile" href="condicion-usuario.html">
+                    <span class="icono">🔍</span>
+                    <span class="texto">Condición del Usuario</span>
+                </a>
+                <div class="tile deshabilitado">
+                    <span class="icono">📋</span>
+                    <span class="texto">PDA Programado</span>
+                    <span class="proximamente">Próximamente</span>
+                </div>
+                <div class="tile deshabilitado">
+                    <span class="icono">📡</span>
+                    <span class="texto">Seguimiento PDA</span>
+                    <span class="proximamente">Próximamente</span>
+                </div>
+                <div class="tile deshabilitado">
+                    <span class="icono">🗺️</span>
+                    <span class="texto">Mapa de predios</span>
+                    <span class="proximamente">Próximamente</span>
+                </div>
+            </div>
+            <div style="width:100%; max-width:420px;">
+                <button class="boton-secundario" id="btnCerrarSesion">Cerrar sesión</button>
+            </div>
+        </div>
+
+        <div id="estadoCascaron" class="estado-busqueda"></div>
     </div>
 
     <script>
-        // Prueba de instalabilidad: registrar el service worker del cascarón.
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(function (e) {
                 console.warn('No se pudo registrar el service worker:', e);
             });
         }
 
-        // Prueba de que el núcleo compartido (Fase 0) resuelve correctamente
-        // un nivel más abajo — no ejecuta ningún flujo real todavía.
-        (function verificarNucleoCompartido() {
-            var el = document.getElementById('estadoCascaron');
-            var ok = typeof esUsuarioApto === 'function' &&
-                     typeof normalizarCultivoNombre === 'function' &&
-                     typeof generarDatosAnexoG2 === 'function';
-            el.textContent = ok ? 'Cascarón listo' : 'Aviso: el núcleo compartido no cargó correctamente';
+        var elLogin = document.getElementById('pantallaLogin');
+        var elMenu = document.getElementById('pantallaMenu');
+        var elError = document.getElementById('errorLogin');
+        var elEstado = document.getElementById('estadoCascaron');
+
+        function mostrarError(mensaje) {
+            elError.textContent = mensaje;
+            elError.classList.add('visible');
+        }
+
+        function limpiarError() {
+            elError.textContent = '';
+            elError.classList.remove('visible');
+        }
+
+        function mostrarMenu(perfil) {
+            // Mismo localStorage que ya usa esUsuarioApto/debeExcluirse (assets/core/clasificacion.js)
+            // para saber si el formato de cultivos es el clásico o el extendido de Cieneguillo —
+            // en escritorio lo fija un selector manual; en móvil se deriva del perfil autenticado.
+            if (perfil.comisionClave) {
+                localStorage.setItem('cusshmi_comision', perfil.comisionClave);
+            }
+            document.getElementById('saludoNombre').textContent = perfil.nombre;
+            document.getElementById('saludoComision').textContent = perfil.comisionNombre || perfil.comisionClave || '';
+            elLogin.style.display = 'none';
+            elMenu.style.display = 'flex';
+        }
+
+        function mostrarLogin() {
+            elMenu.style.display = 'none';
+            elLogin.style.display = 'block';
+        }
+
+        async function intentarLogin() {
+            limpiarError();
+            var usuario = document.getElementById('loginUsuario').value.trim();
+            var password = document.getElementById('loginPassword').value;
+            if (!usuario || !password) {
+                mostrarError('Ingresa usuario y contraseña.');
+                return;
+            }
+            var btn = document.getElementById('btnLogin');
+            btn.disabled = true;
+            btn.textContent = 'Ingresando…';
+            var resultado = await CusshmiAuth.iniciarSesion(usuario, password);
+            btn.disabled = false;
+            btn.textContent = 'Iniciar sesión';
+            if (!resultado.ok) {
+                mostrarError(resultado.mensaje || 'No se pudo iniciar sesión.');
+                return;
+            }
+            mostrarMenu(resultado.perfil);
+        }
+
+        document.getElementById('btnLogin').addEventListener('click', intentarLogin);
+        document.getElementById('loginPassword').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') intentarLogin();
+        });
+        document.getElementById('btnCerrarSesion').addEventListener('click', async function () {
+            await CusshmiAuth.cerrarSesion();
+            mostrarLogin();
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined' || typeof esUsuarioApto !== 'function') {
+                elEstado.textContent = 'Aviso: el núcleo compartido no cargó correctamente.';
+                mostrarLogin();
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (resultado.ok) {
+                mostrarMenu(resultado.perfil);
+            } else {
+                mostrarLogin();
+            }
         })();
     </script>
 </body>

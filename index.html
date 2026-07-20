@@ -1229,6 +1229,9 @@
                 <button class="btn btn-primary" id="btnAvanceSiembra" disabled>
                     📅 Programar PDA
                 </button>
+                <button class="btn btn-primary" id="btnSincronizarPadron" disabled onclick="sincronizarPadronASupabase()" title="Sube el padrón (nombre, deuda, cultivos) a Supabase para que el módulo móvil 'Condición del Usuario' pueda consultarlo">
+                    📡 Sincronizar Padrón
+                </button>
 
                 <button class="btn btn-secondary" id="btnLimpiar">
                     🔄 Limpiar Datos
@@ -2260,6 +2263,7 @@ const COMISIONES = {
                 btnGenerar.disabled = false;
                 btnConsolidado.disabled = false;
                 document.getElementById('btnAvanceSiembra').disabled = false;
+                document.getElementById('btnSincronizarPadron').disabled = false;
                 return;
             }
 
@@ -2337,6 +2341,54 @@ const COMISIONES = {
             btnGenerar.disabled = false;
             btnConsolidado.disabled = false;
             document.getElementById('btnAvanceSiembra').disabled = false;
+            document.getElementById('btnSincronizarPadron').disabled = false;
+        }
+
+        // Recorre tomasData (todas las tomas del Excel recién cargado) y
+        // sube cada una a Supabase (tabla padron_usuarios) para que el
+        // módulo móvil "Condición del Usuario" pueda buscar en ella.
+        // Acción explícita del personal (botón), no automática al cargar el
+        // Excel — así el staff controla cuándo se sube y puede reintentar
+        // si algo falla.
+        async function sincronizarPadronASupabase() {
+            if (!window.CusshmiDatos) {
+                alert('No hay conexión con Supabase. Intenta de nuevo en un momento.');
+                return;
+            }
+            const nombresTomas = Object.keys(tomasData || {});
+            if (nombresTomas.length === 0) {
+                alert('No hay datos cargados para sincronizar.');
+                return;
+            }
+
+            const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+            const btn = document.getElementById('btnSincronizarPadron');
+            const textoOriginal = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = '📡 Sincronizando…'; }
+
+            let totalGuardados = 0;
+            const fallidas = [];
+
+            for (const toma of nombresTomas) {
+                const usuarios = (tomasData[toma] || []).map(u => ({
+                    ...u,
+                    cultivos: obtenerParesCultivoAreaUsuario(u),
+                }));
+                const resultado = await CusshmiDatos.guardarPadronToma(comisionKey, toma, usuarios);
+                if (resultado.ok) {
+                    totalGuardados += resultado.guardados || 0;
+                } else {
+                    fallidas.push(toma + ': ' + (resultado.error || 'error desconocido'));
+                }
+            }
+
+            if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+
+            if (fallidas.length === 0) {
+                alert('✅ Padrón sincronizado: ' + totalGuardados + ' usuarios en ' + nombresTomas.length + ' tomas.');
+            } else {
+                alert('⚠️ Padrón sincronizado parcialmente (' + totalGuardados + ' usuarios).\n\nFallaron estas tomas:\n' + fallidas.join('\n'));
+            }
         }
 
         // escapeHtml: ver assets/core/utilidades.js (Fase 0 PWA).

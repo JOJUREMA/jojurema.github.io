@@ -326,6 +326,81 @@
         return { ok: true };
     }
 
+    // ── Fase 2 PWA (móvil) — Padrón de usuarios ─────────────────────────────
+    // El padrón completo (nombre, deuda desglosada, cultivos, unidad
+    // catastral) hasta ahora solo vivía en memoria del navegador de
+    // escritorio tras cada carga de Excel. guardarPadronToma() lo sincroniza
+    // a la tabla padron_usuarios (ver 008_padron_usuarios.sql) para que el
+    // módulo móvil "Condición del Usuario" pueda consultarlo con
+    // buscarEnPadron(). `usuarios` es el arreglo tal cual vive en
+    // tomasData[toma] en el escritorio — cada elemento ya trae `cultivos`
+    // (via obtenerParesCultivoAreaUsuario) además de los campos crudos.
+    async function guardarPadronToma(comisionKey, tomaNombre, usuarios) {
+        if (!comisionKey || !tomaNombre) {
+            return { ok: false, error: 'Falta comisión o toma.' };
+        }
+        if (!Array.isArray(usuarios) || usuarios.length === 0) {
+            return { ok: true, guardados: 0 };
+        }
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
+
+        let client;
+        try {
+            client = window.CusshmiSupabase.getClient();
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+
+        const { data: sessionData } = await client.auth.getSession();
+        const usuarioId = sessionData?.session?.user?.id || null;
+
+        const filas = usuarios.map((u) => ({
+            comision_id: comisionId,
+            toma_nombre: tomaNombre,
+            nombre: (u.nombre || '-').toString(),
+            unidad_catastral: u.unidadCatastral != null ? u.unidadCatastral.toString() : null,
+            tipo_riego: u.tipoRiego != null ? u.tipoRiego.toString() : null,
+            cultivos: u.cultivos || [],
+            deuda_campana: parseFloat(u.deudaCampana) || 0,
+            deuda_atrasada: parseFloat(u.deudaAtrasada) || 0,
+            deuda_convenio: parseFloat(u.deudaConvenio) || 0,
+            deuda_total: parseFloat(u.deudaTotal) || 0,
+            al_dia: typeof u.alDia === 'boolean' ? u.alDia : null,
+            debito: u.debito != null && u.debito !== '' ? parseFloat(u.debito) : null,
+            celular: u.celular != null ? u.celular.toString() : null,
+            actualizado_por: usuarioId,
+        }));
+
+        const { error } = await client.from('padron_usuarios').upsert(filas, {
+            onConflict: 'comision_id,toma_nombre,nombre,unidad_catastral',
+        });
+        if (error) return { ok: false, error: error.message };
+        return { ok: true, guardados: filas.length };
+    }
+
+    // Búsqueda por nombre para el módulo móvil "Condición del Usuario" —
+    // no busca por DNI (no existe ese campo en el Excel de origen), y no
+    // filtra por toma: el personal de campo suele conocer el nombre pero no
+    // necesariamente a qué toma pertenece.
+    async function buscarEnPadron(comisionKey, texto) {
+        if (!comisionKey || !texto || texto.trim().length < 2) return { ok: true, resultados: [] };
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
+
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('padron_usuarios')
+                .select('id, toma_nombre, nombre, unidad_catastral, tipo_riego, cultivos, deuda_campana, deuda_atrasada, deuda_convenio, deuda_total, al_dia, debito, celular')
+                .eq('comision_id', comisionId)
+                .ilike('nombre', '%' + texto.trim() + '%')
+                .order('nombre', { ascending: true })
+                .limit(30),
+            'buscar en el padrón'
+        );
+        if (error) return { ok: false, error: error.message || 'No se pudo buscar en el padrón.' };
+        return { ok: true, resultados: data || [] };
+    }
+
     window.CusshmiDatos = {
         cargarNotaAnexoG2,
         guardarNotaAnexoG2,
@@ -336,5 +411,7 @@
         guardarUsuariosG3Seleccionados,
         cargarUsuariosG3Seleccionados,
         eliminarProgramacionToma,
+        guardarPadronToma,
+        buscarEnPadron,
     };
 })();

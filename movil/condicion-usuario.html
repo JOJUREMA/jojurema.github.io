@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Condición del Usuario — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>🔍 Condición del Usuario</h2>
+        </div>
+
+        <!-- ── Vista de búsqueda ── -->
+        <div id="vistaBusqueda" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="buscador campo">
+                <label for="inputBusqueda">Buscar por nombre</label>
+                <input type="text" id="inputBusqueda" placeholder="ej. Pérez" autocomplete="off">
+            </div>
+            <div class="estado-busqueda" id="estadoBusqueda">Escribe al menos 2 letras para buscar.</div>
+            <div class="resultados" id="resultados"></div>
+        </div>
+
+        <!-- ── Vista de detalle ── -->
+        <div id="vistaDetalle" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverBusqueda" style="max-width:420px;">← Volver a la búsqueda</button>
+            <h1 id="detalleNombre" style="margin-top:18px;"></h1>
+            <p class="subtitulo" id="detalleUbicacion"></p>
+            <div id="detalleBadge"></div>
+
+            <div class="tarjeta" style="max-width:420px; margin-bottom:18px;">
+                <div class="campo" style="margin-bottom:0;">
+                    <label for="inputDeudaMax">Deuda máxima permitida (S/)</label>
+                    <input type="number" id="inputDeudaMax" value="0" min="0" step="0.01">
+                </div>
+            </div>
+
+            <div class="stats-deuda">
+                <div class="stat-deuda">
+                    <div class="valor" id="statCampana">-</div>
+                    <div class="etiqueta">Deuda Campaña</div>
+                </div>
+                <div class="stat-deuda">
+                    <div class="valor" id="statAtrasada">-</div>
+                    <div class="etiqueta">Deuda Atrasada</div>
+                </div>
+                <div class="stat-deuda">
+                    <div class="valor" id="statConvenio">-</div>
+                    <div class="etiqueta">Deuda Convenio</div>
+                </div>
+                <div class="stat-deuda total">
+                    <div class="valor" id="statTotal">-</div>
+                    <div class="etiqueta">Deuda Total</div>
+                </div>
+            </div>
+
+            <div class="lista-cultivos" id="listaCultivos"></div>
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var usuarioSeleccionado = null; // fila cruda de padron_usuarios
+
+        var elBusqueda = document.getElementById('vistaBusqueda');
+        var elDetalle = document.getElementById('vistaDetalle');
+        var elInputBusqueda = document.getElementById('inputBusqueda');
+        var elEstadoBusqueda = document.getElementById('estadoBusqueda');
+        var elResultados = document.getElementById('resultados');
+
+        function formatearSoles(valor) {
+            var n = parseFloat(valor) || 0;
+            return 'S/ ' + n.toFixed(2);
+        }
+
+        // Adapta una fila de padron_usuarios (snake_case, cultivos como
+        // arreglo [{cultivo,area}]) al objeto que esperan esUsuarioApto /
+        // debeExcluirse en assets/core/clasificacion.js (deudaTotal,
+        // cultivo1/area1 ... cultivoN/areaN) — misma lógica sin importar si
+        // la comisión usa el formato clásico (2 cultivos) o el extendido de
+        // Cieneguillo (hasta 10), ya que ambas ramas de esas funciones leen
+        // cultivoN/areaN genéricamente.
+        function adaptarUsuarioPadron(fila) {
+            var adaptado = {
+                nombre: fila.nombre,
+                deudaTotal: parseFloat(fila.deuda_total) || 0,
+            };
+            (fila.cultivos || []).forEach(function (c, i) {
+                adaptado['cultivo' + (i + 1)] = c.cultivo;
+                adaptado['area' + (i + 1)] = c.area;
+            });
+            return adaptado;
+        }
+
+        function mostrarBusqueda() {
+            elDetalle.style.display = 'none';
+            elBusqueda.style.display = 'flex';
+        }
+
+        function mostrarDetalle(fila) {
+            usuarioSeleccionado = fila;
+            elBusqueda.style.display = 'none';
+            elDetalle.style.display = 'flex';
+
+            document.getElementById('detalleNombre').textContent = fila.nombre;
+            document.getElementById('detalleUbicacion').textContent =
+                'Toma ' + fila.toma_nombre + (fila.unidad_catastral ? ' · U.C. ' + fila.unidad_catastral : '');
+
+            document.getElementById('statCampana').textContent = formatearSoles(fila.deuda_campana);
+            document.getElementById('statAtrasada').textContent = formatearSoles(fila.deuda_atrasada);
+            document.getElementById('statConvenio').textContent = formatearSoles(fila.deuda_convenio);
+            document.getElementById('statTotal').textContent = formatearSoles(fila.deuda_total);
+
+            var listaCultivos = document.getElementById('listaCultivos');
+            var cultivos = fila.cultivos || [];
+            if (cultivos.length === 0) {
+                listaCultivos.innerHTML = '<div class="fila-cultivo"><span>Sin cultivos registrados</span></div>';
+            } else {
+                listaCultivos.innerHTML = cultivos.map(function (c) {
+                    return '<div class="fila-cultivo"><span>' + escapeHtml(c.cultivo || '-') + '</span><span>' +
+                        (parseFloat(c.area) || 0).toFixed(2) + ' ha</span></div>';
+                }).join('');
+            }
+
+            actualizarCondicion();
+        }
+
+        function actualizarCondicion() {
+            if (!usuarioSeleccionado) return;
+            var deudaMax = parseFloat(document.getElementById('inputDeudaMax').value) || 0;
+            var adaptado = adaptarUsuarioPadron(usuarioSeleccionado);
+            var excluido = debeExcluirse(adaptado);
+            var apto = !excluido && esUsuarioApto(adaptado, deudaMax);
+            var elBadge = document.getElementById('detalleBadge');
+            if (excluido) {
+                elBadge.innerHTML = '<span class="badge-condicion no-apto">SIN CULTIVO REGISTRADO</span>';
+            } else {
+                elBadge.innerHTML = apto
+                    ? '<span class="badge-condicion apto">✔ APTO</span>'
+                    : '<span class="badge-condicion no-apto">✖ NO APTO</span>';
+            }
+        }
+
+        document.getElementById('inputDeudaMax').addEventListener('input', actualizarCondicion);
+        document.getElementById('btnVolverBusqueda').addEventListener('click', mostrarBusqueda);
+
+        function renderizarResultados(resultados) {
+            if (resultados.length === 0) {
+                elResultados.innerHTML = '';
+                elEstadoBusqueda.textContent = 'Sin resultados.';
+                return;
+            }
+            elEstadoBusqueda.textContent = resultados.length + ' resultado(s).';
+            elResultados.innerHTML = '';
+            resultados.forEach(function (fila) {
+                var boton = document.createElement('button');
+                boton.className = 'fila-resultado';
+                boton.innerHTML = '<div class="nombre-resultado">' + escapeHtml(fila.nombre) + '</div>' +
+                    '<div class="detalle-resultado">Toma ' + escapeHtml(fila.toma_nombre) +
+                    (fila.unidad_catastral ? ' · U.C. ' + escapeHtml(fila.unidad_catastral) : '') + '</div>';
+                boton.addEventListener('click', function () { mostrarDetalle(fila); });
+                elResultados.appendChild(boton);
+            });
+        }
+
+        var temporizadorBusqueda = null;
+        elInputBusqueda.addEventListener('input', function () {
+            var texto = elInputBusqueda.value.trim();
+            clearTimeout(temporizadorBusqueda);
+            if (texto.length < 2) {
+                elResultados.innerHTML = '';
+                elEstadoBusqueda.textContent = 'Escribe al menos 2 letras para buscar.';
+                return;
+            }
+            elEstadoBusqueda.textContent = 'Buscando…';
+            temporizadorBusqueda = setTimeout(async function () {
+                var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+                var resultado = await CusshmiDatos.buscarEnPadron(comisionKey, texto);
+                if (!resultado.ok) {
+                    elEstadoBusqueda.textContent = 'No se pudo buscar: ' + (resultado.error || 'error desconocido');
+                    return;
+                }
+                renderizarResultados(resultado.resultados);
+            }, 300);
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            if (perfilActual.comisionClave) {
+                localStorage.setItem('cusshmi_comision', perfilActual.comisionClave);
+            }
+        })();
+    </script>
+</body>
+</html>
