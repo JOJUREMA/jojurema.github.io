@@ -4,17 +4,22 @@
 // llamadas a Supabase ni a ningun otro origen/ruta fuera de esta lista:
 // los datos siempre vienen en vivo, una sola fuente de informacion.
 
-const CACHE_NAME = 'cusshmi-movil-shell-v3';
+const CACHE_NAME = 'cusshmi-movil-shell-v4';
 const SHELL_URLS = [
   './',
   './index.html',
   './condicion-usuario.html',
   './pda-programado.html',
+  './mapa.html',
   './estilos.css',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+// Los .kml de mapas/ NO se agregan acá a propósito: son archivos grandes
+// (hasta 2MB) que cambian con cada actualización del GIS — se sirven
+// directo de red, igual que las llamadas a Supabase (ver fetch handler
+// abajo, que solo intercepta lo que está en esta lista).
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

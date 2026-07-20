@@ -401,6 +401,26 @@
         return { ok: true, resultados: data || [] };
     }
 
+    // Todos los usuarios del padrón de una toma — para el módulo móvil del
+    // Mapa satelital (Fase 4): a diferencia de buscarEnPadron, no filtra por
+    // texto, trae todo el padrón de esa toma para cruzarlo con los predios
+    // del KML.
+    async function cargarPadronToma(comisionKey, tomaNombre) {
+        if (!comisionKey || !tomaNombre) return { ok: true, resultados: [] };
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
+
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('padron_usuarios')
+                .select('id, toma_nombre, nombre, unidad_catastral, tipo_riego, cultivos, deuda_campana, deuda_atrasada, deuda_convenio, deuda_total, al_dia, debito, celular')
+                .eq('comision_id', comisionId)
+                .eq('toma_nombre', tomaNombre),
+            'cargar padrón de la toma'
+        );
+        if (error) return { ok: false, error: error.message || 'No se pudo cargar el padrón de la toma.' };
+        return { ok: true, resultados: data || [] };
+    }
+
     window.CusshmiDatos = {
         cargarNotaAnexoG2,
         guardarNotaAnexoG2,
@@ -413,5 +433,6 @@
         eliminarProgramacionToma,
         guardarPadronToma,
         buscarEnPadron,
+        cargarPadronToma,
     };
 })();

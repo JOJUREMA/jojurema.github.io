@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Mapa de Predios — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+    <script src="../assets/core/mapa.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        .campo select {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.95);
+            color: #002555;
+            font-size: 15px;
+        }
+        #mapaLeaflet {
+            width: 100%;
+            max-width: 420px;
+            height: 55vh;
+            border-radius: 10px;
+            margin-top: 4px;
+            display: none;
+        }
+        #panelPredio {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(200, 168, 75, 0.4);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 12px;
+            display: none;
+        }
+        .leyenda-mapa {
+            width: 100%;
+            max-width: 420px;
+            font-size: 10.5px;
+            opacity: 0.7;
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>🗺️ Mapa de Predios</h2>
+        </div>
+
+        <div class="campo" style="width:100%; max-width:420px;">
+            <label for="selectToma">Selecciona una toma</label>
+            <select id="selectToma">
+                <option value="">-- Elige una toma --</option>
+            </select>
+        </div>
+
+        <div class="estado-busqueda" id="estadoMapa"></div>
+        <div id="mapaLeaflet"></div>
+        <div id="panelPredio"></div>
+        <div class="leyenda-mapa">
+            Los polígonos vienen del levantamiento GIS (mapas/*.kml). El
+            cultivo y la deuda mostrados, cuando aparecen, son los vigentes
+            en el padrón sincronizado desde escritorio — no el dato
+            congelado del KML.
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var mapaLeaflet = null;
+        var capaPredios = null;
+        var prediosCache = {}; // { 'ARCHIVO.kml': [predios...] }
+
+        var elEstado = document.getElementById('estadoMapa');
+        var elMapaContainer = document.getElementById('mapaLeaflet');
+        var elPanel = document.getElementById('panelPredio');
+
+        function poblarSelectorTomas() {
+            var select = document.getElementById('selectToma');
+            Object.keys(KML_POR_TOMA).sort().forEach(function (toma) {
+                var opt = document.createElement('option');
+                opt.value = toma;
+                opt.textContent = toma;
+                select.appendChild(opt);
+            });
+        }
+
+        async function obtenerPrediosDeArchivo(nombreArchivo) {
+            if (prediosCache[nombreArchivo]) return prediosCache[nombreArchivo];
+            var resp = await fetch('../mapas/' + nombreArchivo);
+            if (!resp.ok) throw new Error('No se pudo descargar ' + nombreArchivo);
+            var texto = await resp.text();
+            var predios = parsearKmlATomas(texto);
+            prediosCache[nombreArchivo] = predios;
+            return predios;
+        }
+
+        function inicializarMapaSiHaceFalta() {
+            if (mapaLeaflet) return;
+            mapaLeaflet = L.map('mapaLeaflet');
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+                maxZoom: 19
+            }).addTo(mapaLeaflet);
+        }
+
+        function mostrarPanelPredio(p) {
+            var cultivosTexto = (p.cultivos && p.cultivos.length)
+                ? p.cultivos.map(function (c) { return c.cultivo + ' (' + (parseFloat(c.area) || 0).toFixed(2) + ' ha)'; }).join(', ')
+                : 'Sin cultivo vigente cruzado';
+            elPanel.innerHTML =
+                '<div class="nombre-usuario-g3">' + escapeHtml(p.usuario || 'Sin nombre en KML') + '</div>' +
+                '<div class="grid-g3">' +
+                    '<span>Toma: ' + escapeHtml(p.toma || '-') + '</span>' +
+                    '<span>Lateral: ' + escapeHtml(p.lateral || '-') + '</span>' +
+                    '<span>Área (KML): ' + p.areaHa.toFixed(2) + ' ha</span>' +
+                    '<span>' + (p.cruzado ? ('Deuda total: S/ ' + p.deudaTotal.toFixed(2)) : 'Sin datos vigentes cruzados') + '</span>' +
+                '</div>' +
+                '<div style="margin-top:8px; font-size:11.5px; opacity:0.85;">Cultivo(s): ' + escapeHtml(cultivosTexto) + '</div>';
+            elPanel.style.display = 'block';
+        }
+
+        async function cargarMapaParaToma(tomaNombre) {
+            elPanel.style.display = 'none';
+            elMapaContainer.style.display = 'none';
+            elEstado.textContent = 'Cargando predios…';
+
+            var archivos = KML_POR_TOMA[tomaNombre] || [];
+            if (archivos.length === 0) {
+                elEstado.textContent = 'No hay predios mapeados para esta toma todavía.';
+                return;
+            }
+
+            try {
+                var listasPredios = await Promise.all(archivos.map(obtenerPrediosDeArchivo));
+                var todosPredios = [].concat.apply([], listasPredios);
+                var prediosToma = filtrarPorToma(todosPredios, tomaNombre);
+
+                if (prediosToma.length === 0) {
+                    elEstado.textContent = 'No se encontraron predios para "' + tomaNombre + '" en el KML.';
+                    return;
+                }
+
+                var resultadoPadron = await CusshmiDatos.cargarPadronToma(comisionKeyActual, tomaNombre);
+                var filasPadron = (resultadoPadron.ok && resultadoPadron.resultados) ? resultadoPadron.resultados : [];
+                var prediosCruzados = prediosToma.map(function (p) { return cruzarPredioConPadron(p, filasPadron); });
+
+                inicializarMapaSiHaceFalta();
+                elMapaContainer.style.display = 'block';
+                setTimeout(function () { mapaLeaflet.invalidateSize(); }, 50);
+
+                if (capaPredios) mapaLeaflet.removeLayer(capaPredios);
+
+                var featureCollection = {
+                    type: 'FeatureCollection',
+                    features: prediosCruzados.map(function (p) {
+                        return {
+                            type: 'Feature',
+                            properties: p,
+                            geometry: { type: 'Polygon', coordinates: [p.coordenadas] }
+                        };
+                    })
+                };
+
+                capaPredios = L.geoJSON(featureCollection, {
+                    style: function (feature) {
+                        var props = feature.properties;
+                        var cultivoVigente = (props.cultivos && props.cultivos[0]) ? props.cultivos[0].cultivo : null;
+                        var color = cultivoVigente ? _colorPorCultivo(cultivoVigente) : COLOR_SIN_CRUZAR;
+                        return { fillColor: color.bg, color: color.border, weight: 1.5, fillOpacity: 0.55 };
+                    },
+                    onEachFeature: function (feature, layer) {
+                        layer.on('click', function () { mostrarPanelPredio(feature.properties); });
+                    }
+                }).addTo(mapaLeaflet);
+
+                mapaLeaflet.fitBounds(capaPredios.getBounds(), { padding: [20, 20] });
+                elEstado.textContent = prediosToma.length + ' predio(s) encontrados. Toca uno para ver su detalle.';
+            } catch (e) {
+                elEstado.textContent = 'No se pudo cargar el mapa: ' + (e.message || e);
+            }
+        }
+
+        document.getElementById('selectToma').addEventListener('change', function (e) {
+            var toma = e.target.value;
+            if (toma) cargarMapaParaToma(toma);
+        });
+
+        (async function iniciar() {
+            poblarSelectorTomas();
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+        })();
+    </script>
+</body>
+</html>
