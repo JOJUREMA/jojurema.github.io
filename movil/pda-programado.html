@@ -24,6 +24,8 @@
     <script src="../assets/core/clasificacion.js"></script>
     <script src="../assets/core/utilidades.js"></script>
     <script src="../assets/core/anexoG2.js"></script>
+    <script src="../assets/core/anexoG4.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
     <style>
         /* El Anexo G-2 mantiene su formato oficial (fondo blanco, bordes
@@ -88,6 +90,37 @@
             border-radius: 999px;
             margin-left: 8px;
         }
+        .btn-ver-g4 {
+            margin-top: 8px;
+            padding: 6px 12px;
+            border: 1px solid rgba(200, 168, 75, 0.5);
+            border-radius: 8px;
+            background: rgba(200, 168, 75, 0.15);
+            color: #f1e6cf;
+            font-size: 11.5px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-ver-g4:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+        .tarjeta-g4 {
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 16px;
+        }
+        .acciones-g4 {
+            width: 100%;
+            max-width: 420px;
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        .acciones-g4 .boton { flex: 1; }
     </style>
 </head>
 <body>
@@ -111,6 +144,16 @@
             <h1 id="detalleTomaNombre" style="margin-top:18px;"></h1>
             <p class="subtitulo" id="detalleTomaResumen"></p>
             <div id="detalleTomaContenido" style="width:100%; display:flex; flex-direction:column; align-items:center;"></div>
+        </div>
+
+        <!-- ── Vista del visor Anexo G-4 (un usuario) ── -->
+        <div id="vistaG4" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverDetalleDesdeG4" style="max-width:420px;">← Volver</button>
+            <div class="acciones-g4" style="margin-top:14px;">
+                <button class="boton" id="btnCompartirG4">📤 Compartir / Descargar PDF</button>
+            </div>
+            <div class="estado-busqueda" id="estadoG4"></div>
+            <div class="tarjeta-g4" id="contenedorG4Movil"></div>
         </div>
     </div>
 
@@ -259,6 +302,15 @@
                                 '<span>Área: ' + (parseFloat(u.area) || 0).toFixed(2) + ' ha</span>' +
                               '</div>'
                             : '<div class="grid-g3"><span>Horario aún no confirmado en escritorio ("Marcar toma como programada").</span></div>');
+
+                    var btnG4 = document.createElement('button');
+                    btnG4.className = 'btn-ver-g4';
+                    btnG4.textContent = '📄 Ver Anexo G-4';
+                    btnG4.disabled = !tieneHorario;
+                    if (!tieneHorario) btnG4.title = 'Falta confirmar el horario en escritorio ("Marcar toma como programada").';
+                    btnG4.addEventListener('click', function () { mostrarVistaG4(nombreToma, u); });
+                    fila.appendChild(btnG4);
+
                     contenedor.appendChild(fila);
                 });
             });
@@ -272,6 +324,102 @@
             elVistaDetalle.style.display = 'none';
             elVistaLista.style.display = 'flex';
         });
+
+        // "DD/MM/YYYY HH:MM" (formato guardado por guardarHorarioG3EnSupabase,
+        // Fase 3) -> Date, para reusar los mismos formateadores del escritorio
+        // (assets/core/anexoG4.js) en vez de mostrar el texto crudo.
+        function parsearFechaHoraTexto(texto) {
+            if (!texto) return new Date();
+            var partes = texto.trim().split(' ');
+            var dmy = (partes[0] || '').split('/');
+            var hm = (partes[1] || '00:00').split(':');
+            if (dmy.length < 3) return new Date();
+            return new Date(
+                parseInt(dmy[2], 10), parseInt(dmy[1], 10) - 1, parseInt(dmy[0], 10),
+                parseInt(hm[0], 10) || 0, parseInt(hm[1], 10) || 0
+            );
+        }
+
+        var g4Actual = null; // { nombre, nombreArchivo, textoWhatsApp } — del usuario mostrado en vistaG4
+
+        function mostrarVistaG4(nombreToma, u) {
+            var canal = ('CANAL PRINCIPAL ' + nombreToma).trim();
+            var datos = {
+                usuario: u.nombre || '-',
+                canal: canal,
+                caudalLs: parseFloat(u.caudalLs) || 0,
+                horasTotal: parseFloat(u.tiempoHoras) || 0,
+                volumenEntregar: parseFloat(u.volumenM3) || 0,
+                dtIni: parsearFechaHoraTexto(u.inicioTexto),
+                dtTer: parsearFechaHoraTexto(u.terminoTexto),
+                fechaImpresion: new Date(),
+                logoSrc: 'icons/icon-192.png'
+            };
+
+            document.getElementById('contenedorG4Movil').innerHTML =
+                '<style>' + estilosAnexoG4RJ() + '</style>' + construirAnexoG4RJHtml(datos);
+            document.getElementById('estadoG4').textContent = '';
+
+            g4Actual = {
+                nombre: u.nombre || 'USUARIO',
+                nombreArchivo: _nombreArchivoG4('', u.nombre),
+                textoWhatsApp: _textoWhatsAppG4({
+                    usuario: u.nombre, canal: canal, caudalLs: datos.caudalLs,
+                    inicioTxt: u.inicioTexto, terminoTxt: u.terminoTexto,
+                    horasTotal: datos.horasTotal, volumenM3: datos.volumenEntregar
+                })
+            };
+
+            elVistaDetalle.style.display = 'none';
+            document.getElementById('vistaG4').style.display = 'flex';
+        }
+
+        document.getElementById('btnVolverDetalleDesdeG4').addEventListener('click', function () {
+            document.getElementById('vistaG4').style.display = 'none';
+            elVistaDetalle.style.display = 'flex';
+        });
+
+        async function generarYCompartirPdfG4() {
+            var elEstado = document.getElementById('estadoG4');
+            var contenedor = document.getElementById('contenedorG4Movil');
+            if (!g4Actual || !contenedor.innerHTML) return;
+
+            elEstado.textContent = 'Generando PDF…';
+            try {
+                var opciones = {
+                    margin: 5,
+                    filename: g4Actual.nombreArchivo + '.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'mm', format: 'a5', orientation: 'landscape' }
+                };
+                var blob = await html2pdf().set(opciones).from(contenedor).outputPdf('blob');
+                var archivo = new File([blob], g4Actual.nombreArchivo + '.pdf', { type: 'application/pdf' });
+
+                if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+                    await navigator.share({
+                        files: [archivo],
+                        title: 'Anexo G-4 — ' + g4Actual.nombre,
+                        text: g4Actual.textoWhatsApp
+                    });
+                    elEstado.textContent = '';
+                } else {
+                    var url = URL.createObjectURL(blob);
+                    var enlace = document.createElement('a');
+                    enlace.href = url;
+                    enlace.download = g4Actual.nombreArchivo + '.pdf';
+                    document.body.appendChild(enlace);
+                    enlace.click();
+                    document.body.removeChild(enlace);
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+                    elEstado.textContent = 'PDF descargado.';
+                }
+            } catch (e) {
+                elEstado.textContent = 'No se pudo generar el PDF: ' + (e.message || e);
+            }
+        }
+
+        document.getElementById('btnCompartirG4').addEventListener('click', generarYCompartirPdfG4);
 
         (async function iniciar() {
             if (typeof CusshmiAuth === 'undefined') {
