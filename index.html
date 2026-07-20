@@ -13718,13 +13718,97 @@ function cambiarTomaG3(nuevoIdx) {
     renderizarTomaG3(nuevoIdx);
 }
 
-function marcarTomaProgramadaG3(tomaIdx) {
+// Fase 3 PWA (móvil) — captura el horario por usuario que el escritorio YA
+// calculó (motor de turnos en recalcularProgramacionG3Desde) y lo persiste
+// en Supabase, en el momento en que el personal confirma que la toma está
+// definitivamente programada. Es la MISMA lectura que ya hace
+// mostrarAnexoG4RJDesdeG3() para imprimir (caudalManual_*, tiempoManual_*,
+// data-minutos-inicio/termino) — no se reimplementa el cálculo en ningún
+// otro lado, solo se guarda el resultado ya renderizado, lo que además
+// captura gratis cualquier ajuste manual (editarCaudalTiempoG3) hecho antes
+// de confirmar. Se guarda en usuarios_g3_seleccionados (tabla ya existente,
+// Fase 2) agregando campos nuevos al mismo objeto por usuario — no rompe a
+// quien solo lee nombre/area/unidadCatastral/esNoApto de ahí.
+async function guardarHorarioG3EnSupabase(tomaIdx) {
+    if (!window.CusshmiDatos) return { ok: false, error: 'Sin conexión con Supabase.' };
+    const toma = window._tomasG3Data && window._tomasG3Data[tomaIdx];
+    if (!toma) return { ok: false, error: 'No se encontró la toma.' };
+
+    try { recalcularProgramacionG3(tomaIdx); } catch {}
+
+    const tbody = document.getElementById('tbodyG3-' + tomaIdx);
+    if (!tbody) return { ok: false, error: 'No se encontró la tabla del Anexo G-3.' };
+
+    const base = toma.semanaInicio ? new Date(toma.semanaInicio + 'T00:00:00') : new Date();
+    const filas = Array.from(tbody.querySelectorAll('tr'));
+
+    // Agrupar por cultivo — mismo criterio que usa el resto del sistema
+    // (ver recalcularProgramacionG3Desde / mostrarAnexoG4RJDesdeG3).
+    const porCultivo = {};
+    filas.forEach((tr, uIdx) => {
+        if (tr.style.display === 'none') return;
+        const u = toma.usuarios?.[uIdx];
+        if (!u) return;
+
+        const inpC = document.getElementById('caudalManual_' + tomaIdx + '_' + uIdx);
+        const inpT = document.getElementById('tiempoManual_' + tomaIdx + '_' + uIdx);
+        const caudalM3s = parseFloat(inpC?.value) || 0;
+        const caudalLs = caudalM3s * 1000;
+        const tiempoHoras = parseFloat(inpT?.value) || 0;
+        const volumenM3 = caudalM3s * tiempoHoras * 3600;
+
+        const elIni = document.getElementById('inicioDia_' + tomaIdx + '_' + uIdx);
+        const elTer = document.getElementById('terminoDia_' + tomaIdx + '_' + uIdx);
+        const minIni = parseInt(elIni?.getAttribute('data-minutos-inicio') || '0', 10) || 0;
+        const minTer = parseInt(elTer?.getAttribute('data-minutos-termino') || '0', 10) || (minIni + Math.round(tiempoHoras * 60));
+        const dtIni = new Date(base.getTime() + minIni * 60000);
+        const dtTer = new Date(base.getTime() + minTer * 60000);
+
+        const claveCultivo = _normCultivo(u.cultivo);
+        if (!porCultivo[claveCultivo]) porCultivo[claveCultivo] = { cultivoOriginal: u.cultivo, usuarios: [] };
+        porCultivo[claveCultivo].usuarios.push({
+            nombre: u.nombre,
+            area: u.area,
+            unidadCatastral: u.unidadCatastral,
+            esNoApto: !!u.esNoApto,
+            caudalLs: parseFloat(caudalLs.toFixed(3)),
+            tiempoHoras: parseFloat(tiempoHoras.toFixed(3)),
+            volumenM3: parseFloat(volumenM3.toFixed(2)),
+            inicioTexto: _formatearFechaCortaEs(dtIni) + ' ' + _formatearHoraHHMM(dtIni),
+            terminoTexto: _formatearFechaCortaEs(dtTer) + ' ' + _formatearHoraHHMM(dtTer),
+        });
+    });
+
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const semanaInicio = toma.semanaInicio || semanaPDA?.fechaInicio;
+    const semanaFin = toma.semanaFin || semanaPDA?.fechaFin;
+    const nombreToma = toma.nombreToma;
+
+    const fallidos = [];
+    for (const claveCultivo of Object.keys(porCultivo)) {
+        const { cultivoOriginal, usuarios } = porCultivo[claveCultivo];
+        const resultado = await CusshmiDatos.guardarUsuariosG3Seleccionados(
+            comisionKey, nombreToma, semanaInicio, semanaFin, cultivoOriginal, usuarios
+        );
+        if (!resultado.ok) fallidos.push(cultivoOriginal + ': ' + (resultado.error || 'error desconocido'));
+    }
+
+    if (fallidos.length > 0) return { ok: false, error: fallidos.join('; ') };
+    return { ok: true };
+}
+
+async function marcarTomaProgramadaG3(tomaIdx) {
     if (!window._g3Programadas) window._g3Programadas = {};
     window._g3Programadas[tomaIdx] = true;
     guardarProgramacionPorTomaEnStorage();
 
     const toma = window._tomasG3Data && window._tomasG3Data[tomaIdx];
     const nombreToma = toma ? toma.nombreToma : '';
+
+    const resultadoHorario = await guardarHorarioG3EnSupabase(tomaIdx);
+    if (!resultadoHorario.ok) {
+        alert('⚠️ La toma quedó marcada como programada, pero no se pudo guardar el horario para el módulo móvil:\n\n' + resultadoHorario.error);
+    }
 
     // En vez de saltar automáticamente a la siguiente toma sin programar, se le pregunta
     // al programador qué hacer a continuación — la confirmación de una toma no debe

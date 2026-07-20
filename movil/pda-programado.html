@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>PDA Programado — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+
+    <style>
+        /* El Anexo G-2 mantiene su formato oficial (fondo blanco, bordes
+           negros) tal cual lo genera construirTablaG2Html — se envuelve en
+           una tarjeta clara y con scroll horizontal, en vez de adaptar la
+           tabla al tema oscuro del resto del móvil. */
+        .tarjeta-g2 {
+            width: 100%;
+            max-width: 100%;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 10px;
+            overflow-x: auto;
+            margin-bottom: 16px;
+        }
+        .toma-item {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            padding: 12px 14px;
+            text-align: left;
+            color: #ffffff;
+            cursor: pointer;
+            margin-bottom: 8px;
+        }
+        .toma-item .nombre-toma { font-size: 14px; font-weight: 700; }
+        .toma-item .detalle-toma { font-size: 11.5px; opacity: 0.8; margin-top: 3px; }
+        .cultivo-titulo {
+            width: 100%;
+            max-width: 420px;
+            font-size: 13px;
+            font-weight: 700;
+            margin: 14px 0 8px;
+            color: #c8a84b;
+        }
+        .fila-usuario-g3 {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+        .fila-usuario-g3 .nombre-usuario-g3 { font-size: 13.5px; font-weight: 600; }
+        .fila-usuario-g3 .grid-g3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px 10px;
+            margin-top: 6px;
+            font-size: 11.5px;
+            opacity: 0.85;
+        }
+        .fila-usuario-g3 .badge-noapto {
+            display: inline-block;
+            background: #c0392b;
+            color: #fff;
+            font-size: 9.5px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 999px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>📋 PDA Programado</h2>
+        </div>
+
+        <!-- ── Vista de lista (Anexo G-2) ── -->
+        <div id="vistaLista" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <p class="subtitulo" id="textoSemana"></p>
+            <div class="estado-busqueda" id="estadoLista">Cargando…</div>
+            <div id="tomasContainer" style="width:100%; max-width:420px;"></div>
+            <div class="tarjeta-g2" id="tablaG2Container" style="display:none;"></div>
+        </div>
+
+        <!-- ── Vista de detalle (resumen del G-3 de una toma) ── -->
+        <div id="vistaDetalleToma" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverLista" style="max-width:420px;">← Volver a la lista</button>
+            <h1 id="detalleTomaNombre" style="margin-top:18px;"></h1>
+            <p class="subtitulo" id="detalleTomaResumen"></p>
+            <div id="detalleTomaContenido" style="width:100%; display:flex; flex-direction:column; align-items:center;"></div>
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var programacionesPorToma = {}; // { nombreToma: { cultivos: [...] } } — para la vista de detalle
+
+        var elVistaLista = document.getElementById('vistaLista');
+        var elVistaDetalle = document.getElementById('vistaDetalleToma');
+        var elEstadoLista = document.getElementById('estadoLista');
+        var elTomasContainer = document.getElementById('tomasContainer');
+        var elTablaG2Container = document.getElementById('tablaG2Container');
+
+        // Lunes de la semana calendario actual, en formato YYYY-MM-DD —
+        // misma convención que semanaPDA.fechaInicio en escritorio.
+        function obtenerLunesActual() {
+            var hoy = new Date();
+            var diaSemana = hoy.getDay(); // 0=domingo .. 6=sábado
+            var offsetHastaLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+            var lunes = new Date(hoy);
+            lunes.setDate(hoy.getDate() + offsetHastaLunes);
+            var y = lunes.getFullYear();
+            var m = String(lunes.getMonth() + 1).padStart(2, '0');
+            var d = String(lunes.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + d;
+        }
+
+        async function cargarPda() {
+            var semanaInicio = obtenerLunesActual();
+            document.getElementById('textoSemana').textContent = 'Semana del ' + formatearFecha(semanaInicio);
+
+            var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
+            if (!resultado.ok) {
+                elEstadoLista.textContent = 'No se pudo cargar la programación de esta semana.';
+                return;
+            }
+            if (resultado.programaciones.length === 0) {
+                elEstadoLista.textContent = 'No hay tomas programadas esta semana todavía.';
+                return;
+            }
+
+            // Reconstruir las mismas variables globales que ya esperan
+            // generarDatosAnexoG2()/construirTablaG2Html() (assets/core/anexoG2.js,
+            // Fase 0) — misma forma que consolidadoDemandas/turnosDeRiego en
+            // escritorio, solo que alimentadas desde Supabase en vez de la carga
+            // de Excel.
+            consolidadoDemandas = resultado.programaciones.map(function (p) {
+                return Object.assign({}, p.datos, { toma: p.toma });
+            });
+            window.turnosDeRiego = window.turnosDeRiego || {};
+            resultado.programaciones.forEach(function (p) {
+                if (p.turno) window.turnosDeRiego[p.toma] = p.turno;
+            });
+            usuariosProgramados = [];
+            window.usuariosG3 = window.usuariosG3 || {};
+
+            // Mismo patrón que mostrarAnexoG2() en escritorio: precargar la
+            // selección de usuarios de cada toma+cultivo antes de contar
+            // aptos/no aptos, para que el N° de usuarios no salga en 0.
+            var pares = [];
+            consolidadoDemandas.forEach(function (toma) {
+                programacionesPorToma[toma.toma] = toma;
+                (toma.cultivos || []).forEach(function (cultObj) {
+                    if (cultObj && cultObj.cultivo) pares.push([toma.toma, cultObj.cultivo]);
+                });
+            });
+            await Promise.all(pares.map(function (par) {
+                return CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKeyActual, par[0], semanaInicio, par[1]).then(function (r) {
+                    if (r.ok && r.usuarios) {
+                        window.usuariosG3[par[0] + '|' + par[1]] = r.usuarios;
+                    }
+                });
+            }));
+
+            renderizarListaTomas();
+            renderizarTablaG2();
+            elEstadoLista.textContent = '';
+        }
+
+        function renderizarListaTomas() {
+            var ordenTomasDesktop = consolidadoDemandas.map(function (t) { return t.toma; });
+            var datos = generarDatosAnexoG2(ordenTomasDesktop);
+            if (!datos) return;
+
+            elTomasContainer.innerHTML = '';
+            datos.forEach(function (fila) {
+                var div = document.createElement('button');
+                div.className = 'toma-item';
+                div.innerHTML = '<div class="nombre-toma">' + escapeHtml(fila.nombreToma) + '</div>' +
+                    '<div class="detalle-toma">' + fila.numUsuarios + ' usuario(s) · ' +
+                    fila.volumenProgramado.toFixed(0) + ' m³ · ' + fila.areaRiego.toFixed(2) + ' ha</div>';
+                div.addEventListener('click', function () { mostrarDetalleToma(fila.nombreToma); });
+                elTomasContainer.appendChild(div);
+            });
+        }
+
+        function renderizarTablaG2() {
+            var datosCanalSur = datosAnexoG2.filter(function (f) { return f.canalPrincipal === 'CANAL SUR'; });
+            var datosRioChira = datosAnexoG2.filter(function (f) { return f.canalPrincipal === 'RIO CHIRA'; });
+            var html = '';
+            html += construirTablaG2Html(datosCanalSur, 'ANEXO G2 — TOMAS QUE RIEGAN POR CANAL SUR');
+            html += construirTablaG2Html(datosRioChira, 'ANEXO G2 — TOMAS QUE RIEGAN POR RÍO CHIRA');
+            if (html.trim()) {
+                elTablaG2Container.innerHTML = html;
+                elTablaG2Container.style.display = 'block';
+            }
+        }
+
+        function mostrarDetalleToma(nombreToma) {
+            var toma = programacionesPorToma[nombreToma];
+            if (!toma) return;
+
+            elVistaLista.style.display = 'none';
+            elVistaDetalle.style.display = 'flex';
+            document.getElementById('detalleTomaNombre').textContent = nombreToma;
+            document.getElementById('detalleTomaResumen').textContent =
+                (toma.cultivos || []).map(function (c) { return c.cultivo; }).join(' · ') || 'Sin cultivos registrados';
+
+            var contenedor = document.getElementById('detalleTomaContenido');
+            contenedor.innerHTML = '';
+
+            (toma.cultivos || []).forEach(function (cultObj) {
+                var usuarios = obtenerUsuariosG3Seleccionados(nombreToma, cultObj.cultivo) || [];
+                if (usuarios.length === 0) return;
+
+                var titulo = document.createElement('div');
+                titulo.className = 'cultivo-titulo';
+                titulo.textContent = cultObj.cultivo + ' (' + usuarios.length + ' usuario(s))';
+                contenedor.appendChild(titulo);
+
+                usuarios.forEach(function (u) {
+                    var fila = document.createElement('div');
+                    fila.className = 'fila-usuario-g3';
+                    var badge = u.esNoApto ? '<span class="badge-noapto">NO APTO</span>' : '';
+                    var tieneHorario = u.inicioTexto || u.terminoTexto;
+                    fila.innerHTML =
+                        '<div class="nombre-usuario-g3">' + escapeHtml(u.nombre || '-') + badge + '</div>' +
+                        (tieneHorario
+                            ? '<div class="grid-g3">' +
+                                '<span>Inicio: ' + escapeHtml(u.inicioTexto || '-') + '</span>' +
+                                '<span>Término: ' + escapeHtml(u.terminoTexto || '-') + '</span>' +
+                                '<span>Caudal: ' + (parseFloat(u.caudalLs) || 0).toFixed(2) + ' l/s</span>' +
+                                '<span>Tiempo: ' + (parseFloat(u.tiempoHoras) || 0).toFixed(2) + ' h</span>' +
+                                '<span>Volumen: ' + (parseFloat(u.volumenM3) || 0).toFixed(1) + ' m³</span>' +
+                                '<span>Área: ' + (parseFloat(u.area) || 0).toFixed(2) + ' ha</span>' +
+                              '</div>'
+                            : '<div class="grid-g3"><span>Horario aún no confirmado en escritorio ("Marcar toma como programada").</span></div>');
+                    contenedor.appendChild(fila);
+                });
+            });
+
+            if (contenedor.innerHTML === '') {
+                contenedor.innerHTML = '<div class="estado-busqueda">Sin usuarios programados para esta toma.</div>';
+            }
+        }
+
+        document.getElementById('btnVolverLista').addEventListener('click', function () {
+            elVistaDetalle.style.display = 'none';
+            elVistaLista.style.display = 'flex';
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+            cargarPda();
+        })();
+    </script>
+</body>
+</html>
