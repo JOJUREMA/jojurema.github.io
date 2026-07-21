@@ -545,6 +545,113 @@
         }
     }
 
+    // ── Confirmación digital de recepción del Anexo G-4 ─────────────────────
+    // "Generar enlace de confirmación" en el visor móvil. El enlace es fijo
+    // por G-4: si ya existe una fila para esta clave natural (toma+semana+
+    // cultivo+usuario, vía programacion_id), se devuelve su token tal cual
+    // en vez de crear uno nuevo — así compartir el mismo link por varios
+    // canales (WhatsApp, correo, SMS) no genera enlaces distintos.
+    // datos: {programacionId, cultivo, usuarioNombre, unidadCatastral,
+    //         comisionNombre, tomaNombre, semanaInicio, canal, caudalLs,
+    //         horasTotal, volumenM3, inicioTexto, terminoTexto}
+    async function generarEnlaceConfirmacionG4(datos) {
+        if (!datos || !datos.programacionId || !datos.cultivo || !datos.usuarioNombre) {
+            return { ok: false, error: 'Faltan datos para generar el enlace.' };
+        }
+        const unidadCatastral = datos.unidadCatastral || null;
+
+        const aplicarClave = (query) => {
+            const q = query.eq('programacion_id', datos.programacionId)
+                .eq('cultivo', datos.cultivo)
+                .eq('usuario_nombre', datos.usuarioNombre);
+            return unidadCatastral ? q.eq('unidad_catastral', unidadCatastral) : q.is('unidad_catastral', null);
+        };
+
+        const { data: existente, error: errorBuscar } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => aplicarClave(client.from('g4_confirmaciones').select('token').limit(1)).maybeSingle(),
+            'buscar enlace de confirmación existente'
+        );
+        if (errorBuscar) return { ok: false, error: errorBuscar.mensaje };
+        if (existente && existente.token) return { ok: true, token: existente.token };
+
+        let client;
+        try {
+            client = window.CusshmiSupabase.getClient();
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+        const { data: sessionData } = await client.auth.getSession();
+        const usuarioId = sessionData?.session?.user?.id || null;
+
+        const { data: creado, error: errorCrear } = await client.from('g4_confirmaciones').insert({
+            programacion_id: datos.programacionId,
+            cultivo: datos.cultivo,
+            usuario_nombre: datos.usuarioNombre,
+            unidad_catastral: unidadCatastral,
+            comision_nombre: datos.comisionNombre || '',
+            toma_nombre: datos.tomaNombre || '',
+            semana_inicio: datos.semanaInicio,
+            canal: datos.canal || '',
+            caudal_ls: parseFloat(datos.caudalLs) || 0,
+            horas_total: parseFloat(datos.horasTotal) || 0,
+            volumen_m3: parseFloat(datos.volumenM3) || 0,
+            inicio_texto: datos.inicioTexto || null,
+            termino_texto: datos.terminoTexto || null,
+            creado_por: usuarioId,
+        }).select('token').single();
+
+        if (errorCrear) {
+            // Carrera: alguien más (u otro clic) ya lo creó justo antes de
+            // que este insert llegara — se vuelve a buscar en vez de
+            // fallar, para que "enlace fijo" se siga cumpliendo.
+            const { data: reintento } = await window.CusshmiSupabase.ejecutarConsulta(
+                (client2) => aplicarClave(client2.from('g4_confirmaciones').select('token').limit(1)).maybeSingle(),
+                'reintentar buscar enlace de confirmación'
+            );
+            if (reintento && reintento.token) return { ok: true, token: reintento.token };
+            return { ok: false, error: errorCrear.message };
+        }
+        return { ok: true, token: creado.token };
+    }
+
+    // Todas las confirmaciones de una toma+semana — para cruzar con
+    // usuarios_g3_seleccionados en el panel "Orden de Riego" (móvil y
+    // escritorio, ver assets/core/ordenRiego.js).
+    async function listarConfirmacionesG4(programacionId) {
+        if (!programacionId) return { ok: true, confirmaciones: [] };
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('g4_confirmaciones')
+                .select('cultivo, usuario_nombre, unidad_catastral, estado, confirmado_en, dispositivo, caudal_ls, horas_total, volumen_m3, inicio_texto, termino_texto')
+                .eq('programacion_id', programacionId),
+            'listar confirmaciones del G-4'
+        );
+        if (error || !data) return { ok: false, confirmaciones: [], error: error ? error.mensaje : 'No se pudo listar las confirmaciones.' };
+        return { ok: true, confirmaciones: data };
+    }
+
+    // Mismo patrón exacto que suscribirseATomaEnVivo (Fase 5) — requiere
+    // que g4_confirmaciones esté en la publicación supabase_realtime (ver
+    // 010_confirmacion_g4.sql). callback() se llama sin payload; quien la
+    // use vuelve a llamar listarConfirmacionesG4() para recargar.
+    function suscribirseAConfirmacionesG4Vivo(programacionId, callback) {
+        if (!programacionId || typeof callback !== 'function') return null;
+        let client;
+        try {
+            client = window.CusshmiSupabase.getClient();
+        } catch (e) {
+            return null;
+        }
+        const canal = client
+            .channel('orden-riego-' + programacionId)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'g4_confirmaciones', filter: 'programacion_id=eq.' + programacionId },
+                () => callback()
+            )
+            .subscribe();
+        return canal;
+    }
+
     window.CusshmiDatos = {
         cargarNotaAnexoG2,
         guardarNotaAnexoG2,
@@ -562,5 +669,8 @@
         listarTomasConPadron,
         suscribirseATomaEnVivo,
         cancelarSuscripcion,
+        generarEnlaceConfirmacionG4,
+        listarConfirmacionesG4,
+        suscribirseAConfirmacionesG4Vivo,
     };
 })();

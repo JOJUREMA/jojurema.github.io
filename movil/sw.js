@@ -4,7 +4,7 @@
 // llamadas a Supabase ni a ningun otro origen/ruta fuera de esta lista:
 // los datos siempre vienen en vivo, una sola fuente de informacion.
 
-const CACHE_NAME = 'cusshmi-movil-shell-v5';
+const CACHE_NAME = 'cusshmi-movil-shell-v6';
 const SHELL_URLS = [
   './',
   './index.html',
@@ -12,11 +12,16 @@ const SHELL_URLS = [
   './pda-programado.html',
   './mapa.html',
   './seguimiento.html',
+  './orden-riego.html',
   './estilos.css',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
+// g4/confirmar.html NO se agrega acá a propósito: es una página pública
+// por token, ajena a la app instalada (se abre desde un enlace compartido,
+// nunca desde el menú) — mismo criterio que los .kml de mapas/, se sirve
+// siempre directo de red.
 // Los .kml de mapas/ NO se agregan acá a propósito: son archivos grandes
 // (hasta 2MB) que cambian con cada actualización del GIS — se sirven
 // directo de red, igual que las llamadas a Supabase (ver fetch handler

@@ -1087,6 +1087,7 @@
 <script src="assets/core/clasificacion.js"></script>
 <script src="assets/core/utilidades.js"></script>
 <script src="assets/core/anexoG2.js"></script>
+<script src="assets/core/ordenRiego.js"></script>
 </head>
 <body>
     
@@ -1535,6 +1536,7 @@ const COMISIONES = {
         };
 
         let esAdmin = false;
+        let esAdminOProgramador = false; // admin o programador — para paneles administrativos que también usa el programador (ej. Orden de Riego)
 
         function togglePasswordVisibility() {
             const input = document.getElementById('inputPassword');
@@ -1594,6 +1596,7 @@ const COMISIONES = {
         function aplicarPerfilAutenticado(perfil) {
             window.perfilActual = perfil;
             esAdmin = perfil.rol === 'admin';
+            esAdminOProgramador = perfil.rol === 'admin' || perfil.rol === 'programador';
 
             if (window.CusshmiAuditoria) {
                 CusshmiAuditoria.registrarAuditoria('Ingreso', 'Autenticación', perfil.nombreUsuario);
@@ -1852,6 +1855,312 @@ const COMISIONES = {
             document.body.appendChild(div.firstElementChild);
         }
 
+        // ── Panel "Orden de Riego" (admin/programador) ──────────────────────
+        // Muestra en vivo quién ya confirmó la recepción de su Anexo G-4 (ver
+        // movil/g4/confirmar.html) y quién no, por toma+semana. Reutiliza
+        // assets/core/ordenRiego.js (mismo cruce de datos que la versión
+        // móvil, sin duplicar esa lógica) y las funciones ya existentes de
+        // datos.js (cargarTodasLasProgramaciones, cargarUsuariosG3Seleccionados,
+        // listarConfirmacionesG4, suscribirseAConfirmacionesG4Vivo).
+        var _ordenRiegoEstado = { filas: [], programacionId: null, canal: null, programacionesPorToma: {} };
+        var HORAS_ALERTA_ORDEN_RIEGO = 12;
+
+        function _lunesActualOrdenRiego() {
+            const hoy = new Date();
+            const diaSemana = hoy.getDay();
+            const offset = diaSemana === 0 ? -6 : 1 - diaSemana;
+            const lunes = new Date(hoy);
+            lunes.setDate(hoy.getDate() + offset);
+            const y = lunes.getFullYear();
+            const m = String(lunes.getMonth() + 1).padStart(2, '0');
+            const d = String(lunes.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function _cerrarPanelOrdenRiego() {
+            const modal = document.getElementById('modalOrdenRiego');
+            if (modal) modal.remove();
+            if (_ordenRiegoEstado.canal) {
+                CusshmiDatos.cancelarSuscripcion(_ordenRiegoEstado.canal);
+                _ordenRiegoEstado.canal = null;
+            }
+        }
+
+        async function mostrarPanelOrdenRiego() {
+            const comisionKey = localStorage.getItem('cusshmi_comision');
+            if (!comisionKey) { alert('Selecciona una comisión primero.'); return; }
+
+            _cerrarPanelOrdenRiego();
+
+            const modalHtml = `
+                <div id="modalOrdenRiego" class="modal-overlay active" style="z-index:99998;background:rgba(0,20,50,0.85);">
+                    <div class="modal-container" style="max-width:980px;max-height:88vh;overflow-y:auto;">
+                        <h3>🚿 Orden de Riego — ${COMISIONES[comisionKey]?.nombre || comisionKey}</h3>
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                            <div style="flex:1;min-width:180px;">
+                                <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Semana</label>
+                                <select id="selectSemanaOrdenEsc" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;"></select>
+                            </div>
+                            <div style="flex:1;min-width:150px;">
+                                <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Toma</label>
+                                <select id="selectTomaOrdenEsc" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                                    <option value="">Elige una toma</option>
+                                </select>
+                            </div>
+                            <div style="flex:1;min-width:130px;">
+                                <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Cultivo</label>
+                                <select id="selectCultivoOrdenEsc" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;"><option value="">Todos</option></select>
+                            </div>
+                            <div style="flex:1;min-width:150px;">
+                                <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Confirmación</label>
+                                <select id="selectEstadoOrdenEsc" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                                    <option value="">Todos</option>
+                                    <option value="confirmado">✅ Confirmados</option>
+                                    <option value="pendiente">❌ Pendientes</option>
+                                </select>
+                            </div>
+                            <div style="flex:1;min-width:150px;">
+                                <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Buscar por nombre</label>
+                                <input type="text" id="inputBuscarOrdenEsc" placeholder="ej. Pérez" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">
+                            </div>
+                        </div>
+
+                        <div id="indicadoresOrdenEsc" style="display:none;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;"></div>
+                        <div id="estadoOrdenEsc" style="font-size:13px;color:#666;margin-bottom:8px;">Elige una toma para ver su Orden de Riego.</div>
+                        <div id="contenedorTablaOrdenEsc" style="overflow-x:auto;"></div>
+
+                        <div style="display:flex;gap:10px;margin-top:16px;">
+                            <button onclick="_cerrarPanelOrdenRiego()"
+                                style="padding:9px 18px;background:#003876;color:white;border:none;border-radius:4px;font-weight:600;font-size:13px;cursor:pointer;">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+
+            const div = document.createElement('div');
+            div.innerHTML = modalHtml;
+            document.body.appendChild(div.firstElementChild);
+
+            document.getElementById('selectSemanaOrdenEsc').addEventListener('change', (e) => {
+                if (e.target.value) _cargarTomasOrdenRiegoEsc(comisionKey, e.target.value);
+            });
+            document.getElementById('selectTomaOrdenEsc').addEventListener('change', (e) => {
+                _cargarOrdenDeTomaEsc(comisionKey, document.getElementById('selectSemanaOrdenEsc').value, e.target.value);
+            });
+            document.getElementById('selectCultivoOrdenEsc').addEventListener('change', _renderizarOrdenEsc);
+            document.getElementById('selectEstadoOrdenEsc').addEventListener('change', _renderizarOrdenEsc);
+            document.getElementById('inputBuscarOrdenEsc').addEventListener('input', _renderizarOrdenEsc);
+
+            await _poblarSemanasOrdenRiegoEsc(comisionKey);
+        }
+
+        async function _poblarSemanasOrdenRiegoEsc(comisionKey) {
+            const select = document.getElementById('selectSemanaOrdenEsc');
+            if (!select) return;
+            const semanaActual = _lunesActualOrdenRiego();
+            const resultado = await CusshmiDatos.listarSemanasConProgramacion(comisionKey);
+            const semanas = (resultado.ok && resultado.semanas) ? resultado.semanas : [];
+            if (!semanas.some(s => s.semanaInicio === semanaActual)) {
+                semanas.unshift({ semanaInicio: semanaActual, semanaFin: null });
+            }
+            select.innerHTML = '';
+            semanas.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.semanaInicio;
+                let etiqueta = 'Semana del ' + formatearFecha(s.semanaInicio) + (s.semanaFin ? ' al ' + formatearFecha(s.semanaFin) : '');
+                if (s.semanaInicio === semanaActual) etiqueta += ' (actual)';
+                opt.textContent = etiqueta;
+                select.appendChild(opt);
+            });
+            await _cargarTomasOrdenRiegoEsc(comisionKey, semanaActual);
+        }
+
+        async function _cargarTomasOrdenRiegoEsc(comisionKey, semanaInicio) {
+            _limpiarTablaOrdenRiegoEsc();
+            const selectToma = document.getElementById('selectTomaOrdenEsc');
+            if (!selectToma) return;
+            selectToma.innerHTML = '<option value="">Elige una toma</option>';
+
+            const resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKey, semanaInicio);
+            const elEstado = document.getElementById('estadoOrdenEsc');
+            if (!resultado.ok || resultado.programaciones.length === 0) {
+                elEstado.textContent = 'No hay tomas programadas esta semana.';
+                return;
+            }
+            _ordenRiegoEstado.programacionesPorToma = {};
+            resultado.programaciones.forEach(p => {
+                _ordenRiegoEstado.programacionesPorToma[p.toma] = p;
+                const opt = document.createElement('option');
+                opt.value = p.toma;
+                opt.textContent = 'Toma ' + p.toma;
+                selectToma.appendChild(opt);
+            });
+            elEstado.textContent = 'Elige una toma para ver su Orden de Riego.';
+        }
+
+        function _limpiarTablaOrdenRiegoEsc() {
+            if (_ordenRiegoEstado.canal) {
+                CusshmiDatos.cancelarSuscripcion(_ordenRiegoEstado.canal);
+                _ordenRiegoEstado.canal = null;
+            }
+            _ordenRiegoEstado.filas = [];
+            _ordenRiegoEstado.programacionId = null;
+            const elIndicadores = document.getElementById('indicadoresOrdenEsc');
+            const elTabla = document.getElementById('contenedorTablaOrdenEsc');
+            const elCultivo = document.getElementById('selectCultivoOrdenEsc');
+            const elEstadoSel = document.getElementById('selectEstadoOrdenEsc');
+            const elBuscar = document.getElementById('inputBuscarOrdenEsc');
+            if (elIndicadores) elIndicadores.style.display = 'none';
+            if (elTabla) elTabla.innerHTML = '';
+            if (elCultivo) elCultivo.innerHTML = '<option value="">Todos</option>';
+            if (elEstadoSel) elEstadoSel.value = '';
+            if (elBuscar) elBuscar.value = '';
+        }
+
+        async function _cargarOrdenDeTomaEsc(comisionKey, semanaInicio, nombreToma) {
+            _limpiarTablaOrdenRiegoEsc();
+            const elEstado = document.getElementById('estadoOrdenEsc');
+            if (!nombreToma) {
+                elEstado.textContent = 'Elige una toma para ver su Orden de Riego.';
+                return;
+            }
+            const prog = _ordenRiegoEstado.programacionesPorToma[nombreToma];
+            if (!prog) return;
+            _ordenRiegoEstado.programacionId = prog.programacionId;
+            elEstado.textContent = 'Cargando…';
+
+            const cultivos = (prog.datos && prog.datos.cultivos) || [];
+            const usuariosPorCultivo = await Promise.all(cultivos.map(async c => {
+                const r = await CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKey, nombreToma, semanaInicio, c.cultivo);
+                return { cultivo: c.cultivo, usuarios: (r.ok && r.usuarios) ? r.usuarios : [] };
+            }));
+
+            const resultadoConf = await CusshmiDatos.listarConfirmacionesG4(_ordenRiegoEstado.programacionId);
+            if (!resultadoConf.ok) {
+                elEstado.textContent = 'No se pudieron cargar las confirmaciones: ' + (resultadoConf.error || 'error desconocido');
+                return;
+            }
+
+            _ordenRiegoEstado.filas = cruzarConfirmacionesG4(usuariosPorCultivo, resultadoConf.confirmaciones);
+            const elCultivo = document.getElementById('selectCultivoOrdenEsc');
+            elCultivo.innerHTML = '<option value="">Todos</option>';
+            usuariosPorCultivo.forEach(g => {
+                if (!g.cultivo) return;
+                const opt = document.createElement('option');
+                opt.value = g.cultivo;
+                opt.textContent = g.cultivo;
+                elCultivo.appendChild(opt);
+            });
+
+            elEstado.textContent = '';
+            _renderizarOrdenEsc();
+
+            _ordenRiegoEstado.canal = CusshmiDatos.suscribirseAConfirmacionesG4Vivo(_ordenRiegoEstado.programacionId, () => {
+                _recargarConfirmacionesOrdenRiegoEsc(comisionKey);
+            });
+        }
+
+        async function _recargarConfirmacionesOrdenRiegoEsc() {
+            if (!_ordenRiegoEstado.programacionId) return;
+            const resultadoConf = await CusshmiDatos.listarConfirmacionesG4(_ordenRiegoEstado.programacionId);
+            if (!resultadoConf.ok) return;
+            const porCultivo = {};
+            _ordenRiegoEstado.filas.forEach(f => {
+                porCultivo[f.cultivo] = porCultivo[f.cultivo] || [];
+                porCultivo[f.cultivo].push({
+                    nombre: f.nombre, unidadCatastral: f.unidadCatastral, area: f.area,
+                    caudalLs: f.caudalLs, tiempoHoras: f.horasTotal, volumenM3: f.volumenM3,
+                    inicioTexto: f.inicioTexto, terminoTexto: f.terminoTexto, esNoApto: f.esNoApto
+                });
+            });
+            const usuariosPorCultivo = Object.keys(porCultivo).map(cultivo => ({ cultivo, usuarios: porCultivo[cultivo] }));
+            _ordenRiegoEstado.filas = cruzarConfirmacionesG4(usuariosPorCultivo, resultadoConf.confirmaciones);
+            _renderizarOrdenEsc();
+        }
+
+        function _formatearFechaHoraConfirmacionEsc(iso) {
+            if (!iso) return '-';
+            const f = new Date(iso);
+            return f.toLocaleDateString('es-PE') + ' ' + f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function _renderizarOrdenEsc() {
+            const elIndicadores = document.getElementById('indicadoresOrdenEsc');
+            const elTabla = document.getElementById('contenedorTablaOrdenEsc');
+            if (!elIndicadores || !elTabla) return;
+
+            const filtros = {
+                cultivo: document.getElementById('selectCultivoOrdenEsc').value,
+                estado: document.getElementById('selectEstadoOrdenEsc').value,
+                texto: document.getElementById('inputBuscarOrdenEsc').value,
+            };
+            const filas = aplicarFiltrosOrdenRiego(_ordenRiegoEstado.filas, filtros);
+            const indicadores = calcularIndicadoresOrdenRiego(_ordenRiegoEstado.filas);
+
+            elIndicadores.style.display = 'grid';
+            elIndicadores.innerHTML = `
+                <div style="background:#f0f4f8;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:18px;font-weight:800;">${indicadores.total}</div>
+                    <div style="font-size:10px;color:#666;text-transform:uppercase;">Programados</div>
+                </div>
+                <div style="background:#eafaf0;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:18px;font-weight:800;color:#1a6e3c;">${indicadores.confirmados}</div>
+                    <div style="font-size:10px;color:#666;text-transform:uppercase;">Confirmaron</div>
+                </div>
+                <div style="background:#fdecea;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:18px;font-weight:800;color:#c0392b;">${indicadores.pendientes}</div>
+                    <div style="font-size:10px;color:#666;text-transform:uppercase;">Pendientes</div>
+                </div>
+                <div style="background:#f0f4f8;border-radius:8px;padding:10px;text-align:center;">
+                    <div style="font-size:18px;font-weight:800;">${indicadores.porcentaje}%</div>
+                    <div style="font-size:10px;color:#666;text-transform:uppercase;">Confirmación</div>
+                </div>`;
+
+            if (filas.length === 0) {
+                elTabla.innerHTML = '<div style="padding:16px;text-align:center;color:#888;">Sin usuarios para este filtro.</div>';
+                return;
+            }
+
+            const ahora = new Date();
+            const filasHtml = filas.map(f => {
+                const porVencer = estaPorVencerConfirmacionG4(f, HORAS_ALERTA_ORDEN_RIEGO, ahora);
+                const badge = f.estadoConfirmacion === 'confirmado'
+                    ? `<span title="Confirmado el ${escapeHtml(_formatearFechaHoraConfirmacionEsc(f.confirmadoEn))}">✅</span>`
+                    : `<span title="Aún no confirma la recepción">❌</span>`;
+                return `
+                    <tr style="${porVencer ? 'background:#fdecea;' : ''}">
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(f.nombre)}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(f.unidadCatastral || '-')}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;">${escapeHtml(f.cultivo)}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${f.area.toFixed(2)}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${f.caudalLs.toFixed(2)}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${f.volumenM3.toFixed(1)}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;">${escapeHtml(f.inicioTexto || '-')}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:12px;">${escapeHtml(f.terminoTexto || '-')}</td>
+                        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${badge}</td>
+                    </tr>`;
+            }).join('');
+
+            elTabla.innerHTML = `
+                <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">
+                    <thead>
+                        <tr style="background:#003876;color:white;">
+                            <th style="padding:8px;text-align:left;">Usuario</th>
+                            <th style="padding:8px;text-align:left;">U. Catastral</th>
+                            <th style="padding:8px;text-align:left;">Cultivo</th>
+                            <th style="padding:8px;">Área (ha)</th>
+                            <th style="padding:8px;">Caudal (l/s)</th>
+                            <th style="padding:8px;">Volumen (m³)</th>
+                            <th style="padding:8px;">Inicio</th>
+                            <th style="padding:8px;">Término</th>
+                            <th style="padding:8px;">G-4</th>
+                        </tr>
+                    </thead>
+                    <tbody>${filasHtml}</tbody>
+                </table>`;
+        }
+
         function aplicarTemaComision(com) {
             // Encabezado
             const header = document.querySelector('.header');
@@ -1932,6 +2241,19 @@ const COMISIONES = {
                 if (headerText) headerText.appendChild(btnPresencia);
             }
             btnPresencia.style.display = esAdmin ? 'inline-block' : 'none';
+
+            // Botón panel Orden de Riego — admin o programador (ver quién
+            // confirmó la recepción del Anexo G-4).
+            let btnOrdenRiego = document.getElementById('btnOrdenRiego');
+            if (!btnOrdenRiego) {
+                btnOrdenRiego = document.createElement('button');
+                btnOrdenRiego.id = 'btnOrdenRiego';
+                btnOrdenRiego.textContent = '🚿 Orden de Riego';
+                btnOrdenRiego.onclick = mostrarPanelOrdenRiego;
+                const headerText = document.querySelector('.header-text');
+                if (headerText) headerText.appendChild(btnOrdenRiego);
+            }
+            btnOrdenRiego.style.display = esAdminOProgramador ? 'inline-block' : 'none';
         }
 
         async function iniciarSistemaComisiones() {

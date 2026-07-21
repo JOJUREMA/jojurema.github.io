@@ -117,10 +117,16 @@
             width: 100%;
             max-width: 420px;
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             margin-bottom: 16px;
         }
-        .acciones-g4 .boton { flex: 1; }
+        .acciones-g4 .boton, .acciones-g4 .boton-secundario {
+            flex: 1;
+            min-width: 150px;
+            width: auto;
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -155,8 +161,15 @@
             <button class="boton-secundario" id="btnVolverDetalleDesdeG4" style="max-width:420px;">← Volver</button>
             <div class="acciones-g4" style="margin-top:14px;">
                 <button class="boton" id="btnCompartirG4">📤 Compartir / Descargar PDF</button>
+                <button class="boton-secundario" id="btnEnlaceConfirmacionG4" style="margin-top:0;">🔗 Generar enlace de confirmación</button>
             </div>
             <div class="estado-busqueda" id="estadoG4"></div>
+            <div class="estado-busqueda" id="estadoEnlaceG4"></div>
+            <div class="campo" id="contenedorEnlaceG4" style="display:none; width:100%; max-width:420px;">
+                <label for="inputEnlaceG4">Enlace de confirmación</label>
+                <input type="text" id="inputEnlaceG4" readonly onclick="this.select();">
+                <button class="boton-secundario" id="btnCopiarEnlaceG4" style="margin-top:8px;">📋 Copiar enlace</button>
+            </div>
             <div class="tarjeta-g4" id="contenedorG4Movil"></div>
         </div>
     </div>
@@ -165,6 +178,7 @@
         var perfilActual = null;
         var comisionKeyActual = null;
         var programacionesPorToma = {}; // { nombreToma: { cultivos: [...] } } — para la vista de detalle
+        var semanaActualMostrada = null; // semana_inicio (YYYY-MM-DD) de la semana visible ahora mismo
 
         var elVistaLista = document.getElementById('vistaLista');
         var elVistaDetalle = document.getElementById('vistaDetalleToma');
@@ -218,6 +232,7 @@
         });
 
         async function cargarPda(semanaInicio) {
+            semanaActualMostrada = semanaInicio;
             document.getElementById('textoSemana').textContent = 'Semana del ' + formatearFecha(semanaInicio);
 
             var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
@@ -236,7 +251,7 @@
             // escritorio, solo que alimentadas desde Supabase en vez de la carga
             // de Excel.
             consolidadoDemandas = resultado.programaciones.map(function (p) {
-                return Object.assign({}, p.datos, { toma: p.toma });
+                return Object.assign({}, p.datos, { toma: p.toma, programacionId: p.programacionId });
             });
             window.turnosDeRiego = window.turnosDeRiego || {};
             resultado.programaciones.forEach(function (p) {
@@ -342,7 +357,7 @@
                     btnG4.textContent = '📄 Ver Anexo G-4';
                     btnG4.disabled = !tieneHorario;
                     if (!tieneHorario) btnG4.title = 'Falta confirmar el horario en escritorio ("Marcar toma como programada").';
-                    btnG4.addEventListener('click', function () { mostrarVistaG4(nombreToma, u); });
+                    btnG4.addEventListener('click', function () { mostrarVistaG4(nombreToma, cultObj.cultivo, u, toma.programacionId); });
                     fila.appendChild(btnG4);
 
                     contenedor.appendChild(fila);
@@ -362,9 +377,9 @@
         // parsearFechaHoraTexto: ver assets/core/utilidades.js (Fase 5 PWA —
         // movida ahí al aparecer un segundo consumidor real, seguimiento.html).
 
-        var g4Actual = null; // { nombre, nombreArchivo, textoWhatsApp } — del usuario mostrado en vistaG4
+        var g4Actual = null; // { nombre, nombreArchivo, textoWhatsApp, ...datos para el enlace } — del usuario mostrado en vistaG4
 
-        function mostrarVistaG4(nombreToma, u) {
+        function mostrarVistaG4(nombreToma, cultivo, u, programacionId) {
             var canal = ('CANAL PRINCIPAL ' + nombreToma).trim();
             var datos = {
                 usuario: u.nombre || '-',
@@ -381,6 +396,8 @@
             document.getElementById('contenedorG4Movil').innerHTML =
                 '<style>' + estilosAnexoG4RJ() + '</style>' + construirAnexoG4RJHtml(datos);
             document.getElementById('estadoG4').textContent = '';
+            document.getElementById('estadoEnlaceG4').textContent = '';
+            document.getElementById('contenedorEnlaceG4').style.display = 'none';
 
             g4Actual = {
                 nombre: u.nombre || 'USUARIO',
@@ -389,7 +406,17 @@
                     usuario: u.nombre, canal: canal, caudalLs: datos.caudalLs,
                     inicioTxt: u.inicioTexto, terminoTxt: u.terminoTexto,
                     horasTotal: datos.horasTotal, volumenM3: datos.volumenEntregar
-                })
+                }),
+                nombreToma: nombreToma,
+                cultivo: cultivo,
+                programacionId: programacionId,
+                unidadCatastral: u.unidadCatastral || null,
+                canal: canal,
+                caudalLs: datos.caudalLs,
+                horasTotal: datos.horasTotal,
+                volumenM3: datos.volumenEntregar,
+                inicioTexto: u.inicioTexto || null,
+                terminoTexto: u.terminoTexto || null
             };
 
             elVistaDetalle.style.display = 'none';
@@ -446,6 +473,74 @@
         }
 
         document.getElementById('btnCompartirG4').addEventListener('click', generarYCompartirPdfG4);
+
+        async function generarYCompartirEnlaceConfirmacion() {
+            var elEstado = document.getElementById('estadoEnlaceG4');
+            var elContenedor = document.getElementById('contenedorEnlaceG4');
+            var elInput = document.getElementById('inputEnlaceG4');
+            if (!g4Actual || !g4Actual.programacionId) {
+                elEstado.textContent = 'Falta información de la programación para generar el enlace.';
+                return;
+            }
+
+            elEstado.textContent = 'Generando enlace…';
+            var resultado = await CusshmiDatos.generarEnlaceConfirmacionG4({
+                programacionId: g4Actual.programacionId,
+                cultivo: g4Actual.cultivo,
+                usuarioNombre: g4Actual.nombre,
+                unidadCatastral: g4Actual.unidadCatastral,
+                comisionNombre: perfilActual ? perfilActual.comisionNombre : '',
+                tomaNombre: g4Actual.nombreToma,
+                semanaInicio: semanaActualMostrada,
+                canal: g4Actual.canal,
+                caudalLs: g4Actual.caudalLs,
+                horasTotal: g4Actual.horasTotal,
+                volumenM3: g4Actual.volumenM3,
+                inicioTexto: g4Actual.inicioTexto,
+                terminoTexto: g4Actual.terminoTexto
+            });
+
+            if (!resultado.ok) {
+                elEstado.textContent = 'No se pudo generar el enlace: ' + (resultado.error || 'error desconocido');
+                return;
+            }
+
+            var url = new URL('g4/confirmar.html', location.href);
+            url.searchParams.set('t', resultado.token);
+            var enlace = url.toString();
+
+            elInput.value = enlace;
+            elContenedor.style.display = 'block';
+            elEstado.textContent = '';
+
+            if (typeof CusshmiAuditoria !== 'undefined') {
+                CusshmiAuditoria.registrarAuditoria('Generación de enlace', 'Anexo G-4 / Orden de Riego',
+                    g4Actual.nombre + ' — Toma ' + g4Actual.nombreToma);
+            }
+
+            var textoCompartir = 'Aquí puedes ver y confirmar la recepción de tu Anexo G-4 (Orden de Riego):\n' + enlace;
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'Confirmación Anexo G-4 — ' + g4Actual.nombre, text: textoCompartir, url: enlace });
+                } catch (e) {
+                    // el usuario canceló el cuadro de compartir — no es un error
+                }
+            }
+        }
+
+        document.getElementById('btnEnlaceConfirmacionG4').addEventListener('click', generarYCompartirEnlaceConfirmacion);
+
+        document.getElementById('btnCopiarEnlaceG4').addEventListener('click', async function () {
+            var elInput = document.getElementById('inputEnlaceG4');
+            var elEstado = document.getElementById('estadoEnlaceG4');
+            try {
+                await navigator.clipboard.writeText(elInput.value);
+                elEstado.textContent = 'Enlace copiado.';
+            } catch (e) {
+                elInput.select();
+                elEstado.textContent = 'Selecciona y copia el enlace manualmente.';
+            }
+        });
 
         (async function iniciar() {
             if (typeof CusshmiAuth === 'undefined') {

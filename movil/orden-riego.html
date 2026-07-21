@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Orden de Riego — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/ordenRiego.js"></script>
+
+    <style>
+        .tarjeta-orden {
+            width: 100%;
+            max-width: 100%;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 10px;
+            overflow-x: auto;
+            margin-bottom: 16px;
+        }
+        .tabla-orden {
+            border-collapse: collapse;
+            font-size: 11px;
+            font-family: Arial, sans-serif;
+            width: 100%;
+            min-width: 760px;
+        }
+        .tabla-orden th, .tabla-orden td {
+            border: 1px solid #ccc;
+            padding: 5px 6px;
+            color: #111;
+            text-align: left;
+            white-space: nowrap;
+        }
+        .tabla-orden th { background: #e6e6e6; font-weight: 700; }
+        .tabla-orden tr.por-vencer { background: #fdecea; }
+        .badge-estado { font-size: 13px; cursor: default; }
+
+        .indicadores {
+            width: 100%;
+            max-width: 100%;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .indicador {
+            background: rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 10px 6px;
+            text-align: center;
+        }
+        .indicador .valor { font-size: 18px; font-weight: 800; }
+        .indicador .etiqueta { font-size: 9.5px; opacity: 0.75; margin-top: 2px; text-transform: uppercase; }
+
+        .fila-filtros {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>🚿 Orden de Riego</h2>
+        </div>
+
+        <div id="vistaSinAcceso" style="display:none; width:100%; max-width:420px; text-align:center;">
+            <p class="estado-busqueda">Este módulo es solo para administradores y programadores.</p>
+        </div>
+
+        <div id="vistaOrdenRiego" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectSemanaOrden">Semana</label>
+                <select id="selectSemanaOrden"></select>
+            </div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectTomaOrden">Toma</label>
+                <select id="selectTomaOrden">
+                    <option value="">Elige una toma</option>
+                </select>
+            </div>
+
+            <div class="fila-filtros" style="max-width:420px; margin-bottom:10px;">
+                <div class="campo" style="margin-bottom:0;">
+                    <label for="selectCultivoOrden">Cultivo</label>
+                    <select id="selectCultivoOrden"><option value="">Todos</option></select>
+                </div>
+                <div class="campo" style="margin-bottom:0;">
+                    <label for="selectEstadoOrden">Confirmación</label>
+                    <select id="selectEstadoOrden">
+                        <option value="">Todos</option>
+                        <option value="confirmado">✅ Confirmados</option>
+                        <option value="pendiente">❌ Pendientes</option>
+                    </select>
+                </div>
+            </div>
+            <div class="buscador campo" style="width:100%; max-width:420px;">
+                <label for="inputBuscarOrden">Buscar por nombre</label>
+                <input type="text" id="inputBuscarOrden" placeholder="ej. Pérez" autocomplete="off">
+            </div>
+
+            <div class="estado-busqueda" id="estadoOrden">Elige una toma para ver su Orden de Riego.</div>
+
+            <div class="indicadores" id="indicadoresOrden" style="display:none; max-width:100%;">
+                <div class="indicador"><div class="valor" id="indTotal">0</div><div class="etiqueta">Programados</div></div>
+                <div class="indicador"><div class="valor" id="indConfirmados">0</div><div class="etiqueta">Confirmaron</div></div>
+                <div class="indicador"><div class="valor" id="indPendientes">0</div><div class="etiqueta">Pendientes</div></div>
+                <div class="indicador"><div class="valor" id="indPorcentaje">0%</div><div class="etiqueta">Confirmación</div></div>
+            </div>
+
+            <div class="tarjeta-orden" id="contenedorTablaOrden" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        var HORAS_ALERTA = 12; // horas antes del inicio para marcar "pendiente por vencer"
+
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var filasActuales = []; // ya cruzadas (cruzarConfirmacionesG4), sin filtrar
+        var programacionIdActual = null;
+        var canalRealtimeActual = null;
+
+        var elVistaOrden = document.getElementById('vistaOrdenRiego');
+        var elSelectSemana = document.getElementById('selectSemanaOrden');
+        var elSelectToma = document.getElementById('selectTomaOrden');
+        var elSelectCultivo = document.getElementById('selectCultivoOrden');
+        var elSelectEstado = document.getElementById('selectEstadoOrden');
+        var elInputBuscar = document.getElementById('inputBuscarOrden');
+        var elEstado = document.getElementById('estadoOrden');
+        var elIndicadores = document.getElementById('indicadoresOrden');
+        var elContenedorTabla = document.getElementById('contenedorTablaOrden');
+
+        function obtenerLunesActual() {
+            var hoy = new Date();
+            var diaSemana = hoy.getDay();
+            var offsetHastaLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+            var lunes = new Date(hoy);
+            lunes.setDate(hoy.getDate() + offsetHastaLunes);
+            var y = lunes.getFullYear();
+            var m = String(lunes.getMonth() + 1).padStart(2, '0');
+            var d = String(lunes.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + d;
+        }
+
+        async function poblarSelectorSemanas() {
+            var semanaActual = obtenerLunesActual();
+            var resultado = await CusshmiDatos.listarSemanasConProgramacion(comisionKeyActual);
+            var semanas = (resultado.ok && resultado.semanas) ? resultado.semanas : [];
+            if (!semanas.some(function (s) { return s.semanaInicio === semanaActual; })) {
+                semanas.unshift({ semanaInicio: semanaActual, semanaFin: null });
+            }
+            elSelectSemana.innerHTML = '';
+            semanas.forEach(function (s) {
+                var opt = document.createElement('option');
+                opt.value = s.semanaInicio;
+                var etiqueta = 'Semana del ' + formatearFecha(s.semanaInicio) + (s.semanaFin ? ' al ' + formatearFecha(s.semanaFin) : '');
+                if (s.semanaInicio === semanaActual) etiqueta += ' (actual)';
+                opt.textContent = etiqueta;
+                elSelectSemana.appendChild(opt);
+            });
+            cargarTomasDeSemana(semanaActual);
+        }
+
+        elSelectSemana.addEventListener('change', function (e) {
+            if (e.target.value) cargarTomasDeSemana(e.target.value);
+        });
+
+        var programacionesPorTomaOrden = {};
+
+        async function cargarTomasDeSemana(semanaInicio) {
+            limpiarTabla();
+            elSelectToma.innerHTML = '<option value="">Elige una toma</option>';
+            var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
+            if (!resultado.ok || resultado.programaciones.length === 0) {
+                elEstado.textContent = 'No hay tomas programadas esta semana.';
+                return;
+            }
+            programacionesPorTomaOrden = {};
+            resultado.programaciones.forEach(function (p) {
+                programacionesPorTomaOrden[p.toma] = p;
+                var opt = document.createElement('option');
+                opt.value = p.toma;
+                opt.textContent = 'Toma ' + p.toma;
+                elSelectToma.appendChild(opt);
+            });
+            elEstado.textContent = 'Elige una toma para ver su Orden de Riego.';
+        }
+
+        function limpiarTabla() {
+            if (canalRealtimeActual) {
+                CusshmiDatos.cancelarSuscripcion(canalRealtimeActual);
+                canalRealtimeActual = null;
+            }
+            filasActuales = [];
+            programacionIdActual = null;
+            elIndicadores.style.display = 'none';
+            elContenedorTabla.style.display = 'none';
+            elContenedorTabla.innerHTML = '';
+            elSelectCultivo.innerHTML = '<option value="">Todos</option>';
+            elSelectEstado.value = '';
+            elInputBuscar.value = '';
+        }
+
+        elSelectToma.addEventListener('change', function () {
+            var tomaElegida = elSelectToma.value;
+            limpiarTabla();
+            if (!tomaElegida) {
+                elEstado.textContent = 'Elige una toma para ver su Orden de Riego.';
+                return;
+            }
+            cargarOrdenDeToma(tomaElegida);
+        });
+
+        async function cargarOrdenDeToma(nombreToma) {
+            var prog = programacionesPorTomaOrden[nombreToma];
+            if (!prog) return;
+            programacionIdActual = prog.programacionId;
+            elEstado.textContent = 'Cargando…';
+
+            var cultivos = (prog.datos && prog.datos.cultivos) || [];
+            var usuariosPorCultivo = await Promise.all(cultivos.map(async function (c) {
+                var r = await CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKeyActual, nombreToma, elSelectSemana.value, c.cultivo);
+                return { cultivo: c.cultivo, usuarios: (r.ok && r.usuarios) ? r.usuarios : [] };
+            }));
+
+            var resultadoConf = await CusshmiDatos.listarConfirmacionesG4(programacionIdActual);
+            if (!resultadoConf.ok) {
+                elEstado.textContent = 'No se pudieron cargar las confirmaciones: ' + (resultadoConf.error || 'error desconocido');
+                return;
+            }
+
+            filasActuales = cruzarConfirmacionesG4(usuariosPorCultivo, resultadoConf.confirmaciones);
+            poblarSelectorCultivos(usuariosPorCultivo);
+            elEstado.textContent = '';
+            renderizarOrden();
+
+            if (canalRealtimeActual) CusshmiDatos.cancelarSuscripcion(canalRealtimeActual);
+            canalRealtimeActual = CusshmiDatos.suscribirseAConfirmacionesG4Vivo(programacionIdActual, function () {
+                recargarConfirmacionesEnVivo();
+            });
+        }
+
+        async function recargarConfirmacionesEnVivo() {
+            if (!programacionIdActual) return;
+            var resultadoConf = await CusshmiDatos.listarConfirmacionesG4(programacionIdActual);
+            if (!resultadoConf.ok) return;
+            // Reconstruye solo el cruce (los usuarios programados no cambian
+            // por este evento) a partir de lo que ya se tiene en pantalla.
+            var porCultivo = {};
+            filasActuales.forEach(function (f) {
+                porCultivo[f.cultivo] = porCultivo[f.cultivo] || [];
+                porCultivo[f.cultivo].push({
+                    nombre: f.nombre, unidadCatastral: f.unidadCatastral, area: f.area,
+                    caudalLs: f.caudalLs, tiempoHoras: f.horasTotal, volumenM3: f.volumenM3,
+                    inicioTexto: f.inicioTexto, terminoTexto: f.terminoTexto, esNoApto: f.esNoApto
+                });
+            });
+            var usuariosPorCultivo = Object.keys(porCultivo).map(function (cultivo) {
+                return { cultivo: cultivo, usuarios: porCultivo[cultivo] };
+            });
+            filasActuales = cruzarConfirmacionesG4(usuariosPorCultivo, resultadoConf.confirmaciones);
+            renderizarOrden();
+        }
+
+        function poblarSelectorCultivos(usuariosPorCultivo) {
+            elSelectCultivo.innerHTML = '<option value="">Todos</option>';
+            usuariosPorCultivo.forEach(function (g) {
+                if (!g.cultivo) return;
+                var opt = document.createElement('option');
+                opt.value = g.cultivo;
+                opt.textContent = g.cultivo;
+                elSelectCultivo.appendChild(opt);
+            });
+        }
+
+        function renderizarOrden() {
+            var filtros = { cultivo: elSelectCultivo.value, estado: elSelectEstado.value, texto: elInputBuscar.value };
+            var filas = aplicarFiltrosOrdenRiego(filasActuales, filtros);
+            var indicadores = calcularIndicadoresOrdenRiego(filasActuales); // los indicadores son del total, no del filtro
+
+            elIndicadores.style.display = 'grid';
+            document.getElementById('indTotal').textContent = indicadores.total;
+            document.getElementById('indConfirmados').textContent = indicadores.confirmados;
+            document.getElementById('indPendientes').textContent = indicadores.pendientes;
+            document.getElementById('indPorcentaje').textContent = indicadores.porcentaje + '%';
+
+            var ahora = new Date();
+            var filas_html = filas.map(function (f) {
+                var porVencer = estaPorVencerConfirmacionG4(f, HORAS_ALERTA, ahora);
+                var badge = f.estadoConfirmacion === 'confirmado'
+                    ? '<span class="badge-estado" title="Confirmado el ' + escapeHtml(formatearFechaHoraConfirmacion(f.confirmadoEn)) + '">✅</span>'
+                    : '<span class="badge-estado" title="Aún no confirma la recepción">❌</span>';
+                return '<tr' + (porVencer ? ' class="por-vencer"' : '') + '>' +
+                    '<td>' + escapeHtml(f.nombre) + '</td>' +
+                    '<td>' + escapeHtml(f.unidadCatastral || '-') + '</td>' +
+                    '<td>' + escapeHtml(f.cultivo) + '</td>' +
+                    '<td>' + f.area.toFixed(2) + '</td>' +
+                    '<td>' + f.caudalLs.toFixed(2) + '</td>' +
+                    '<td>' + f.volumenM3.toFixed(1) + '</td>' +
+                    '<td>' + escapeHtml(f.inicioTexto || '-') + '</td>' +
+                    '<td>' + escapeHtml(f.terminoTexto || '-') + '</td>' +
+                    '<td style="text-align:center;">' + badge + '</td>' +
+                    '</tr>';
+            }).join('');
+
+            elContenedorTabla.innerHTML = filas.length === 0
+                ? '<div class="estado-busqueda">Sin usuarios para este filtro.</div>'
+                : '<table class="tabla-orden">' +
+                    '<thead><tr><th>Nombre</th><th>U. Catastral</th><th>Cultivo</th><th>Área</th><th>Caudal (l/s)</th><th>Volumen (m³)</th><th>Inicio</th><th>Término</th><th>Estado</th></tr></thead>' +
+                    '<tbody>' + filas_html + '</tbody></table>';
+            elContenedorTabla.style.display = 'block';
+        }
+
+        function formatearFechaHoraConfirmacion(iso) {
+            if (!iso) return '-';
+            var f = new Date(iso);
+            return f.toLocaleDateString('es-PE') + ' ' + f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        elSelectCultivo.addEventListener('change', renderizarOrden);
+        elSelectEstado.addEventListener('change', renderizarOrden);
+        elInputBuscar.addEventListener('input', renderizarOrden);
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+
+            if (perfilActual.rol !== 'admin' && perfilActual.rol !== 'programador') {
+                document.getElementById('vistaSinAcceso').style.display = 'block';
+                return;
+            }
+            elVistaOrden.style.display = 'flex';
+            poblarSelectorSemanas();
+        })();
+    </script>
+</body>
+</html>

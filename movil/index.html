@@ -73,6 +73,10 @@
                     <span class="icono">🗺️</span>
                     <span class="texto">Mapa de predios</span>
                 </a>
+                <a class="tile" href="orden-riego.html" id="tileOrdenRiego" style="display:none;">
+                    <span class="icono">🚿</span>
+                    <span class="texto">Orden de Riego</span>
+                </a>
             </div>
             <div style="width:100%; max-width:420px;">
                 <button class="boton-secundario" id="btnCerrarSesion">Cerrar sesión</button>
@@ -113,6 +117,15 @@
             }
             document.getElementById('saludoNombre').textContent = perfil.nombre;
             document.getElementById('saludoComision').textContent = perfil.comisionNombre || perfil.comisionClave || '';
+
+            // Primer tile del menú móvil restringido por rol — "Orden de
+            // Riego" es un panel administrativo (ver quién confirmó el
+            // Anexo G-4), no una herramienta de campo para cualquiera.
+            var tileOrdenRiego = document.getElementById('tileOrdenRiego');
+            if (tileOrdenRiego) {
+                tileOrdenRiego.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
             elLogin.style.display = 'none';
             elMenu.style.display = 'flex';
         }
