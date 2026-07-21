@@ -299,6 +299,36 @@
         };
     }
 
+    // Lista las semanas (semana_inicio/semana_fin) que tienen al menos una
+    // toma con estado 'programada' para la comisión — para el selector de
+    // semana del móvil (PDA Programado / Seguimiento), que antes solo podía
+    // mostrar la semana calendario actual. Una fila por toma en la tabla,
+    // así que se deduplica por semana_inicio antes de devolver.
+    async function listarSemanasConProgramacion(comisionKey) {
+        if (!comisionKey) return { ok: false, semanas: [] };
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, semanas: [] };
+
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('programaciones_semanales')
+                .select('semana_inicio, semana_fin')
+                .eq('comision_id', comisionId)
+                .eq('estado', 'programada')
+                .order('semana_inicio', { ascending: false }),
+            'listar semanas con programación'
+        );
+        if (error || !data) return { ok: false, semanas: [] };
+
+        const vistas = new Set();
+        const semanas = [];
+        data.forEach((fila) => {
+            if (vistas.has(fila.semana_inicio)) return;
+            vistas.add(fila.semana_inicio);
+            semanas.push({ semanaInicio: fila.semana_inicio, semanaFin: fila.semana_fin });
+        });
+        return { ok: true, semanas };
+    }
+
     // ── Eliminar una programación completa ──────────────────────────────────
     // Borra la fila de programaciones_semanales de esa toma+semana; por
     // ON DELETE CASCADE se lleva también su turno de riego, la selección de
@@ -484,6 +514,7 @@
         guardarProgramacionYTurno,
         cargarProgramacionYTurno,
         cargarTodasLasProgramaciones,
+        listarSemanasConProgramacion,
         guardarUsuariosG3Seleccionados,
         cargarUsuariosG3Seleccionados,
         eliminarProgramacionToma,

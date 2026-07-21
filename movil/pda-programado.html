@@ -132,6 +132,10 @@
 
         <!-- ── Vista de lista (Anexo G-2) ── -->
         <div id="vistaLista" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectSemana">Semana</label>
+                <select id="selectSemana"></select>
+            </div>
             <p class="subtitulo" id="textoSemana"></p>
             <div class="estado-busqueda" id="estadoLista">Cargando…</div>
             <div id="tomasContainer" style="width:100%; max-width:420px;"></div>
@@ -182,8 +186,38 @@
             return y + '-' + m + '-' + d;
         }
 
-        async function cargarPda() {
-            var semanaInicio = obtenerLunesActual();
+        // Arma el selector con la semana actual (siempre primera, aunque
+        // todavía no tenga nada guardado) más las semanas que sí tienen
+        // programación confirmada — antes solo se podía ver la semana
+        // calendario actual, sin forma de revisar semanas pasadas.
+        async function poblarSelectorSemanas() {
+            var select = document.getElementById('selectSemana');
+            var semanaActual = obtenerLunesActual();
+
+            var resultado = await CusshmiDatos.listarSemanasConProgramacion(comisionKeyActual);
+            var semanas = (resultado.ok && resultado.semanas) ? resultado.semanas : [];
+            if (!semanas.some(function (s) { return s.semanaInicio === semanaActual; })) {
+                semanas.unshift({ semanaInicio: semanaActual, semanaFin: null, esActual: true });
+            }
+
+            select.innerHTML = '';
+            semanas.forEach(function (s) {
+                var opt = document.createElement('option');
+                opt.value = s.semanaInicio;
+                var etiqueta = 'Semana del ' + formatearFecha(s.semanaInicio) + (s.semanaFin ? ' al ' + formatearFecha(s.semanaFin) : '');
+                if (s.semanaInicio === semanaActual) etiqueta += ' (actual)';
+                opt.textContent = etiqueta;
+                select.appendChild(opt);
+            });
+
+            cargarPda(semanaActual);
+        }
+
+        document.getElementById('selectSemana').addEventListener('change', function (e) {
+            if (e.target.value) cargarPda(e.target.value);
+        });
+
+        async function cargarPda(semanaInicio) {
             document.getElementById('textoSemana').textContent = 'Semana del ' + formatearFecha(semanaInicio);
 
             var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
@@ -422,7 +456,7 @@
             perfilActual = resultado.perfil;
             comisionKeyActual = perfilActual.comisionClave;
             if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
-            cargarPda();
+            poblarSelectorSemanas();
         })();
     </script>
 </body>

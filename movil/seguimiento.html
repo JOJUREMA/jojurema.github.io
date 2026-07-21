@@ -26,15 +26,6 @@
     <script src="../assets/core/anexoG2.js"></script>
 
     <style>
-        .campo select {
-            width: 100%;
-            padding: 11px 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-            background: rgba(255, 255, 255, 0.95);
-            color: #002555;
-            font-size: 15px;
-        }
         .fila-linea-tiempo {
             width: 100%;
             max-width: 420px;
@@ -108,6 +99,11 @@
         </div>
 
         <div class="campo" style="width:100%; max-width:420px;">
+            <label for="selectSemanaSeguimiento">Semana</label>
+            <select id="selectSemanaSeguimiento"></select>
+        </div>
+
+        <div class="campo" style="width:100%; max-width:420px;">
             <label for="selectTomaSeguimiento">Selecciona una toma</label>
             <select id="selectTomaSeguimiento">
                 <option value="">-- Elige una toma --</option>
@@ -161,10 +157,44 @@
             'sin-horario': 'Sin horario'
         };
 
+        var semanaSeleccionada = null;
+
+        async function poblarSelectorSemanas() {
+            var selectSemana = document.getElementById('selectSemanaSeguimiento');
+            var semanaActual = obtenerLunesActual();
+
+            var resultado = await CusshmiDatos.listarSemanasConProgramacion(comisionKeyActual);
+            var semanas = (resultado.ok && resultado.semanas) ? resultado.semanas : [];
+            if (!semanas.some(function (s) { return s.semanaInicio === semanaActual; })) {
+                semanas.unshift({ semanaInicio: semanaActual, semanaFin: null });
+            }
+
+            selectSemana.innerHTML = '';
+            semanas.forEach(function (s) {
+                var opt = document.createElement('option');
+                opt.value = s.semanaInicio;
+                var etiqueta = 'Semana del ' + formatearFecha(s.semanaInicio) + (s.semanaFin ? ' al ' + formatearFecha(s.semanaFin) : '');
+                if (s.semanaInicio === semanaActual) etiqueta += ' (actual)';
+                opt.textContent = etiqueta;
+                selectSemana.appendChild(opt);
+            });
+
+            semanaSeleccionada = semanaActual;
+            poblarSelectorTomas();
+        }
+
+        document.getElementById('selectSemanaSeguimiento').addEventListener('change', function (e) {
+            semanaSeleccionada = e.target.value;
+            limpiarSuscripcionYReloj();
+            tomaSeleccionada = null;
+            document.getElementById('lineaTiempoContainer').innerHTML = '';
+            poblarSelectorTomas();
+        });
+
         async function poblarSelectorTomas() {
-            var semanaInicio = obtenerLunesActual();
-            var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
             var select = document.getElementById('selectTomaSeguimiento');
+            select.innerHTML = '<option value="">-- Elige una toma --</option>';
+            var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaSeleccionada);
 
             if (!resultado.ok) {
                 elEstado.textContent = 'No se pudo cargar la programación de esta semana.';
@@ -174,6 +204,7 @@
                 elEstado.textContent = 'No hay tomas programadas esta semana todavía.';
                 return;
             }
+            elEstado.textContent = '';
 
             resultado.programaciones.forEach(function (p) {
                 var opt = document.createElement('option');
@@ -201,7 +232,7 @@
             elLineaTiempo.innerHTML = '';
 
             var listas = await Promise.all(cultivos.map(function (c) {
-                return CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKeyActual, nombreToma, obtenerLunesActual(), c.cultivo);
+                return CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKeyActual, nombreToma, semanaSeleccionada, c.cultivo);
             }));
             var usuarios = [];
             listas.forEach(function (r, i) {
@@ -320,7 +351,7 @@
             perfilActual = resultado.perfil;
             comisionKeyActual = perfilActual.comisionClave;
             if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
-            poblarSelectorTomas();
+            poblarSelectorSemanas();
         })();
     </script>
 </body>

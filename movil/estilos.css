@@ -88,6 +88,16 @@ h1 {
     border-color: #c8a84b;
 }
 
+.campo select {
+    width: 100%;
+    padding: 11px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.95);
+    color: #002555;
+    font-size: 15px;
+}
+
 .boton {
     width: 100%;
     padding: 12px;
