@@ -67,6 +67,7 @@
             <div class="acciones-reporte" id="accionesReporteToma" style="display:none; width:100%; max-width:420px; margin-bottom:10px;">
                 <button class="boton" id="btnCompartirReporteToma">📤 Compartir / Descargar PDF de la toma</button>
                 <div class="estado-busqueda" id="estadoReporteToma"></div>
+                <div class="tarjeta-reporte" id="contenedorReporteTomaPdf" style="display:none;"></div>
             </div>
 
             <div class="resultados" id="resultados"></div>
@@ -82,6 +83,7 @@
             <div class="acciones-reporte" style="width:100%; max-width:420px; margin-bottom:14px;">
                 <button class="boton" id="btnCompartirReporteUsuario">📤 Compartir / Descargar PDF</button>
                 <div class="estado-busqueda" id="estadoReporteUsuario"></div>
+                <div class="tarjeta-reporte" id="contenedorReporteUsuarioPdf" style="display:none;"></div>
             </div>
 
             <div class="tarjeta" style="max-width:420px; margin-bottom:18px;">
@@ -112,10 +114,6 @@
 
             <div class="lista-cultivos" id="listaCultivos"></div>
         </div>
-
-        <!-- Contenedor fuera de pantalla usado solo para renderizar el HTML
-             del reporte antes de capturarlo con html2pdf — nunca se muestra. -->
-        <div id="contenedorReportePdf" style="position:absolute; left:-9999px; top:0; width:380px;"></div>
     </div>
 
     <script>
@@ -200,6 +198,11 @@
             usuarioSeleccionado = fila;
             elBusqueda.style.display = 'none';
             elDetalle.style.display = 'flex';
+
+            var elContenedorReporteUsuario = document.getElementById('contenedorReporteUsuarioPdf');
+            elContenedorReporteUsuario.innerHTML = '';
+            elContenedorReporteUsuario.style.display = 'none';
+            document.getElementById('estadoReporteUsuario').textContent = '';
 
             document.getElementById('inputDeudaMax').value = deudaMaxLista;
             document.getElementById('detalleNombre').textContent = fila.nombre;
@@ -321,6 +324,10 @@
             elInputBusqueda.value = '';
             elResultados.innerHTML = '';
             elAccionesReporteToma.style.display = 'none';
+            elEstadoReporteToma.textContent = '';
+            var elContenedorReporteToma = document.getElementById('contenedorReporteTomaPdf');
+            elContenedorReporteToma.innerHTML = '';
+            elContenedorReporteToma.style.display = 'none';
 
             if (!tomaElegida) {
                 modoActual = 'todas';
@@ -390,14 +397,23 @@
             }, 300);
         });
 
-        // Genera el PDF del HTML recibido (renderizándolo primero en el
-        // contenedor oculto) y lo comparte con navigator.share si el
-        // navegador soporta adjuntar archivos; si no, cae a descarga
+        // Genera el PDF del HTML recibido y lo comparte con navigator.share
+        // si el navegador soporta adjuntar archivos; si no, cae a descarga
         // simple. Mismo patrón que generarYCompartirPdfG4() en
         // movil/pda-programado.html (Fase 3).
-        async function generarYCompartirReporte(html, nombreArchivo, textoWhatsApp, tituloCompartir, elEstado) {
-            var contenedor = document.getElementById('contenedorReportePdf');
+        //
+        // El contenedor donde se renderiza el HTML se deja VISIBLE en
+        // pantalla (a diferencia de un primer intento que lo ponía fuera de
+        // pantalla con left:-9999px): html2canvas —la librería que usa
+        // html2pdf para capturar el HTML— no siempre rasteriza bien un
+        // elemento que nunca entró al viewport, y en algunos celulares eso
+        // producía un PDF completamente en blanco al compartir. Mostrarlo
+        // en pantalla (como ya hacía el visor del Anexo G-4) evita ese
+        // problema y además deja ver el reporte antes/después de compartir.
+        async function generarYCompartirReporte(html, nombreArchivo, textoWhatsApp, tituloCompartir, elEstado, contenedorId) {
+            var contenedor = document.getElementById(contenedorId);
             contenedor.innerHTML = '<style>' + estilosReporteCondicion() + '</style>' + html;
+            contenedor.style.display = 'block';
             elEstado.textContent = 'Generando PDF…';
             try {
                 var opciones = {
@@ -426,8 +442,6 @@
                 }
             } catch (e) {
                 elEstado.textContent = 'No se pudo generar el PDF: ' + (e.message || e);
-            } finally {
-                contenedor.innerHTML = '';
             }
         }
 
@@ -458,7 +472,7 @@
             });
             var nombreArchivo = _nombreArchivoReporteCondicion(datos.nombre);
             await generarYCompartirReporte(html, nombreArchivo, textoWa, 'Reporte — ' + datos.nombre,
-                document.getElementById('estadoReporteUsuario'));
+                document.getElementById('estadoReporteUsuario'), 'contenedorReporteUsuarioPdf');
         });
 
         document.getElementById('btnCompartirReporteToma').addEventListener('click', async function () {
@@ -498,7 +512,7 @@
             });
             var nombreArchivo = _nombreArchivoReporteCondicion(tomaElegida + ' - ' + _etiquetaFiltroCondicion(condicionFiltroActual));
             await generarYCompartirReporte(html, nombreArchivo, textoWa, 'Reporte — Toma ' + tomaElegida,
-                elEstadoReporteToma);
+                elEstadoReporteToma, 'contenedorReporteTomaPdf');
         });
 
         (async function iniciar() {

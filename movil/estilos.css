@@ -268,6 +268,17 @@ h1 {
 .badge-condicion-mini.apto { background: #1e7e34; color: #ffffff; }
 .badge-condicion-mini.no-apto { background: #c0392b; color: #ffffff; }
 
+/* Vista previa del reporte de Condición del Usuario antes/después de
+   compartirlo (fondo blanco, como el documento imprimible en sí) — a
+   diferencia de un contenedor oculto fuera de pantalla, se muestra en la
+   página para que html2canvas lo capture de forma confiable y para que la
+   persona pueda ver el reporte antes de enviarlo. */
+.tarjeta-reporte {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 12px;
+}
+
 .stats-deuda {
     width: 100%;
     max-width: 420px;

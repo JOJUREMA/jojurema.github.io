@@ -56,7 +56,6 @@ function estilosAnexoG4RJ() {
         .g4-firmas-table td{text-align:center;padding:0 8px;vertical-align:top;}
         .g4-firma-label{margin-top:10px;font-size:10px}
         .g4-obs{margin-top:18px;font-size:11px}
-        .g4-obs-note{margin-top:6px;font-size:10px;color:#333}
     `;
 }
 
@@ -124,9 +123,6 @@ function construirAnexoG4RJHtml(datos) {
 
             <div class="g4-obs">
                 <div><strong>Observaciones:</strong> <span class="g4-line" style="display:inline-block;min-width:260px;"></span></div>
-                <div class="g4-obs-note">
-                    (Anotar cuando, tiempo y caudal asignados fueron diferentes a lo autorizado, así como el cambio de cultivo)
-                </div>
             </div>
         </div>
     `;
