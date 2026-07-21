@@ -373,11 +373,25 @@
             actualizado_por: usuarioId,
         }));
 
-        const { error } = await client.from('padron_usuarios').upsert(filas, {
+        // Postgres rechaza el upsert completo si DOS filas del mismo arreglo
+        // coinciden en la clave de conflicto (comision_id, toma_nombre,
+        // nombre, unidad_catastral) — "ON CONFLICT DO UPDATE command cannot
+        // affect row a second time". Pasa con usuarios repetidos en el Excel
+        // de origen (mismo nombre + misma unidad catastral, o ambos sin
+        // unidad catastral). Se deduplica quedándose con la última aparición
+        // de cada clave antes de enviar, en vez de que falle toda la toma.
+        const filasPorClave = new Map();
+        filas.forEach((fila) => {
+            const clave = fila.nombre.toUpperCase() + '|' + (fila.unidad_catastral || '');
+            filasPorClave.set(clave, fila);
+        });
+        const filasSinDuplicados = Array.from(filasPorClave.values());
+
+        const { error } = await client.from('padron_usuarios').upsert(filasSinDuplicados, {
             onConflict: 'comision_id,toma_nombre,nombre,unidad_catastral',
         });
         if (error) return { ok: false, error: error.message };
-        return { ok: true, guardados: filas.length };
+        return { ok: true, guardados: filasSinDuplicados.length };
     }
 
     // Búsqueda por nombre para el módulo móvil "Condición del Usuario" —
