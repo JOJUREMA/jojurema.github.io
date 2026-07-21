@@ -475,16 +475,31 @@
         const comisionId = await resolverComisionId(comisionKey);
         if (!comisionId) return { ok: false, tomas: [], error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
 
-        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
-            (client) => client.from('padron_usuarios')
-                .select('toma_nombre')
-                .eq('comision_id', comisionId),
-            'listar tomas con padrón'
-        );
-        if (error || !data) return { ok: false, tomas: [], error: error ? error.mensaje : 'No se pudo listar las tomas.' };
-
+        // Supabase/PostgREST solo devuelve 1000 filas por consulta si no se
+        // pagina explícitamente. padron_usuarios tiene una fila por usuario
+        // (no por toma) — una comisión con ~2000+ usuarios en total supera
+        // ese límite fácilmente, y las tomas cuyas filas caían después de
+        // la fila 1000 simplemente no aparecían en el selector, sin ningún
+        // error visible. Se pagina con .range() hasta que una página vuelva
+        // con menos filas que el tamaño pedido (fin de los datos).
+        const TAMANO_PAGINA = 1000;
         const vistas = new Set();
-        data.forEach((fila) => { if (fila.toma_nombre) vistas.add(fila.toma_nombre); });
+        let desde = 0;
+        while (true) {
+            const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+                (client) => client.from('padron_usuarios')
+                    .select('toma_nombre')
+                    .eq('comision_id', comisionId)
+                    .range(desde, desde + TAMANO_PAGINA - 1),
+                'listar tomas con padrón'
+            );
+            if (error || !data) return { ok: false, tomas: [], error: error ? error.mensaje : 'No se pudo listar las tomas.' };
+
+            data.forEach((fila) => { if (fila.toma_nombre) vistas.add(fila.toma_nombre); });
+            if (data.length < TAMANO_PAGINA) break;
+            desde += TAMANO_PAGINA;
+        }
+
         const tomas = Array.from(vistas).sort(function (a, b) { return a.localeCompare(b, 'es', { numeric: true }); });
         return { ok: true, tomas: tomas };
     }
