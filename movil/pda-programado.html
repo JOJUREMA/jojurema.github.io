@@ -428,6 +428,27 @@
             elVistaDetalle.style.display = 'flex';
         });
 
+        // Espera a que el logo (y cualquier otra <img>) termine de cargar
+        // antes de capturar — si html2canvas arranca antes, el layout
+        // todavía no se asentó y la captura sale cortada a media altura.
+        function esperarImagenesListas(contenedor) {
+            var imgs = Array.prototype.slice.call(contenedor.querySelectorAll('img'));
+            var promesas = imgs.map(function (img) {
+                if (img.complete) return Promise.resolve();
+                return new Promise(function (resolve) {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true });
+                });
+            });
+            return Promise.all(promesas);
+        }
+
+        function esperarRepintado() {
+            return new Promise(function (resolve) {
+                requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+            });
+        }
+
         async function generarYCompartirPdfG4() {
             var elEstado = document.getElementById('estadoG4');
             var contenedor = document.getElementById('contenedorG4Movil');
@@ -435,6 +456,8 @@
 
             elEstado.textContent = 'Generando PDF…';
             try {
+                await esperarImagenesListas(contenedor);
+                await esperarRepintado();
                 var opciones = {
                     margin: 5,
                     filename: g4Actual.nombreArchivo + '.pdf',

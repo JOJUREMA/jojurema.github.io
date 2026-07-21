@@ -397,6 +397,32 @@
             }, 300);
         });
 
+        // Espera a que todas las <img> dentro del contenedor terminen de
+        // cargar (o fallen) antes de seguir — si html2canvas captura antes
+        // de que el logo termine de cargar, el layout todavía no se asentó
+        // del todo y la captura sale cortada a la altura en la que se
+        // quedó en ese instante.
+        function esperarImagenesListas(contenedor) {
+            var imgs = Array.prototype.slice.call(contenedor.querySelectorAll('img'));
+            var promesas = imgs.map(function (img) {
+                if (img.complete) return Promise.resolve();
+                return new Promise(function (resolve) {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true });
+                });
+            });
+            return Promise.all(promesas);
+        }
+
+        // Espera un par de frames de pintado — cambiar display:none a
+        // 'block' y llenar el innerHTML no garantiza que el navegador ya
+        // haya recalculado el layout final en el mismo tick.
+        function esperarRepintado() {
+            return new Promise(function (resolve) {
+                requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+            });
+        }
+
         // Genera el PDF del HTML recibido y lo comparte con navigator.share
         // si el navegador soporta adjuntar archivos; si no, cae a descarga
         // simple. Mismo patrón que generarYCompartirPdfG4() en
@@ -416,6 +442,8 @@
             contenedor.style.display = 'block';
             elEstado.textContent = 'Generando PDF…';
             try {
+                await esperarImagenesListas(contenedor);
+                await esperarRepintado();
                 var opciones = {
                     margin: 5,
                     filename: nombreArchivo + '.pdf',
