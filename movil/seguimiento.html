@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Seguimiento PDA — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+
+    <style>
+        .campo select {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.95);
+            color: #002555;
+            font-size: 15px;
+        }
+        .fila-linea-tiempo {
+            width: 100%;
+            max-width: 420px;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-left: 4px solid transparent;
+        }
+        .fila-linea-tiempo.en-curso {
+            background: rgba(200, 168, 75, 0.18);
+            border-left-color: #c8a84b;
+        }
+        .fila-linea-tiempo.proximo {
+            background: rgba(255, 255, 255, 0.07);
+            border-left-color: #2563eb;
+        }
+        .fila-linea-tiempo.finalizado {
+            background: rgba(255, 255, 255, 0.04);
+            border-left-color: #475569;
+            opacity: 0.65;
+        }
+        .fila-linea-tiempo.sin-horario {
+            background: rgba(220, 53, 69, 0.10);
+            border-left-color: #c0392b;
+        }
+        .badge-estado {
+            display: inline-block;
+            font-size: 9.5px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            margin-left: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .badge-estado.en-curso { background: #c8a84b; color: #002555; }
+        .badge-estado.proximo { background: #2563eb; color: #fff; }
+        .badge-estado.finalizado { background: #475569; color: #fff; }
+        .badge-estado.sin-horario { background: #c0392b; color: #fff; }
+        .grupo-titulo {
+            width: 100%;
+            max-width: 420px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.75;
+            margin: 16px 0 8px;
+        }
+        .reloj-en-vivo {
+            font-size: 10.5px;
+            opacity: 0.6;
+            margin-top: 4px;
+        }
+        .punto-en-vivo {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>📡 Seguimiento PDA</h2>
+        </div>
+
+        <div class="campo" style="width:100%; max-width:420px;">
+            <label for="selectTomaSeguimiento">Selecciona una toma</label>
+            <select id="selectTomaSeguimiento">
+                <option value="">-- Elige una toma --</option>
+            </select>
+        </div>
+
+        <div class="estado-busqueda" id="estadoSeguimiento"></div>
+        <div class="reloj-en-vivo" id="relojEnVivo"></div>
+        <div id="lineaTiempoContainer" style="width:100%; display:flex; flex-direction:column; align-items:center; margin-top:8px;"></div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var tomaSeleccionada = null;
+        var cultivosTomaActual = [];
+        var canalRealtime = null;
+        var intervaloReloj = null;
+
+        var elEstado = document.getElementById('estadoSeguimiento');
+        var elReloj = document.getElementById('relojEnVivo');
+        var elLineaTiempo = document.getElementById('lineaTiempoContainer');
+
+        function obtenerLunesActual() {
+            var hoy = new Date();
+            var diaSemana = hoy.getDay();
+            var offsetHastaLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+            var lunes = new Date(hoy);
+            lunes.setDate(hoy.getDate() + offsetHastaLunes);
+            var y = lunes.getFullYear();
+            var m = String(lunes.getMonth() + 1).padStart(2, '0');
+            var d = String(lunes.getDate()).padStart(2, '0');
+            return y + '-' + m + '-' + d;
+        }
+
+        // Compara el horario ya guardado (Fase 3) contra "ahora" — no
+        // recalcula nada, solo clasifica lo que el escritorio ya calculó.
+        function calcularEstadoUsuario(usuario, ahora) {
+            if (!usuario.inicioTexto || !usuario.terminoTexto) return 'sin-horario';
+            var inicio = parsearFechaHoraTexto(usuario.inicioTexto);
+            var termino = parsearFechaHoraTexto(usuario.terminoTexto);
+            if (ahora < inicio) return 'proximo';
+            if (ahora > termino) return 'finalizado';
+            return 'en-curso';
+        }
+
+        var ETIQUETAS_ESTADO = {
+            'en-curso': 'En curso',
+            'proximo': 'Próximo',
+            'finalizado': 'Finalizado',
+            'sin-horario': 'Sin horario'
+        };
+
+        async function poblarSelectorTomas() {
+            var semanaInicio = obtenerLunesActual();
+            var resultado = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKeyActual, semanaInicio);
+            var select = document.getElementById('selectTomaSeguimiento');
+
+            if (!resultado.ok) {
+                elEstado.textContent = 'No se pudo cargar la programación de esta semana.';
+                return;
+            }
+            if (resultado.programaciones.length === 0) {
+                elEstado.textContent = 'No hay tomas programadas esta semana todavía.';
+                return;
+            }
+
+            resultado.programaciones.forEach(function (p) {
+                var opt = document.createElement('option');
+                opt.value = p.toma;
+                opt.textContent = p.toma;
+                opt.dataset.programacionId = p.programacionId;
+                opt.dataset.cultivos = JSON.stringify((p.datos && p.datos.cultivos) || []);
+                select.appendChild(opt);
+            });
+        }
+
+        function limpiarSuscripcionYReloj() {
+            if (canalRealtime) {
+                CusshmiDatos.cancelarSuscripcion(canalRealtime);
+                canalRealtime = null;
+            }
+            if (intervaloReloj) {
+                clearInterval(intervaloReloj);
+                intervaloReloj = null;
+            }
+        }
+
+        async function cargarSeguimientoDeToma(nombreToma, programacionId, cultivos) {
+            elEstado.textContent = 'Cargando horario…';
+            elLineaTiempo.innerHTML = '';
+
+            var listas = await Promise.all(cultivos.map(function (c) {
+                return CusshmiDatos.cargarUsuariosG3Seleccionados(comisionKeyActual, nombreToma, obtenerLunesActual(), c.cultivo);
+            }));
+            var usuarios = [];
+            listas.forEach(function (r, i) {
+                if (r.ok && r.usuarios) {
+                    r.usuarios.forEach(function (u) { usuarios.push(Object.assign({ cultivo: cultivos[i].cultivo }, u)); });
+                }
+            });
+
+            if (usuarios.length === 0) {
+                elEstado.textContent = 'No hay usuarios con horario confirmado para esta toma todavía.';
+                return;
+            }
+
+            elEstado.innerHTML = '<span class="punto-en-vivo"></span>En vivo — ' + usuarios.length + ' usuario(s).';
+            renderizarLineaTiempo(usuarios);
+        }
+
+        function renderizarLineaTiempo(usuarios) {
+            var ahora = new Date();
+            elReloj.textContent = 'Actualizado: ' + ahora.toLocaleTimeString('es-PE');
+
+            var conEstado = usuarios.map(function (u) {
+                return Object.assign({ estado: calcularEstadoUsuario(u, ahora) }, u);
+            });
+
+            var orden = { 'en-curso': 0, 'proximo': 1, 'finalizado': 2, 'sin-horario': 3 };
+            conEstado.sort(function (a, b) {
+                if (orden[a.estado] !== orden[b.estado]) return orden[a.estado] - orden[b.estado];
+                var ta = a.inicioTexto ? parsearFechaHoraTexto(a.inicioTexto).getTime() : 0;
+                var tb = b.inicioTexto ? parsearFechaHoraTexto(b.inicioTexto).getTime() : 0;
+                return ta - tb;
+            });
+
+            elLineaTiempo.innerHTML = '';
+            var grupoActual = null;
+            conEstado.forEach(function (u) {
+                if (u.estado !== grupoActual) {
+                    grupoActual = u.estado;
+                    var titulo = document.createElement('div');
+                    titulo.className = 'grupo-titulo';
+                    titulo.textContent = ETIQUETAS_ESTADO[grupoActual];
+                    elLineaTiempo.appendChild(titulo);
+                }
+
+                var fila = document.createElement('div');
+                fila.className = 'fila-linea-tiempo ' + u.estado;
+                var detalle = (u.estado === 'sin-horario')
+                    ? 'Horario aún no confirmado en escritorio.'
+                    : 'Cultivo: ' + escapeHtml(u.cultivo || '-') + ' · ' +
+                      escapeHtml(u.inicioTexto || '-') + ' → ' + escapeHtml(u.terminoTexto || '-') + ' · ' +
+                      (parseFloat(u.caudalLs) || 0).toFixed(2) + ' l/s';
+                fila.innerHTML =
+                    '<div class="nombre-usuario-g3">' + escapeHtml(u.nombre || '-') +
+                    '<span class="badge-estado ' + u.estado + '">' + ETIQUETAS_ESTADO[u.estado] + '</span></div>' +
+                    '<div style="font-size:11.5px; opacity:0.85; margin-top:4px;">' + detalle + '</div>';
+                elLineaTiempo.appendChild(fila);
+            });
+        }
+
+        async function seleccionarToma(nombreToma, programacionId, cultivos) {
+            limpiarSuscripcionYReloj();
+            tomaSeleccionada = nombreToma;
+            cultivosTomaActual = cultivos;
+
+            await cargarSeguimientoDeToma(nombreToma, programacionId, cultivos);
+
+            // Reloj: recalcula el estado (en_curso/proximo/finalizado) cada
+            // 30s aunque los datos no cambien — el paso del tiempo por sí
+            // solo mueve a un usuario de "próximo" a "en curso".
+            intervaloReloj = setInterval(function () {
+                cargarSeguimientoDeToma(nombreToma, programacionId, cultivos);
+            }, 30000);
+
+            // Realtime: si el personal cambia algo en escritorio (nuevo
+            // horario, ajuste manual), se refresca sin esperar el reloj.
+            if (programacionId) {
+                canalRealtime = CusshmiDatos.suscribirseATomaEnVivo(programacionId, function () {
+                    cargarSeguimientoDeToma(nombreToma, programacionId, cultivos);
+                });
+            }
+        }
+
+        document.getElementById('selectTomaSeguimiento').addEventListener('change', function (e) {
+            var opt = e.target.selectedOptions[0];
+            if (!opt || !opt.value) return;
+            var cultivos = JSON.parse(opt.dataset.cultivos || '[]');
+            seleccionarToma(opt.value, opt.dataset.programacionId, cultivos);
+        });
+
+        // Al salir de la pestaña/app se corta la suscripción y el reloj
+        // (no dejar nada corriendo en segundo plano); al volver, si había
+        // una toma elegida, se retoma el seguimiento en vivo desde cero
+        // (recarga inmediata + reabre el canal) en vez de dejar la
+        // pantalla "congelada" hasta que el usuario vuelva a elegir.
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                limpiarSuscripcionYReloj();
+            } else if (tomaSeleccionada) {
+                var opt = document.getElementById('selectTomaSeguimiento').selectedOptions[0];
+                if (opt && opt.value) {
+                    seleccionarToma(opt.value, opt.dataset.programacionId, JSON.parse(opt.dataset.cultivos || '[]'));
+                }
+            }
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+            poblarSelectorTomas();
+        })();
+    </script>
+</body>
+</html>

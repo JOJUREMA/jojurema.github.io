@@ -325,20 +325,8 @@
             elVistaLista.style.display = 'flex';
         });
 
-        // "DD/MM/YYYY HH:MM" (formato guardado por guardarHorarioG3EnSupabase,
-        // Fase 3) -> Date, para reusar los mismos formateadores del escritorio
-        // (assets/core/anexoG4.js) en vez de mostrar el texto crudo.
-        function parsearFechaHoraTexto(texto) {
-            if (!texto) return new Date();
-            var partes = texto.trim().split(' ');
-            var dmy = (partes[0] || '').split('/');
-            var hm = (partes[1] || '00:00').split(':');
-            if (dmy.length < 3) return new Date();
-            return new Date(
-                parseInt(dmy[2], 10), parseInt(dmy[1], 10) - 1, parseInt(dmy[0], 10),
-                parseInt(hm[0], 10) || 0, parseInt(hm[1], 10) || 0
-            );
-        }
+        // parsearFechaHoraTexto: ver assets/core/utilidades.js (Fase 5 PWA —
+        // movida ahí al aparecer un segundo consumidor real, seguimiento.html).
 
         var g4Actual = null; // { nombre, nombreArchivo, textoWhatsApp } — del usuario mostrado en vistaG4
 

@@ -294,6 +294,7 @@
                 toma: p.toma_nombre,
                 datos: p.datos,
                 turno: turnoPorProgId[p.id] || null,
+                programacionId: p.id, // Fase 5: lo necesita suscribirseATomaEnVivo
             })),
         };
     }
@@ -421,6 +422,47 @@
         return { ok: true, resultados: data || [] };
     }
 
+    // ── Fase 5 PWA (móvil) — Seguimiento PDA en vivo ────────────────────────
+    // Suscribe un canal Realtime a los cambios de usuarios_g3_seleccionados
+    // de UNA programación (una toma+semana) — requiere que la tabla esté
+    // agregada a la publicación `supabase_realtime` (ver
+    // 009_realtime_seguimiento.sql). callback() se llama en cualquier
+    // cambio (inserción/actualización), sin pasarle el payload — quien la
+    // use vuelve a consultar con cargarUsuariosG3Seleccionados, así el
+    // móvil nunca confía en datos parciales de Realtime, solo usa el evento
+    // como aviso de "algo cambió, recarga".
+    function suscribirseATomaEnVivo(programacionId, callback) {
+        if (!programacionId || typeof callback !== 'function') return null;
+        let client;
+        try {
+            client = window.CusshmiSupabase.getClient();
+        } catch (e) {
+            return null;
+        }
+        const canal = client
+            .channel('seguimiento-' + programacionId)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'usuarios_g3_seleccionados', filter: 'programacion_id=eq.' + programacionId },
+                () => callback()
+            )
+            .subscribe();
+        return canal;
+    }
+
+    // Cierra un canal abierto con suscribirseATomaEnVivo — llamar siempre
+    // al salir de la pantalla que lo abrió, para no dejar suscripciones
+    // huérfanas en segundo plano.
+    function cancelarSuscripcion(canal) {
+        if (!canal) return;
+        try {
+            window.CusshmiSupabase.getClient().removeChannel(canal);
+        } catch (e) {
+            // sin conexión o canal ya cerrado — no es un error que deba
+            // interrumpir la salida de la pantalla
+        }
+    }
+
     window.CusshmiDatos = {
         cargarNotaAnexoG2,
         guardarNotaAnexoG2,
@@ -434,5 +476,7 @@
         guardarPadronToma,
         buscarEnPadron,
         cargarPadronToma,
+        suscribirseATomaEnVivo,
+        cancelarSuscripcion,
     };
 })();

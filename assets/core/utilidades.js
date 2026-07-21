@@ -109,3 +109,20 @@ function formatearFechaConDia(fechaStr) {
     const nombreDia = dias[fecha.getDay()];
     return `${nombreDia} ${formatearFecha(fechaStr)}`;
 }
+
+// "DD/MM/YYYY HH:MM" (formato guardado por guardarHorarioG3EnSupabase,
+// Fase 3, ej. en usuarios_g3_seleccionados.usuarios[].inicioTexto) -> Date.
+// Compartida entre movil/pda-programado.html (visor G-4) y
+// movil/seguimiento.html (Fase 5) — antes vivía duplicada solo en la
+// primera, se movió aquí al aparecer un segundo consumidor real.
+function parsearFechaHoraTexto(texto) {
+    if (!texto) return new Date();
+    const partes = texto.trim().split(' ');
+    const dmy = (partes[0] || '').split('/');
+    const hm = (partes[1] || '00:00').split(':');
+    if (dmy.length < 3) return new Date();
+    return new Date(
+        parseInt(dmy[2], 10), parseInt(dmy[1], 10) - 1, parseInt(dmy[0], 10),
+        parseInt(hm[0], 10) || 0, parseInt(hm[1], 10) || 0
+    );
+}

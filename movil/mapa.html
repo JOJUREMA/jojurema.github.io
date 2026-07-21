@@ -80,6 +80,11 @@
             </select>
         </div>
 
+        <label style="width:100%; max-width:420px; display:flex; align-items:center; gap:8px; font-size:12.5px; opacity:0.85; margin-bottom:10px; cursor:pointer;">
+            <input type="checkbox" id="checkDatosBajos" style="width:16px; height:16px;">
+            📶 Modo de datos bajos (sin imagen satelital)
+        </label>
+
         <div class="estado-busqueda" id="estadoMapa"></div>
         <div id="mapaLeaflet"></div>
         <div id="panelPredio"></div>
@@ -122,14 +127,37 @@
             return predios;
         }
 
+        var capaSatelital = null;
+
+        // preferCanvas: true — con tomas de cientos de predios (ej. SD5 en
+        // MIRAFLORES, 309) dibuja todos los polígonos sobre un único
+        // <canvas> en vez de un <svg> por predio, mucho más liviano en
+        // celulares de gama baja.
         function inicializarMapaSiHaceFalta() {
             if (mapaLeaflet) return;
-            mapaLeaflet = L.map('mapaLeaflet');
-            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            mapaLeaflet = L.map('mapaLeaflet', { preferCanvas: true });
+            capaSatelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
                 attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
                 maxZoom: 19
-            }).addTo(mapaLeaflet);
+            });
+            aplicarModoDatosBajos();
         }
+
+        // Modo de datos bajos: quita la capa satelital (decenas de teselas
+        // por toma) y deja solo los polígonos sobre fondo simple — para
+        // conexiones lentas en el campo. Los datos (cruce con el padrón,
+        // panel de predio) funcionan igual con o sin ella.
+        function aplicarModoDatosBajos() {
+            if (!mapaLeaflet || !capaSatelital) return;
+            var datosBajos = document.getElementById('checkDatosBajos').checked;
+            if (datosBajos) {
+                if (mapaLeaflet.hasLayer(capaSatelital)) mapaLeaflet.removeLayer(capaSatelital);
+            } else if (!mapaLeaflet.hasLayer(capaSatelital)) {
+                capaSatelital.addTo(mapaLeaflet);
+            }
+        }
+
+        document.getElementById('checkDatosBajos').addEventListener('change', aplicarModoDatosBajos);
 
         function mostrarPanelPredio(p) {
             var cultivosTexto = (p.cultivos && p.cultivos.length)
