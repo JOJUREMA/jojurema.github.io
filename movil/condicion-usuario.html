@@ -34,11 +34,24 @@
 
         <!-- ── Vista de búsqueda ── -->
         <div id="vistaBusqueda" style="width:100%; display:flex; flex-direction:column; align-items:center;">
-            <div class="buscador campo">
-                <label for="inputBusqueda">Buscar por nombre</label>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectTomaCondicion">Toma</label>
+                <select id="selectTomaCondicion">
+                    <option value="">🔎 Buscar por nombre (todas las tomas)</option>
+                </select>
+            </div>
+
+            <div class="campo" id="contenedorDeudaMaxLista" style="width:100%; max-width:420px; display:none;">
+                <label for="inputDeudaMaxLista">Deuda máxima permitida (S/)</label>
+                <input type="number" id="inputDeudaMaxLista" value="0" min="0" step="0.01">
+            </div>
+
+            <div class="buscador campo" style="width:100%; max-width:420px;">
+                <label for="inputBusqueda" id="labelBusqueda">Buscar por nombre</label>
                 <input type="text" id="inputBusqueda" placeholder="ej. Pérez" autocomplete="off">
             </div>
-            <div class="estado-busqueda" id="estadoBusqueda">Escribe al menos 2 letras para buscar.</div>
+
+            <div class="estado-busqueda" id="estadoBusqueda">Elige una toma para ver su reporte, o escribe un nombre para buscar en todas.</div>
             <div class="resultados" id="resultados"></div>
         </div>
 
@@ -81,13 +94,25 @@
 
     <script>
         var perfilActual = null;
+        var comisionKeyActual = null;
         var usuarioSeleccionado = null; // fila cruda de padron_usuarios
+
+        // 'todas' = buscar por nombre en todo el padrón (comportamiento
+        // original); 'toma' = reporte de una toma elegida, con filtro de
+        // nombre solo dentro de lo ya cargado (sin ir de nuevo a Supabase).
+        var modoActual = 'todas';
+        var usuariosTomaActual = []; // cache de la toma elegida, para filtrar en el momento
+        var deudaMaxLista = 0; // compartido entre el reporte de toma y la búsqueda global
 
         var elBusqueda = document.getElementById('vistaBusqueda');
         var elDetalle = document.getElementById('vistaDetalle');
         var elInputBusqueda = document.getElementById('inputBusqueda');
+        var elLabelBusqueda = document.getElementById('labelBusqueda');
         var elEstadoBusqueda = document.getElementById('estadoBusqueda');
         var elResultados = document.getElementById('resultados');
+        var elSelectToma = document.getElementById('selectTomaCondicion');
+        var elContenedorDeudaMaxLista = document.getElementById('contenedorDeudaMaxLista');
+        var elInputDeudaMaxLista = document.getElementById('inputDeudaMaxLista');
 
         function formatearSoles(valor) {
             var n = parseFloat(valor) || 0;
@@ -113,6 +138,15 @@
             return adaptado;
         }
 
+        // Mismo cálculo que actualizarCondicion(), pero sin tocar el DOM —
+        // para poder mostrar el badge mini en cada fila de una lista.
+        function calcularApto(fila, deudaMax) {
+            var adaptado = adaptarUsuarioPadron(fila);
+            var excluido = debeExcluirse(adaptado);
+            if (excluido) return { excluido: true, apto: false };
+            return { excluido: false, apto: esUsuarioApto(adaptado, deudaMax) };
+        }
+
         function mostrarBusqueda() {
             elDetalle.style.display = 'none';
             elBusqueda.style.display = 'flex';
@@ -123,6 +157,7 @@
             elBusqueda.style.display = 'none';
             elDetalle.style.display = 'flex';
 
+            document.getElementById('inputDeudaMax').value = deudaMaxLista;
             document.getElementById('detalleNombre').textContent = fila.nombre;
             document.getElementById('detalleUbicacion').textContent =
                 'Toma ' + fila.toma_nombre + (fila.unidad_catastral ? ' · U.C. ' + fila.unidad_catastral : '');
@@ -174,9 +209,13 @@
             elEstadoBusqueda.textContent = resultados.length + ' resultado(s).';
             elResultados.innerHTML = '';
             resultados.forEach(function (fila) {
+                var condicion = calcularApto(fila, deudaMaxLista);
+                var badgeClase = condicion.excluido ? 'no-apto' : (condicion.apto ? 'apto' : 'no-apto');
+                var badgeTexto = condicion.excluido ? 'SIN CULTIVO' : (condicion.apto ? 'APTO' : 'NO APTO');
                 var boton = document.createElement('button');
                 boton.className = 'fila-resultado';
-                boton.innerHTML = '<div class="nombre-resultado">' + escapeHtml(fila.nombre) + '</div>' +
+                boton.innerHTML = '<div class="nombre-resultado">' + escapeHtml(fila.nombre) +
+                    '<span class="badge-condicion-mini ' + badgeClase + '">' + badgeTexto + '</span></div>' +
                     '<div class="detalle-resultado">Toma ' + escapeHtml(fila.toma_nombre) +
                     (fila.unidad_catastral ? ' · U.C. ' + escapeHtml(fila.unidad_catastral) : '') + '</div>';
                 boton.addEventListener('click', function () { mostrarDetalle(fila); });
@@ -184,8 +223,86 @@
             });
         }
 
+        // Filtra en memoria la toma ya cargada (sin volver a Supabase),
+        // ordenada por nombre para que el reporte sea consistente.
+        function filtrarYRenderizarToma() {
+            var texto = elInputBusqueda.value.trim().toLowerCase();
+            var filas = usuariosTomaActual.slice().sort(function (a, b) {
+                return a.nombre.localeCompare(b.nombre, 'es');
+            });
+            if (texto.length > 0) {
+                filas = filas.filter(function (f) { return f.nombre.toLowerCase().indexOf(texto) !== -1; });
+            }
+            renderizarResultados(filas);
+        }
+
+        async function poblarSelectorTomas() {
+            var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+            var resultado = await CusshmiDatos.listarTomasConPadron(comisionKey);
+            if (!resultado.ok) return;
+            resultado.tomas.forEach(function (toma) {
+                var opcion = document.createElement('option');
+                opcion.value = toma;
+                opcion.textContent = 'Toma ' + toma;
+                elSelectToma.appendChild(opcion);
+            });
+        }
+
+        elSelectToma.addEventListener('change', async function () {
+            var tomaElegida = elSelectToma.value;
+            elInputBusqueda.value = '';
+            elResultados.innerHTML = '';
+
+            if (!tomaElegida) {
+                modoActual = 'todas';
+                usuariosTomaActual = [];
+                elContenedorDeudaMaxLista.style.display = 'none';
+                elLabelBusqueda.textContent = 'Buscar por nombre';
+                elInputBusqueda.placeholder = 'ej. Pérez';
+                elEstadoBusqueda.textContent = 'Elige una toma para ver su reporte, o escribe un nombre para buscar en todas.';
+                return;
+            }
+
+            modoActual = 'toma';
+            elContenedorDeudaMaxLista.style.display = 'block';
+            elLabelBusqueda.textContent = 'Filtrar por nombre (opcional)';
+            elInputBusqueda.placeholder = 'ej. Pérez (dejar vacío para ver a todos)';
+            elEstadoBusqueda.textContent = 'Cargando reporte de la toma ' + tomaElegida + '…';
+
+            var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+            var resultado = await CusshmiDatos.cargarPadronToma(comisionKey, tomaElegida);
+            if (!resultado.ok) {
+                elEstadoBusqueda.textContent = 'No se pudo cargar la toma: ' + (resultado.error || 'error desconocido');
+                usuariosTomaActual = [];
+                return;
+            }
+            usuariosTomaActual = resultado.resultados || [];
+            filtrarYRenderizarToma();
+        });
+
+        elInputDeudaMaxLista.addEventListener('input', function () {
+            deudaMaxLista = parseFloat(elInputDeudaMaxLista.value) || 0;
+            if (modoActual === 'toma') {
+                filtrarYRenderizarToma();
+            } else if (elResultados.children.length > 0) {
+                // Búsqueda global ya mostrada: sólo actualiza los badges, sin repetir la consulta.
+                var texto = elInputBusqueda.value.trim();
+                if (texto.length >= 2) {
+                    var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+                    CusshmiDatos.buscarEnPadron(comisionKey, texto).then(function (resultado) {
+                        if (resultado.ok) renderizarResultados(resultado.resultados);
+                    });
+                }
+            }
+        });
+
         var temporizadorBusqueda = null;
         elInputBusqueda.addEventListener('input', function () {
+            if (modoActual === 'toma') {
+                filtrarYRenderizarToma();
+                return;
+            }
+
             var texto = elInputBusqueda.value.trim();
             clearTimeout(temporizadorBusqueda);
             if (texto.length < 2) {
@@ -216,9 +333,11 @@
                 return;
             }
             perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
             if (perfilActual.comisionClave) {
                 localStorage.setItem('cusshmi_comision', perfilActual.comisionClave);
             }
+            poblarSelectorTomas();
         })();
     </script>
 </body>

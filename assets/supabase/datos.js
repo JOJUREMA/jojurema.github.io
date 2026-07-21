@@ -466,6 +466,29 @@
         return { ok: true, resultados: data || [] };
     }
 
+    // Lista de tomas distintas que ya tienen padrón sincronizado — para que
+    // "Condición del Usuario" pueda ofrecer un selector de toma como punto
+    // de entrada principal (reporte por toma), en vez de solo buscar por
+    // nombre en todo el padrón.
+    async function listarTomasConPadron(comisionKey) {
+        if (!comisionKey) return { ok: true, tomas: [] };
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, tomas: [] };
+
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('padron_usuarios')
+                .select('toma_nombre')
+                .eq('comision_id', comisionId),
+            'listar tomas con padrón'
+        );
+        if (error || !data) return { ok: false, tomas: [] };
+
+        const vistas = new Set();
+        data.forEach((fila) => { if (fila.toma_nombre) vistas.add(fila.toma_nombre); });
+        const tomas = Array.from(vistas).sort(function (a, b) { return a.localeCompare(b, 'es', { numeric: true }); });
+        return { ok: true, tomas: tomas };
+    }
+
     // ── Fase 5 PWA (móvil) — Seguimiento PDA en vivo ────────────────────────
     // Suscribe un canal Realtime a los cambios de usuarios_g3_seleccionados
     // de UNA programación (una toma+semana) — requiere que la tabla esté
@@ -521,6 +544,7 @@
         guardarPadronToma,
         buscarEnPadron,
         cargarPadronToma,
+        listarTomasConPadron,
         suscribirseATomaEnVivo,
         cancelarSuscripcion,
     };

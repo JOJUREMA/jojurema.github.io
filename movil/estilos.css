@@ -253,6 +253,21 @@ h1 {
 .badge-condicion.apto { background: #1e7e34; color: #ffffff; }
 .badge-condicion.no-apto { background: #c0392b; color: #ffffff; }
 
+/* Version chica en linea, para filas de lista (reporte por toma) */
+.badge-condicion-mini {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 9.5px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.badge-condicion-mini.apto { background: #1e7e34; color: #ffffff; }
+.badge-condicion-mini.no-apto { background: #c0392b; color: #ffffff; }
+
 .stats-deuda {
     width: 100%;
     max-width: 420px;
