@@ -292,7 +292,13 @@
 
         async function poblarSelectorTomas() {
             var comisionKey = perfilActual ? perfilActual.comisionClave : null;
-            var nombreComision = perfilActual ? (perfilActual.comisionNombre || perfilActual.comisionClave) : 'tu comisión';
+            if (!comisionKey) {
+                elEstadoBusqueda.textContent = 'Tu cuenta (' + (perfilActual ? perfilActual.nombreUsuario : '-') +
+                    ') no tiene una comisión asignada en el sistema, así que no puede consultar ningún dato. ' +
+                    'Pide al administrador que te asigne una comisión en tu perfil.';
+                return;
+            }
+            var nombreComision = perfilActual.comisionNombre || perfilActual.comisionClave;
             var resultado = await CusshmiDatos.listarTomasConPadron(comisionKey);
             if (!resultado.ok) {
                 elEstadoBusqueda.textContent = 'No se pudo cargar la lista de tomas: ' + (resultado.error || 'error desconocido') + '.';
