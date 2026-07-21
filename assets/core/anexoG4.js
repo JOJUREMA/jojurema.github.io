@@ -113,11 +113,11 @@ function construirAnexoG4RJHtml(datos) {
 
             <table class="g4-firmas-table"><tr>
                 <td style="width:50%;">
-                    <div class="g4-line" style="min-width:200px;"></div>
+                    <div class="g4-line" style="display:block;width:92%;min-width:0;"></div>
                     <div class="g4-firma-label">Entregué conforme — Tomero (firma)</div>
                 </td>
                 <td style="width:50%;">
-                    <div class="g4-line" style="min-width:200px;"></div>
+                    <div class="g4-line" style="display:block;width:92%;min-width:0;"></div>
                     <div class="g4-firma-label">Recibí conforme — Usuario (firma)</div>
                 </td>
             </tr></table>
