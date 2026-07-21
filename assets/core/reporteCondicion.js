@@ -9,10 +9,18 @@
 // escritorio (Sistema_Riego_CUSSHMI_14.html, "HOJA 1: USUARIOS CON
 // DERECHO..." / "HOJA 2: USUARIOS SIN DERECHO...") para apto/no-apto.
 
+// Deliberadamente sin CSS grid ni flexbox: este HTML lo captura
+// html2canvas (vía html2pdf) para generar el PDF en el celular, y esa
+// librería tiene limitaciones conocidas con grid/flexbox — el contenido
+// puede salir fuera de su recuadro o la captura completa salir en blanco.
+// <table> es la maquetación que html2canvas renderiza de forma confiable
+// (mismo criterio aplicado en assets/core/anexoG4.js).
 function estilosReporteCondicion() {
     return `
         .rc-doc{font-family:Arial,sans-serif;border:2px solid #111;padding:14px 16px;box-sizing:border-box;background:#fff;color:#111;}
-        .rc-header{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:10px;margin-bottom:10px;border-bottom:1.5px solid #111;padding-bottom:8px;}
+        .rc-header-table{width:100%;border-collapse:collapse;margin-bottom:10px;border-bottom:1.5px solid #111;padding-bottom:8px;}
+        .rc-header-table td{padding:0 0 8px;vertical-align:middle;}
+        .rc-header-table .rc-logo-cell{width:44px;}
         .rc-logo{width:40px;height:40px;object-fit:contain}
         .rc-header-titulo{font-weight:800;font-size:13px;letter-spacing:.4px;}
         .rc-header-sub{font-size:10.5px;color:#333;margin-top:2px;}
@@ -26,8 +34,9 @@ function estilosReporteCondicion() {
         .rc-tabla td{padding:5px 6px;border:1px solid #ddd;}
         .rc-tabla tr{page-break-inside:avoid;}
         .rc-deuda-total{color:#b30000;font-weight:800;}
-        .rc-resumen{display:flex;gap:14px;margin:10px 0;font-size:10.5px;}
-        .rc-resumen b{font-size:13px;display:block;}
+        .rc-resumen-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:10.5px;}
+        .rc-resumen-table td{padding:0 14px 0 0;}
+        .rc-resumen-table b{font-size:13px;display:block;}
         .rc-footer{margin-top:12px;font-size:9px;color:#555;text-align:right;}
         .rc-cultivos{font-size:10.5px;margin-top:6px;}
         .rc-cultivos li{margin:2px 0;}
@@ -57,13 +66,13 @@ function construirReporteUsuarioHtml(datos) {
 
     return `
         <div class="rc-doc">
-            <div class="rc-header">
-                <div>${logoHtml}</div>
-                <div>
+            <table class="rc-header-table"><tr>
+                <td class="rc-logo-cell">${logoHtml}</td>
+                <td>
                     <div class="rc-header-titulo">${datos.comisionNombre || 'COMISIÓN DE USUARIOS'}</div>
                     <div class="rc-header-sub">REPORTE DE CONDICIÓN DEL USUARIO</div>
-                </div>
-            </div>
+                </td>
+            </tr></table>
 
             <div class="rc-nombre">${nombre}</div>
             <div class="rc-meta">
@@ -117,19 +126,19 @@ function construirReporteTomaHtml(datos) {
 
     return `
         <div class="rc-doc">
-            <div class="rc-header">
-                <div>${logoHtml}</div>
-                <div>
+            <table class="rc-header-table"><tr>
+                <td class="rc-logo-cell">${logoHtml}</td>
+                <td>
                     <div class="rc-header-titulo">${datos.comisionNombre || 'COMISIÓN DE USUARIOS'}</div>
                     <div class="rc-header-sub">REPORTE DE CONDICIÓN DEL USUARIO — TOMA ${datos.tomaNombre || '-'} — ${etiquetaFiltro}</div>
-                </div>
-            </div>
+                </td>
+            </tr></table>
 
-            <div class="rc-resumen">
-                <div><b>${filas.length}</b>usuarios</div>
-                <div><b class="rc-deuda-total">S/ ${deudaTotalSuma.toFixed(2)}</b>deuda total</div>
-                <div><b>S/ ${(parseFloat(datos.deudaMax) || 0).toFixed(2)}</b>deuda máxima considerada</div>
-            </div>
+            <table class="rc-resumen-table"><tr>
+                <td><b>${filas.length}</b>usuarios</td>
+                <td><b class="rc-deuda-total">S/ ${deudaTotalSuma.toFixed(2)}</b>deuda total</td>
+                <td><b>S/ ${(parseFloat(datos.deudaMax) || 0).toFixed(2)}</b>deuda máxima considerada</td>
+            </tr></table>
 
             <table class="rc-tabla">
                 <thead><tr><th>Nombre</th><th>U. Catastral</th><th>Cultivos</th><th>Deuda total</th><th>Condición</th></tr></thead>

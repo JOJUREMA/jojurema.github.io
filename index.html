@@ -12919,14 +12919,14 @@ function mostrarAnexoG4RJDesdeG3() {
                 .g4-parrafo{margin:10px 0 10px 0;font-size:11px;line-height:1.35}
                 .g4-item{margin:7px 0;font-size:11px;line-height:1.35}
                 .g4-box{display:inline-block;width:11px;height:11px;border:1.5px solid #111;margin-right:8px;vertical-align:middle}
-                .g4-line{border-bottom:1.6px solid #111;display:inline-block;min-width:180px;height:14px;vertical-align:baseline}
+                .g4-line{border-bottom:1.6px solid #111;display:inline-block;min-width:180px;height:20px;vertical-align:baseline}
                 .g4-fill{padding:0 6px;min-width:240px}
                 .g4-num{border:none;border-bottom:1.6px solid #111;width:120px;font-size:11px;outline:none}
-                .g4-firma-fecha{display:flex;justify-content:flex-end;margin-top:10px;font-size:11px}
-                .g4-firmas{display:flex;justify-content:space-between;gap:18px;margin-top:14px;font-size:11px}
+                .g4-firma-fecha{display:flex;justify-content:flex-end;margin-top:26px;font-size:11px}
+                .g4-firmas{display:flex;justify-content:space-between;gap:18px;margin-top:34px;font-size:11px}
                 .g4-firma{flex:1;text-align:center}
-                .g4-firma-label{margin-top:6px;font-size:10px}
-                .g4-obs{margin-top:14px;font-size:11px}
+                .g4-firma-label{margin-top:10px;font-size:10px}
+                .g4-obs{margin-top:18px;font-size:11px}
                 .g4-obs-note{margin-top:6px;font-size:10px;color:#333}
                 @media print{
                     @page{size:A4 landscape;margin:10mm}
@@ -13432,14 +13432,19 @@ function imprimirG4Usuario(idx) {
     // Materializar valores de inputs dentro de la hoja
     sheetClon.querySelectorAll('input').forEach(inp => inp.setAttribute('value', inp.value));
 
-    // Mantener layout 2-up "como imprimir", pero dejar en blanco el otro formulario
+    // Un solo formulario por hoja al imprimir/compartir uno por uno: se
+    // elimina por completo el otro (no solo se vacía) y se fuerza la hoja
+    // a una sola columna, para que no quede un recuadro vacío al lado o
+    // debajo del formulario real.
     const forms = Array.from(sheetClon.querySelectorAll('.g4c-form, .g4-form'));
     const keepIdx = idx % 2; // 0 = izquierda, 1 = derecha
     forms.forEach((f, i) => {
         if (i === keepIdx) return;
-        // conservar el borde (CSS), pero vaciar contenido
-        f.innerHTML = '<div style="height:100%"></div>';
+        f.remove();
     });
+    sheetClon.style.gridTemplateColumns = '1fr';
+    sheetClon.style.maxWidth = '480px';
+    sheetClon.style.margin = '0 auto';
 
     const win = window.open('', '_blank');
     if (!win) {

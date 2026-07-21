@@ -413,7 +413,11 @@
                     filename: g4Actual.nombreArchivo + '.pdf',
                     image: { type: 'jpeg', quality: 0.98 },
                     html2canvas: { scale: 2 },
-                    jsPDF: { unit: 'mm', format: 'a5', orientation: 'landscape' }
+                    // a4 vertical en vez de a5 horizontal: da mucho más alto
+                    // disponible, para que el formulario nunca se corte a
+                    // media hoja (partiéndose en una segunda página) en
+                    // celulares con fuentes más grandes que el promedio.
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
                 };
                 var blob = await html2pdf().set(opciones).from(contenedor).outputPdf('blob');
                 var archivo = new File([blob], g4Actual.nombreArchivo + '.pdf', { type: 'application/pdf' });

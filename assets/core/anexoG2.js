@@ -275,7 +275,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         <div style="overflow-x:auto;">
             <table class="report-table" style="font-size: 10px; min-width: 1400px; border-collapse:collapse; font-family:Arial,sans-serif; table-layout:fixed; width:100%;">
                 <colgroup>
-                    <col style="width:9%"><col style="width:6%"><col style="width:5%">
+                    <col style="width:126px"><col style="width:6%"><col style="width:5%">
                     <col style="width:5%"><col style="width:10%"><col style="width:5%">
                     <col style="width:8%">
                     <col style="width:5%"><col style="width:4%">
@@ -287,7 +287,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
                 <thead>
                     <tr style="background:#E6E6E6; color:#000000;">
                         <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 80px; font-weight:700;">NOMBRE DEL CANAL DE DERIVACIÓN</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 60px; font-weight:700;">NOMBRE DE LA TOMA</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 60px; font-weight:700; position:sticky; left:126px; z-index:3; background:#E6E6E6;">NOMBRE DE LA TOMA</th>
                         <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 70px; font-weight:700;">NOMBRE DEL CANAL DE DISTRIBUCIÓN</th>
                         <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 50px; font-weight:700;">N° DE USUARIOS</th>
                         <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 100px; font-weight:700; text-align:center; vertical-align:middle; white-space:normal; word-wrap:break-word;">VOLUMEN DE AGUA<br>PROGRAMADO (m³)</th>
@@ -318,7 +318,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         html += `
             <tr style="background-color: #ffffff;">
                 <td style="border: 1px solid #000000; padding: 5px; font-weight: 600; color:#000000;">${fila.canalPrincipal}</td>
-                <td style="border: 1px solid #000000; padding: 5px; color:#000000;"><a href="javascript:void(0)" onclick="abrirG3DesdeTomaG2('${fila.nombreToma.toString().replace(/'/g,"\\'")}')" style="color:#0070c0;text-decoration:underline;cursor:pointer;" title="Ver Anexo G-3 de esta toma">${fila.nombreToma}</a></td>
+                <td style="border: 1px solid #000000; padding: 5px; color:#000000; position:sticky; left:126px; z-index:1; background:#ffffff;"><a href="javascript:void(0)" onclick="abrirG3DesdeTomaG2('${fila.nombreToma.toString().replace(/'/g,"\\'")}')" style="color:#0070c0;text-decoration:underline;cursor:pointer;" title="Ver Anexo G-3 de esta toma">${fila.nombreToma}</a></td>
                 <td style="border: 1px solid #000000; padding: 5px; color:#000000;">${fila.nombreCanalDistribucion || ''}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center; color:#000000;" title="Aptos: ${fila.numUsuariosAptos}, No Aptos Programados: ${fila.numUsuariosNoAptos}">
     ${fila.numUsuarios > 0 ? fila.numUsuarios : '-'}
@@ -362,7 +362,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
     html += `
             <tr style="background: #E6E6E6; color: #000000; font-weight: bold;">
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center;">TOTAL</td>
-                <td style="border: 1px solid #000000; padding: 5px;"></td>
+                <td style="border: 1px solid #000000; padding: 5px; position:sticky; left:126px; z-index:1; background:#E6E6E6;"></td>
                 <td style="border: 1px solid #000000; padding: 5px;"></td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center;">${totalGeneralUsuarios}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right;">${totalGeneralVol.toFixed(2)}</td>

@@ -28,36 +28,43 @@ function _formatearHoraHHMM(fecha) {
     return `${hh}:${mm}`;
 }
 
-// CSS del formulario oficial — idéntico al bloque ".g4-*" que ya usa el
-// escritorio (Sistema_Riego_CUSSHMI_14.html, dentro de mostrarAnexoG4RJDesdeG3),
-// menos las reglas de impresión en hoja A4 con 2 formularios por página
-// (@page/.g4-sheet) que no aplican al visor de un solo usuario en el móvil.
+// CSS del formulario oficial, adaptada del bloque ".g4-*" del escritorio
+// (Sistema_Riego_CUSSHMI_14.html, dentro de mostrarAnexoG4RJDesdeG3) — con
+// una diferencia deliberada: acá NO se usa CSS grid/flexbox para el
+// encabezado ni las firmas (a diferencia del escritorio, que renderiza en
+// un navegador real). Esta versión la captura html2canvas (vía html2pdf)
+// para generar el PDF en el celular, y esa librería tiene limitaciones
+// conocidas con grid y con flexbox+gap — el contenido puede quedar fuera
+// del recuadro o la captura salir en blanco. Se usa <table> en su lugar,
+// que html2canvas renderiza de forma confiable.
 function estilosAnexoG4RJ() {
     return `
         .g4-form{font-family:Arial,sans-serif;border:2px solid #111;padding:10px 12px;box-sizing:border-box;background:#fff;color:#111;}
-        .g4-title{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:10px;margin-bottom:8px}
-        .g4-title-left{display:flex;align-items:flex-start;justify-content:flex-start}
-        .g4-title-center{text-align:center}
+        .g4-title-table{width:100%;border-collapse:collapse;margin-bottom:8px;}
+        .g4-title-table td{padding:0;vertical-align:middle;}
+        .g4-title-left{width:44px;text-align:left;}
+        .g4-title-center{text-align:center;}
         .g4-logo{width:40px;height:40px;object-fit:contain}
         .g4-row{margin:6px 0;font-size:11px}
         .g4-parrafo{margin:10px 0 10px 0;font-size:11px;line-height:1.35}
         .g4-item{margin:7px 0;font-size:11px;line-height:1.35}
         .g4-box{display:inline-block;width:11px;height:11px;border:1.5px solid #111;margin-right:8px;vertical-align:middle}
-        .g4-line{border-bottom:1.6px solid #111;display:inline-block;min-width:140px;height:14px;vertical-align:baseline}
+        .g4-line{border-bottom:1.6px solid #111;display:inline-block;min-width:140px;height:20px;vertical-align:baseline}
         .g4-fill{padding:0 6px;min-width:160px}
-        .g4-firma-fecha{display:flex;justify-content:flex-end;margin-top:10px;font-size:11px}
-        .g4-firmas{display:flex;justify-content:space-between;gap:18px;margin-top:14px;font-size:11px}
-        .g4-firma{flex:1;text-align:center}
-        .g4-firma-label{margin-top:6px;font-size:10px}
-        .g4-obs{margin-top:14px;font-size:11px}
+        .g4-firma-fecha{text-align:right;margin-top:26px;font-size:11px}
+        .g4-firmas-table{width:100%;border-collapse:collapse;margin-top:34px;font-size:11px;}
+        .g4-firmas-table td{text-align:center;padding:0 8px;vertical-align:top;}
+        .g4-firma-label{margin-top:10px;font-size:10px}
+        .g4-obs{margin-top:18px;font-size:11px}
         .g4-obs-note{margin-top:6px;font-size:10px;color:#333}
     `;
 }
 
 // datos: { usuario, canal, caudalLs, horasTotal, volumenEntregar,
 //          dtIni, dtTer (Date), fechaImpresion (Date), logoSrc }
-// Devuelve el HTML de un solo formulario ".g4-form" — mismo contenido y
-// estructura que un formulario individual del escritorio.
+// Devuelve el HTML de un solo formulario ".g4-form" — mismo contenido que
+// un formulario individual del escritorio (ver comentario de
+// estilosAnexoG4RJ sobre por qué la maquetación interna es distinta).
 function construirAnexoG4RJHtml(datos) {
     const usuario = (datos.usuario || '').toString();
     const canal = (datos.canal || '').toString();
@@ -68,13 +75,13 @@ function construirAnexoG4RJHtml(datos) {
 
     return `
         <div class="g4-form">
-            <div class="g4-title">
-                <div class="g4-title-left">${logoHtml}</div>
-                <div class="g4-title-center">
+            <table class="g4-title-table"><tr>
+                <td class="g4-title-left">${logoHtml}</td>
+                <td class="g4-title-center">
                     <div style="font-weight:800;font-size:13px;letter-spacing:.6px;">ANEXO G-4</div>
                     <div style="font-weight:800;font-size:12px;margin-top:2px;">ORDEN DE SUMINISTRO DE AGUA</div>
-                </div>
-            </div>
+                </td>
+            </tr></table>
 
             <div class="g4-parrafo">
                 El usuario Sr.(a): <span class="g4-line g4-fill">${usuario}</span>
@@ -94,26 +101,26 @@ function construirAnexoG4RJHtml(datos) {
             <div class="g4-item"><span class="g4-box"></span> Volumen de agua a entregar (m³): <span class="g4-line g4-fill">${volumenEntregar.toFixed(2)}</span></div>
 
             <div class="g4-firma-fecha">
-                <div class="g4-line" style="min-width:220px;">${_formatearFechaLargaEs(datos.fechaImpresion)}</div>
+                <span class="g4-line" style="min-width:220px;">${_formatearFechaLargaEs(datos.fechaImpresion)}</span>
             </div>
 
-            <div class="g4-firmas">
-                <div class="g4-firma">
+            <table class="g4-firmas-table"><tr>
+                <td>
                     <div class="g4-line" style="min-width:220px;"></div>
                     <div class="g4-firma-label">Jefe de Subsector Hidráulico</div>
-                </div>
-            </div>
+                </td>
+            </tr></table>
 
-            <div class="g4-firmas">
-                <div class="g4-firma">
-                    <div class="g4-line" style="min-width:220px;"></div>
+            <table class="g4-firmas-table"><tr>
+                <td style="width:50%;">
+                    <div class="g4-line" style="min-width:200px;"></div>
                     <div class="g4-firma-label">Entregué conforme — Tomero (firma)</div>
-                </div>
-                <div class="g4-firma">
-                    <div class="g4-line" style="min-width:220px;"></div>
+                </td>
+                <td style="width:50%;">
+                    <div class="g4-line" style="min-width:200px;"></div>
                     <div class="g4-firma-label">Recibí conforme — Usuario (firma)</div>
-                </div>
-            </div>
+                </td>
+            </tr></table>
 
             <div class="g4-obs">
                 <div><strong>Observaciones:</strong> <span class="g4-line" style="display:inline-block;min-width:260px;"></span></div>
