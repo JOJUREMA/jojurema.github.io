@@ -442,7 +442,7 @@
                 .limit(30),
             'buscar en el padrón'
         );
-        if (error) return { ok: false, error: error.message || 'No se pudo buscar en el padrón.' };
+        if (error) return { ok: false, error: error.mensaje || 'No se pudo buscar en el padrón.' };
         return { ok: true, resultados: data || [] };
     }
 
@@ -462,7 +462,7 @@
                 .eq('toma_nombre', tomaNombre),
             'cargar padrón de la toma'
         );
-        if (error) return { ok: false, error: error.message || 'No se pudo cargar el padrón de la toma.' };
+        if (error) return { ok: false, error: error.mensaje || 'No se pudo cargar el padrón de la toma.' };
         return { ok: true, resultados: data || [] };
     }
 
@@ -473,7 +473,7 @@
     async function listarTomasConPadron(comisionKey) {
         if (!comisionKey) return { ok: true, tomas: [] };
         const comisionId = await resolverComisionId(comisionKey);
-        if (!comisionId) return { ok: false, tomas: [] };
+        if (!comisionId) return { ok: false, tomas: [], error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
 
         const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
             (client) => client.from('padron_usuarios')
@@ -481,7 +481,7 @@
                 .eq('comision_id', comisionId),
             'listar tomas con padrón'
         );
-        if (error || !data) return { ok: false, tomas: [] };
+        if (error || !data) return { ok: false, tomas: [], error: error ? error.mensaje : 'No se pudo listar las tomas.' };
 
         const vistas = new Set();
         data.forEach((fila) => { if (fila.toma_nombre) vistas.add(fila.toma_nombre); });

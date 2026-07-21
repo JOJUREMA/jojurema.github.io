@@ -110,6 +110,21 @@ function formatearFechaConDia(fechaStr) {
     return `${nombreDia} ${formatearFecha(fechaStr)}`;
 }
 
+// "21 de julio del 2026" — fecha larga en español, para pies de página de
+// reportes imprimibles. Compartida entre movil/assets/core/anexoG4.js
+// (visor G-4) y movil/assets/core/reporteCondicion.js (Condición del
+// Usuario) — antes vivía duplicada solo en la primera, se movió aquí al
+// aparecer un segundo consumidor real.
+function _formatearFechaLargaEs(fecha) {
+    const f = (fecha instanceof Date) ? fecha : new Date(fecha);
+    if (!(f instanceof Date) || isNaN(f.getTime())) return '';
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const d = f.getDate();
+    const m = meses[f.getMonth()] || '';
+    const y = f.getFullYear();
+    return `${d} de ${m} del ${y}`;
+}
+
 // "DD/MM/YYYY HH:MM" (formato guardado por guardarHorarioG3EnSupabase,
 // Fase 3, ej. en usuarios_g3_seleccionados.usuarios[].inicioTexto) -> Date.
 // Compartida entre movil/pda-programado.html (visor G-4) y

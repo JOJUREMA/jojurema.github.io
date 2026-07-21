@@ -8,15 +8,8 @@
 // implementación paralela para el visor móvil, alimentada por los mismos
 // datos ya persistidos.
 
-function _formatearFechaLargaEs(fecha) {
-    const f = (fecha instanceof Date) ? fecha : new Date(fecha);
-    if (!(f instanceof Date) || isNaN(f.getTime())) return '';
-    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-    const d = f.getDate();
-    const m = meses[f.getMonth()] || '';
-    const y = f.getFullYear();
-    return `${d} de ${m} del ${y}`;
-}
+// _formatearFechaLargaEs: ver assets/core/utilidades.js (movida ahí al
+// aparecer un segundo consumidor real, reporteCondicion.js).
 
 function _formatearFechaCortaEs(fecha) {
     const f = (fecha instanceof Date) ? fecha : new Date(fecha);
