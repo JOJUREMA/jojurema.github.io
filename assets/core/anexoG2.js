@@ -275,14 +275,14 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         <div style="overflow-x:auto;">
             <table class="report-table" style="font-size: 10px; min-width: 1400px; border-collapse:collapse; font-family:Arial,sans-serif; table-layout:fixed; width:100%;">
                 <colgroup>
-                    <col style="width:126px"><col style="width:6%"><col style="width:5%">
-                    <col style="width:5%"><col style="width:10%"><col style="width:5%">
+                    <col style="width:126px"><col style="width:6%"><col style="width:4%">
+                    <col style="width:5%"><col style="width:9%"><col style="width:4%">
                     <col style="width:8%">
-                    <col style="width:5%"><col style="width:4%">
-                    <col style="width:5%"><col style="width:4%">
+                    <col style="width:7%"><col style="width:5%">
+                    <col style="width:7%"><col style="width:5%">
                     <col style="width:4%"><col style="width:4%"><col style="width:4%">
                     <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                    <col style="width:6%">
+                    <col style="width:3%">
                 </colgroup>
                 <thead>
                     <tr style="background:#E6E6E6; color:#000000;">
@@ -641,14 +641,14 @@ function construirTablaG2PrintHtml(datosSeccion, tituloSeccion) {
         <div class="titulo-seccion" style="text-align:center; font-weight:700; font-size:12px; margin:10px 0 6px;">${tituloSeccion}</div>
         <table style="table-layout:fixed; width:100%;">
             <colgroup>
-                <col style="width:9%"><col style="width:6%"><col style="width:5%">
-                <col style="width:5%"><col style="width:10%"><col style="width:5%">
+                <col style="width:9%"><col style="width:6%"><col style="width:4%">
+                <col style="width:5%"><col style="width:9%"><col style="width:4%">
                 <col style="width:8%">
-                <col style="width:5%"><col style="width:4%">
-                <col style="width:5%"><col style="width:4%">
+                <col style="width:7%"><col style="width:5%">
+                <col style="width:7%"><col style="width:5%">
                 <col style="width:4%"><col style="width:4%"><col style="width:4%">
                 <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                <col style="width:6%">
+                <col style="width:3%">
             </colgroup>
             <thead>
                 <tr>
