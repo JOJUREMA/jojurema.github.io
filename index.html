@@ -11387,16 +11387,17 @@ function imprimirAnexoG2() {
     const datosCanalSur = datosAnexoG2.filter(f => f.canalPrincipal === 'CANAL SUR');
     const datosRioChira = datosAnexoG2.filter(f => f.canalPrincipal === 'RIO CHIRA');
 
-    const seccionSur = `<div class="seccion-g2">${headerHtml}${construirTablaG2PrintHtml(datosCanalSur, 'ANEXO G2 — TOMAS QUE RIEGAN POR CANAL SUR')}</div>`;
-    const seccionRio = `<div class="seccion-g2">${headerHtml}${construirTablaG2PrintHtml(datosRioChira, 'ANEXO G2 — TOMAS QUE RIEGAN POR RÍO CHIRA')}</div>`;
-
-    // ✅ Nota general del reporte: solo se incluye si tiene contenido (sin espacios/bloques vacíos)
+    // ✅ Nota general del reporte: solo se incluye si tiene contenido (sin espacios/bloques vacíos).
+    // Va debajo de las tomas de CANAL SUR (misma página), no debajo de RÍO CHIRA.
     const notaHtml = (window._notaAnexoG2 || '').trim()
         ? `<div style="margin-top:14px;padding:10px 14px;border:1px solid #000;font-size:11px;">
                <strong>NOTA:</strong>
                <div style="white-space:pre-wrap;margin-top:4px;">${escapeHtml(window._notaAnexoG2)}</div>
            </div>`
         : '';
+
+    const seccionSur = `<div class="seccion-g2">${headerHtml}${construirTablaG2PrintHtml(datosCanalSur, 'ANEXO G2 — TOMAS QUE RIEGAN POR CANAL SUR')}${notaHtml}</div>`;
+    const seccionRio = `<div class="seccion-g2">${headerHtml}${construirTablaG2PrintHtml(datosRioChira, 'ANEXO G2 — TOMAS QUE RIEGAN POR RÍO CHIRA')}</div>`;
 
     const htmlCompleto = `
         <!DOCTYPE html>
@@ -11425,7 +11426,6 @@ function imprimirAnexoG2() {
         <body>
             ${seccionSur}
             ${seccionRio}
-            ${notaHtml}
 
             <div class="no-print">
                 <button class="btn-print" onclick="window.print(); setTimeout(function(){ window.close(); }, 500);">
