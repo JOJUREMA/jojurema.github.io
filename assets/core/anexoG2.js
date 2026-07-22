@@ -279,27 +279,27 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         <div style="overflow-x:auto;">
             <table class="report-table" style="font-size: 10px; min-width: 1400px; border-collapse:collapse; font-family:Arial,sans-serif; table-layout:fixed; width:100%;">
                 <colgroup>
-                    <col style="width:126px"><col style="width:6%"><col style="width:3%">
-                    <col style="width:5%"><col style="width:8%"><col style="width:4%">
-                    <col style="width:8%">
+                    <col style="width:110px"><col style="width:7%"><col style="width:9%">
+                    <col style="width:5.5%"><col style="width:6.5%"><col style="width:4.5%">
+                    <col style="width:6%">
                     <col style="width:7%"><col style="width:5%">
                     <col style="width:7%"><col style="width:5%">
-                    <col style="width:4%"><col style="width:4%"><col style="width:4%">
-                    <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                    <col style="width:5%">
+                    <col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%">
+                    <col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%">
+                    <col style="width:6%">
                 </colgroup>
                 <thead>
                     <tr style="background:#E6E6E6; color:#000000;">
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 80px; font-weight:700;">NOMBRE DEL CANAL DE DERIVACIÓN</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 60px; font-weight:700; position:sticky; left:126px; z-index:3; background:#E6E6E6;">NOMBRE DE LA TOMA</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 70px; font-weight:700;">NOMBRE DEL CANAL DE DISTRIBUCIÓN</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 50px; font-weight:700;">N° DE USUARIOS</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 100px; font-weight:700; text-align:center; vertical-align:middle; white-space:normal; word-wrap:break-word;">VOLUMEN DE AGUA<br>PROGRAMADO (m³)</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 60px; font-weight:700;">ÁREA BAJO RIEGO<br>(Ha)</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 90px; font-weight:700; text-align:center; vertical-align:middle; white-space:normal; word-wrap:break-word;">TIEMPO DE<br>OPERACIÓN DEL<br>CANAL (Horas)</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:nowrap;">NOMBRE DEL<br>CANAL DE<br>DERIVACIÓN</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:nowrap; position:sticky; left:110px; z-index:3; background:#E6E6E6;">NOMBRE DE<br>LA TOMA</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:nowrap;">NOMBRE DEL<br>CANAL DE<br>DISTRIBUCIÓN</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:nowrap;">N° DE<br>USUARIOS</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; text-align:center; vertical-align:middle; white-space:nowrap;">VOLUMEN<br>DE AGUA<br>PROGRAMADO<br>(m³)</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:nowrap;">ÁREA<br>BAJO<br>RIEGO<br>(Ha)</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; text-align:center; vertical-align:middle; white-space:nowrap;">TIEMPO DE<br>OPERACIÓN<br>DEL CANAL<br>(HORAS)</th>
                         <th colspan="4" style="border:1px solid #000000; padding: 5px; font-weight:700;">PERÍODO</th>
                         <th colspan="7" style="border:1px solid #000000; padding: 5px; font-weight:700;">CAUDAL PROGRAMADO POR DÍAS (m³/seg)</th>
-                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 130px; font-weight:700; white-space:normal; word-wrap:break-word;">OBSERVACIONES</th>
+                        <th rowspan="2" style="border:1px solid #000000; padding: 5px; font-weight:700; white-space:normal; word-wrap:break-word;">OBSERVACIONES</th>
                     </tr>
                     <tr style="background:#E6E6E6; color:#000000;">
                         <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700; white-space:nowrap;">INICIO</th>
@@ -322,7 +322,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         html += `
             <tr style="background-color: #ffffff;">
                 <td style="border: 1px solid #000000; padding: 5px; font-weight: 600; color:#000000;">${fila.canalPrincipal}</td>
-                <td style="border: 1px solid #000000; padding: 5px; color:#000000; position:sticky; left:126px; z-index:1; background:#ffffff;"><a href="javascript:void(0)" onclick="abrirG3DesdeTomaG2('${fila.nombreToma.toString().replace(/'/g,"\\'")}')" style="color:#0070c0;text-decoration:underline;cursor:pointer;" title="Ver Anexo G-3 de esta toma">${fila.nombreToma}</a></td>
+                <td style="border: 1px solid #000000; padding: 5px; color:#000000; position:sticky; left:110px; z-index:1; background:#ffffff;"><a href="javascript:void(0)" onclick="abrirG3DesdeTomaG2('${fila.nombreToma.toString().replace(/'/g,"\\'")}')" style="color:#0070c0;text-decoration:underline;cursor:pointer;" title="Ver Anexo G-3 de esta toma">${fila.nombreToma}</a></td>
                 <td style="border: 1px solid #000000; padding: 5px; color:#000000;">${fila.nombreCanalDistribucion || ''}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center; color:#000000;" title="Aptos: ${fila.numUsuariosAptos}, No Aptos Programados: ${fila.numUsuariosNoAptos}">
     ${fila.numUsuarios > 0 ? fila.numUsuarios : '-'}
@@ -366,7 +366,7 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
     html += `
             <tr style="background: #E6E6E6; color: #000000; font-weight: bold;">
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center;">TOTAL</td>
-                <td style="border: 1px solid #000000; padding: 5px; position:sticky; left:126px; z-index:1; background:#E6E6E6;"></td>
+                <td style="border: 1px solid #000000; padding: 5px; position:sticky; left:110px; z-index:1; background:#E6E6E6;"></td>
                 <td style="border: 1px solid #000000; padding: 5px;"></td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center;">${totalGeneralUsuarios}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right;">${totalGeneralVol.toFixed(2)}</td>
@@ -413,11 +413,16 @@ function construirHojaG2ExcelJS(wb, datosSeccion, nombreHoja, tituloSeccion, mes
         pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
 
+    // Mismas proporciones que construirTablaG2Html/PrintHtml: más ancho a las
+    // columnas de texto largo (canales, volumen, tiempo de operación,
+    // observaciones), ancho medio a toma/área/usuarios, y ancho reducido —
+    // pero suficiente para no cortar "27/07/2026"/"08:00" — a fecha/hora.
+    // LUN..DOM con el mismo ancho entre sí.
     ws.columns = [
-        { width: 20 }, { width: 14 }, { width: 20 }, { width: 11 }, { width: 18 },
-        { width: 12 }, { width: 14 }, { width: 11 }, { width: 8 }, { width: 11 }, { width: 8 },
-        { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 }, { width: 8 },
-        { width: 22 }
+        { width: 14 }, { width: 13 }, { width: 18 }, { width: 10 }, { width: 13 },
+        { width: 9 }, { width: 12 }, { width: 11 }, { width: 7 }, { width: 11 }, { width: 7 },
+        { width: 7 }, { width: 7 }, { width: 7 }, { width: 7 }, { width: 7 }, { width: 7 }, { width: 7 },
+        { width: 14 }
     ];
 
     let r = 1;
@@ -463,10 +468,13 @@ function construirHojaG2ExcelJS(wb, datosSeccion, nombreHoja, tituloSeccion, mes
     // ── Encabezado de tabla (2 niveles) ──
     const filaH1 = r, filaH2 = r + 1;
 
+    // Mismos saltos de línea que construirTablaG2Html/PrintHtml (<br>), para
+    // que el encabezado se vea igual en las 3 salidas — \n + wrapText:true
+    // en estiloEncabezado ya fuerza el salto en la celda de Excel.
     const colsSimples = [
-        [1, 'NOMBRE DEL CANAL DE DERIVACIÓN'], [2, 'NOMBRE DE LA TOMA'], [3, 'NOMBRE DEL CANAL DE DISTRIBUCIÓN'],
-        [4, 'N° DE USUARIOS'], [5, 'VOLUMEN DE AGUA PROGRAMADO (m³)'], [6, 'ÁREA BAJO RIEGO (Ha)'],
-        [7, 'TIEMPO DE OPERACIÓN DEL CANAL (Horas)'],
+        [1, 'NOMBRE DEL\nCANAL DE\nDERIVACIÓN'], [2, 'NOMBRE DE\nLA TOMA'], [3, 'NOMBRE DEL\nCANAL DE\nDISTRIBUCIÓN'],
+        [4, 'N° DE\nUSUARIOS'], [5, 'VOLUMEN\nDE AGUA\nPROGRAMADO\n(m³)'], [6, 'ÁREA\nBAJO\nRIEGO\n(Ha)'],
+        [7, 'TIEMPO DE\nOPERACIÓN\nDEL CANAL\n(HORAS)'],
     ];
     colsSimples.forEach(([col, texto]) => {
         ws.mergeCells(filaH1, col, filaH2, col);
@@ -645,24 +653,24 @@ function construirTablaG2PrintHtml(datosSeccion, tituloSeccion) {
         <div class="titulo-seccion" style="text-align:center; font-weight:700; font-size:12px; margin:10px 0 6px;">${tituloSeccion}</div>
         <table style="table-layout:fixed; width:100%;">
             <colgroup>
-                <col style="width:9%"><col style="width:6%"><col style="width:3%">
-                <col style="width:5%"><col style="width:8%"><col style="width:4%">
-                <col style="width:8%">
+                <col style="width:7%"><col style="width:6.5%"><col style="width:9%">
+                <col style="width:5%"><col style="width:6.5%"><col style="width:4.5%">
+                <col style="width:6%">
                 <col style="width:7%"><col style="width:5%">
                 <col style="width:7%"><col style="width:5%">
-                <col style="width:4%"><col style="width:4%"><col style="width:4%">
-                <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                <col style="width:5%">
+                <col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%">
+                <col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%">
+                <col style="width:7%">
             </colgroup>
             <thead>
                 <tr>
-                    <th rowspan="2">NOMBRE DEL CANAL DE DERIVACIÓN</th>
-                    <th rowspan="2">NOMBRE DE LA TOMA</th>
-                    <th rowspan="2">NOMBRE DEL CANAL DE DISTRIBUCIÓN</th>
-                    <th rowspan="2">N° DE USUARIOS</th>
-                    <th rowspan="2">VOLUMEN DE AGUA PROGRAMADO (m³)</th>
-                    <th rowspan="2">ÁREA BAJO RIEGO (Ha)</th>
-                    <th rowspan="2">TIEMPO DE OPERACIÓN DEL CANAL (Horas)</th>
+                    <th rowspan="2" style="white-space:nowrap;">NOMBRE DEL<br>CANAL DE<br>DERIVACIÓN</th>
+                    <th rowspan="2" style="white-space:nowrap;">NOMBRE DE<br>LA TOMA</th>
+                    <th rowspan="2" style="white-space:nowrap;">NOMBRE DEL<br>CANAL DE<br>DISTRIBUCIÓN</th>
+                    <th rowspan="2" style="white-space:nowrap;">N° DE<br>USUARIOS</th>
+                    <th rowspan="2" style="white-space:nowrap;">VOLUMEN<br>DE AGUA<br>PROGRAMADO<br>(m³)</th>
+                    <th rowspan="2" style="white-space:nowrap;">ÁREA<br>BAJO<br>RIEGO<br>(Ha)</th>
+                    <th rowspan="2" style="white-space:nowrap;">TIEMPO DE<br>OPERACIÓN<br>DEL CANAL<br>(HORAS)</th>
                     <th colspan="4">PERÍODO</th>
                     <th colspan="7">CAUDAL PROGRAMADO POR DÍAS (m³/seg)</th>
                     <th rowspan="2">OBSERVACIONES</th>
