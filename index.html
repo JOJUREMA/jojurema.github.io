@@ -8928,12 +8928,27 @@ async function liberarBloqueoTomaActual() {
 }
 
 async function mostrarModalHorasPorDia() {
-    const datos   = window.datosParaProgramacion;
+    // Reentrancia: intentarEntrarTomaConBloqueo() de abajo hace una consulta
+    // real a Supabase (más lenta para quien no es admin, que si el bloqueo
+    // está ocupado ve un alert en vez de saltárselo). Si en ese tiempo de
+    // espera se vuelve a llamar esta función (doble clic, conexión lenta),
+    // sin esta guarda quedaban DOS modales superpuestos en el DOM con los
+    // mismos id="..." — el usuario veía y editaba el último (el que queda
+    // arriba visualmente), pero getElementById() siempre agarra el PRIMERO
+    // que encuentra, así que recalcularCaudalAutomatico() leía y escribía
+    // sobre el modal viejo escondido debajo: el usuario nunca veía que su
+    // edición cambiara nada, sin ningún error en consola.
+    if (window._abriendoModalHorasDia) return;
+    window._abriendoModalHorasDia = true;
+    document.getElementById('wrapModalHorasDia')?.remove(); // por si quedó uno huérfano de un intento anterior
 
-    const puedeEntrar = await intentarEntrarTomaConBloqueo(datos.toma);
-    if (!puedeEntrar) return;
+    try {
+        const datos   = window.datosParaProgramacion;
 
-    const diasSem = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+        const puedeEntrar = await intentarEntrarTomaConBloqueo(datos.toma);
+        if (!puedeEntrar) return;
+
+        const diasSem = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
     const caudalAuto = datos.volumenCorregidoTotal / (7 * 24 * 3600);
     const volDiaAuto = caudalAuto * 24 * 3600;
 
@@ -9164,7 +9179,10 @@ async function mostrarModalHorasPorDia() {
         }
     }
 
-    recalcularCaudalAutomatico();
+        recalcularCaudalAutomatico();
+    } finally {
+        window._abriendoModalHorasDia = false;
+    }
 }
 
 
