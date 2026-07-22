@@ -176,7 +176,11 @@ function generarDatosAnexoG2(ordenTomasDesktop) {
         fechaTerminoDT.setTime(fechaTerminoDT.getTime() + horasUltimoDia * 60 * 60 * 1000);
 
         const fmtFechaCorta = (d) => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
-        const fmtHora = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':00';
+        // Sin segundos ("08:00", no "08:00:00") — los segundos siempre eran
+        // un ":00" fijo sin ningún dato real detrás, y esos 3 caracteres de
+        // más eran justo lo que hacía que la columna HORA se cortara mal en
+        // el Anexo G2 impreso.
+        const fmtHora = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 
         // Generar fila para el Anexo G2
         const TOMAS_RIO_CHIRA = ['AGROAURORA', 'EL LOBO'];
@@ -275,14 +279,14 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
         <div style="overflow-x:auto;">
             <table class="report-table" style="font-size: 10px; min-width: 1400px; border-collapse:collapse; font-family:Arial,sans-serif; table-layout:fixed; width:100%;">
                 <colgroup>
-                    <col style="width:126px"><col style="width:6%"><col style="width:4%">
-                    <col style="width:5%"><col style="width:9%"><col style="width:4%">
+                    <col style="width:126px"><col style="width:6%"><col style="width:3%">
+                    <col style="width:5%"><col style="width:8%"><col style="width:4%">
                     <col style="width:8%">
                     <col style="width:7%"><col style="width:5%">
                     <col style="width:7%"><col style="width:5%">
                     <col style="width:4%"><col style="width:4%"><col style="width:4%">
                     <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                    <col style="width:3%">
+                    <col style="width:5%">
                 </colgroup>
                 <thead>
                     <tr style="background:#E6E6E6; color:#000000;">
@@ -298,10 +302,10 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
                         <th rowspan="2" style="border:1px solid #000000; padding: 5px; min-width: 130px; font-weight:700; white-space:normal; word-wrap:break-word;">OBSERVACIONES</th>
                     </tr>
                     <tr style="background:#E6E6E6; color:#000000;">
-                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">INICIO</th>
-                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">HORA</th>
-                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">TÉRMINO</th>
-                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">HORA</th>
+                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700; white-space:nowrap;">INICIO</th>
+                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700; white-space:nowrap;">HORA</th>
+                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700; white-space:nowrap;">TÉRMINO</th>
+                        <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700; white-space:nowrap;">HORA</th>
                         <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">LUN</th>
                         <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">MAR</th>
                         <th style="border:1px solid #000000; padding: 4px; font-size: 9px; font-weight:700;">MIE</th>
@@ -329,10 +333,10 @@ function construirTablaG2Html(datosSeccion, tituloSeccion) {
 
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right; color:#000000;">${fila.areaRiego.toFixed(2)}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: center; color:#000000;">${fila.tiempoOperacion}</td>
-                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000;">${fila.periodoInicio}</td>
-                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000;">${fila.periodoInicioHora}</td>
-                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000;">${fila.periodoFin}</td>
-                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000;">${fila.periodoFinHora}</td>
+                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000; white-space:nowrap;">${fila.periodoInicio}</td>
+                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000; white-space:nowrap;">${fila.periodoInicioHora}</td>
+                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000; white-space:nowrap;">${fila.periodoFin}</td>
+                <td style="border: 1px solid #000000; padding: 5px; text-align: center; font-size: 9px; color:#000000; white-space:nowrap;">${fila.periodoFinHora}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right; color:#000000;">${fila.lunes > 0 ? fila.lunes.toFixed(3) : '-'}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right; color:#000000;">${fila.martes > 0 ? fila.martes.toFixed(3) : '-'}</td>
                 <td style="border: 1px solid #000000; padding: 5px; text-align: right; color:#000000;">${fila.miercoles > 0 ? fila.miercoles.toFixed(3) : '-'}</td>
@@ -584,10 +588,10 @@ function construirTablaG2PrintHtml(datosSeccion, tituloSeccion) {
                 <td style="border: 1px solid #000000; padding: 4px; text-align: right;">${fila.volumenProgramado.toFixed(2)}</td>
                 <td style="border: 1px solid #000000; padding: 4px; text-align: right;">${fila.areaRiego.toFixed(2)}</td>
                 <td style="border: 1px solid #000000; padding: 4px; text-align: center;">${fila.tiempoOperacion}</td>
-                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px;">${fila.periodoInicio}</td>
-                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px;">${fila.periodoInicioHora}</td>
-                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px;">${fila.periodoFin}</td>
-                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px;">${fila.periodoFinHora}</td>
+                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px; white-space:nowrap;">${fila.periodoInicio}</td>
+                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px; white-space:nowrap;">${fila.periodoInicioHora}</td>
+                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px; white-space:nowrap;">${fila.periodoFin}</td>
+                <td style="border: 1px solid #000000; padding: 4px; text-align: center; font-size: 8px; white-space:nowrap;">${fila.periodoFinHora}</td>
                 <td style="border: 1px solid #000000; padding: 4px; text-align: right;">${fila.lunes.toFixed(3)}</td>
                 <td style="border: 1px solid #000000; padding: 4px; text-align: right;">${fila.martes.toFixed(3)}</td>
                 <td style="border: 1px solid #000000; padding: 4px; text-align: right;">${fila.miercoles.toFixed(3)}</td>
@@ -641,14 +645,14 @@ function construirTablaG2PrintHtml(datosSeccion, tituloSeccion) {
         <div class="titulo-seccion" style="text-align:center; font-weight:700; font-size:12px; margin:10px 0 6px;">${tituloSeccion}</div>
         <table style="table-layout:fixed; width:100%;">
             <colgroup>
-                <col style="width:9%"><col style="width:6%"><col style="width:4%">
-                <col style="width:5%"><col style="width:9%"><col style="width:4%">
+                <col style="width:9%"><col style="width:6%"><col style="width:3%">
+                <col style="width:5%"><col style="width:8%"><col style="width:4%">
                 <col style="width:8%">
                 <col style="width:7%"><col style="width:5%">
                 <col style="width:7%"><col style="width:5%">
                 <col style="width:4%"><col style="width:4%"><col style="width:4%">
                 <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
-                <col style="width:3%">
+                <col style="width:5%">
             </colgroup>
             <thead>
                 <tr>
@@ -664,10 +668,10 @@ function construirTablaG2PrintHtml(datosSeccion, tituloSeccion) {
                     <th rowspan="2">OBSERVACIONES</th>
                 </tr>
                 <tr>
-                    <th>INICIO</th>
-                    <th>HORA</th>
-                    <th>TÉRMINO</th>
-                    <th>HORA</th>
+                    <th style="white-space:nowrap;">INICIO</th>
+                    <th style="white-space:nowrap;">HORA</th>
+                    <th style="white-space:nowrap;">TÉRMINO</th>
+                    <th style="white-space:nowrap;">HORA</th>
                     <th>LUN</th>
                     <th>MAR</th>
                     <th>MIE</th>
