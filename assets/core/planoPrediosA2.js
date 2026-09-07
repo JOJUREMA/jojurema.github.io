@@ -6,16 +6,15 @@
 // escritorio (Formato A-2 → 🗺️ Generar Plano de Predios).
 
 // ── Paleta "Derecho" (relleno de cada predio) ──
-// Colores pasteles calcados por muestreo directo del plano de referencia
-// que compartió el usuario (verde y rosa confirmados con pixel-picking
-// real; "A2 - Dentro Bloque"/"Sin Registro" no aparecían en esa hoja de
-// muestra, así que su tono sigue la misma familia pastel pero es una
-// convención propia, ajustable si el usuario confirma otro color real.
+// Colores confirmados contra el plano de referencia real "MAPA DE PREDIOS
+// CON DERECHO DE USO — TOMA SD5" que compartió el usuario (los 4 swatches
+// de su leyenda, con los mismos 4 nombres de categoría) — reemplaza una
+// convención propia anterior que tenía los 4 colores mal asignados.
 const DERECHO_PLANO_A2 = {
-    PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#c4e5b3', stroke: '#548235' },
-    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#bde0ee', stroke: '#2874a6' },
-    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#ffdff4', stroke: '#8e4585' },
-    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#fff5c2', stroke: '#bfa100' },
+    PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#e2d9a3', stroke: '#8a7a3d' },
+    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#a9d18e', stroke: '#4f7942' },
+    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
+    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#fff099', stroke: '#bfa100' },
 };
 
 // Normaliza un nombre para cruzarlo — mismo criterio ya usado en todo el
@@ -29,15 +28,31 @@ function _normUcPlanoA2(v) {
     return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^0+/, '');
 }
 
+function _buscarPorUcPlanoA2(filas, ucPredio) {
+    if (!Array.isArray(filas) || filas.length === 0 || !ucPredio) return null;
+    return filas.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucPredio) || null;
+}
+function _buscarPorNombrePlanoA2(filas, nombrePredio) {
+    if (!Array.isArray(filas) || filas.length === 0 || !nombrePredio) return null;
+    return filas.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === nombrePredio) || null;
+}
+
 // Clasifica UN predio del bloque de riego (forma {usuario, catastralKey})
 // contra el Padrón Oficial A-1 (¿tiene Permiso/Licencia?) y el Formato A-2
 // (¿está observado, y dentro o fuera del bloque?) — mismo algoritmo de
 // cruce (UC sin ceros a la izquierda, si no por nombre) ya probado en el
 // resto de la app. Prioridad, de mayor a menor certeza legal:
-//   1) Formato A-2 con se_ubica_bloque='Fuera'  -> A2_FUERA_BLOQUE
-//   2) Padrón A-1 (origen ana_a1, con derecho formal)  -> PERMISO_LICENCIA
-//   3) Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
-//   4) Sin ningún cruce -> SIN_REGISTRO
+//   1) Padrón A-1 confirmado por UC (identificador preciso) -> PERMISO_LICENCIA
+//      — una licencia oficial encontrada así NUNCA debe perderse por un
+//      cruce más débil (solo por nombre) del Formato A-2 hacia "Fuera del
+//      bloque": el predio observado puede no traer UC y calzar por nombre
+//      con alguien más, mientras que el cruce por UC contra el Padrón A-1
+//      es mucho más confiable.
+//   2) Formato A-2 (por UC o por nombre) con se_ubica_bloque='Fuera' -> A2_FUERA_BLOQUE
+//   3) Padrón A-1 confirmado solo por nombre (sin UC) -> PERMISO_LICENCIA
+//   4) Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
+//   5) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
+//      pero no aparece ni en el Padrón A-1 ni en el Formato A-2)
 // `padronA1Rows`: filas de padron_oficial_a1 (con unidad_catastral,
 // apellidos_nombres, origen). `formatoA2Rows`: filas de
 // formato_a2_levantamiento (con unidad_catastral, apellidos_nombres,
@@ -46,24 +61,21 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const ucPredio = _normUcPlanoA2(predio.catastralKey);
     const nombrePredio = _normNombrePlanoA2(predio.usuario);
 
-    function buscar(filas) {
-        if (!Array.isArray(filas) || filas.length === 0) return null;
-        if (ucPredio) {
-            const porUc = filas.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucPredio);
-            if (porUc) return porUc;
-        }
-        if (!nombrePredio) return null;
-        return filas.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === nombrePredio) || null;
+    const licenciaPorUc = _buscarPorUcPlanoA2(padronA1Rows, ucPredio);
+    if (licenciaPorUc && licenciaPorUc.origen === 'ana_a1') {
+        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: licenciaPorUc };
     }
 
-    const enFormatoA2 = buscar(formatoA2Rows);
+    const enFormatoA2 = _buscarPorUcPlanoA2(formatoA2Rows, ucPredio) || _buscarPorNombrePlanoA2(formatoA2Rows, nombrePredio);
     if (enFormatoA2 && (enFormatoA2.se_ubica_bloque || '').toString().trim().toLowerCase() === 'fuera') {
         return { categoria: 'A2_FUERA_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_FUERA_BLOQUE, matchInfo: enFormatoA2 };
     }
-    const enPadronA1 = buscar(padronA1Rows);
-    if (enPadronA1 && enPadronA1.origen === 'ana_a1') {
-        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: enPadronA1 };
+
+    const licenciaPorNombre = _buscarPorNombrePlanoA2(padronA1Rows, nombrePredio);
+    if (licenciaPorNombre && licenciaPorNombre.origen === 'ana_a1') {
+        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: licenciaPorNombre };
     }
+
     if (enFormatoA2) {
         return { categoria: 'A2_DENTRO_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_DENTRO_BLOQUE, matchInfo: enFormatoA2 };
     }
