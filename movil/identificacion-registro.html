@@ -53,7 +53,7 @@
         .editor-poligono-footer .estado-busqueda { color: #ffffff; opacity: 0.85; }
         .editor-poligono-mapa { flex: 1; min-height: 0; }
         .marcador-vertice-editor {
-            background: #003876;
+            background: #8e44ad;
             color: #ffffff;
             border: 2px solid #ffffff;
             border-radius: 50%;
@@ -2136,9 +2136,9 @@
 
             var latlngs = verticesAreaTempA2.map(function (v) { return [v.lat, v.lon]; });
             if (latlngs.length >= 3) {
-                capaAreaEditorA2 = L.polygon(latlngs, { color: '#c8a84b', fillColor: '#c8a84b', fillOpacity: 0.35, weight: 2 }).addTo(mapaEditorUbicacionA2);
+                capaAreaEditorA2 = L.polygon(latlngs, { color: '#8e44ad', fillColor: '#9b59b6', fillOpacity: 0.35, weight: 2 }).addTo(mapaEditorUbicacionA2);
             } else if (latlngs.length === 2) {
-                capaAreaEditorA2 = L.polyline(latlngs, { color: '#c8a84b', weight: 2 }).addTo(mapaEditorUbicacionA2);
+                capaAreaEditorA2 = L.polyline(latlngs, { color: '#8e44ad', weight: 2 }).addTo(mapaEditorUbicacionA2);
             }
             verticesAreaTempA2.forEach(function (v, idx) {
                 var marcador = L.marker([v.lat, v.lon], { draggable: true, icon: _iconoEditorUbicacionA2(String(idx + 1)) }).addTo(mapaEditorUbicacionA2);

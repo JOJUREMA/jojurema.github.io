@@ -5900,7 +5900,7 @@ const COMISIONES = {
 
         function _iconoEditorLevantamientoA2Esc(letra) {
             return L.divIcon({
-                html: '<div style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#c8a84b;color:#1a1a1a;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);">' + letra + '</div>',
+                html: '<div style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#8e44ad;color:#ffffff;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);">' + letra + '</div>',
                 className: '', iconSize: [26, 26], iconAnchor: [13, 13],
             });
         }
@@ -6254,9 +6254,9 @@ const COMISIONES = {
 
             const latlngs = _verticesAreaTempLevantamientoA2Esc.map(function (v) { return [v.lat, v.lon]; });
             if (latlngs.length >= 3) {
-                _capaAreaEditorLevantamientoA2Esc = L.polygon(latlngs, { color: '#c8a84b', fillColor: '#c8a84b', fillOpacity: 0.35, weight: 2 }).addTo(_mapaEditorLevantamientoA2Esc);
+                _capaAreaEditorLevantamientoA2Esc = L.polygon(latlngs, { color: '#8e44ad', fillColor: '#9b59b6', fillOpacity: 0.35, weight: 2 }).addTo(_mapaEditorLevantamientoA2Esc);
             } else if (latlngs.length === 2) {
-                _capaAreaEditorLevantamientoA2Esc = L.polyline(latlngs, { color: '#c8a84b', weight: 2 }).addTo(_mapaEditorLevantamientoA2Esc);
+                _capaAreaEditorLevantamientoA2Esc = L.polyline(latlngs, { color: '#8e44ad', weight: 2 }).addTo(_mapaEditorLevantamientoA2Esc);
             }
             _verticesAreaTempLevantamientoA2Esc.forEach(function (v, idx) {
                 const marcador = L.marker([v.lat, v.lon], { draggable: true, icon: _iconoEditorLevantamientoA2Esc(String(idx + 1)) }).addTo(_mapaEditorLevantamientoA2Esc);
