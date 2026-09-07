@@ -27,6 +27,7 @@
     <script src="../assets/core/anexoG2.js"></script>
     <script src="../assets/core/mapa.js"></script>
     <script src="../assets/core/coordenadasUtm.js"></script>
+    <script src="../assets/core/planoPrediosA2.js"></script>
     <script src="vendor/leaflet.js"></script>
 
     <style>
@@ -1982,12 +1983,28 @@
             var tomaNombre = registroA2Actual.tomaNombre;
             var predios = await obtenerPrediosBloqueRiegoA2(tomaNombre);
             var canales = await obtenerCanalesBloqueRiegoA2(tomaNombre);
+            // Mismos datos que usa el Plano de Predios (PDF) del escritorio,
+            // para clasificar cada predio por categoría de Derecho — se pide
+            // una sola vez, sin caché (esta pantalla se abre una vez por
+            // sesión de edición, no vale la pena cachear).
+            var resPadronA1BloqueA2 = await CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKeyActual);
+            var padronA1RowsBloqueA2 = resPadronA1BloqueA2.ok ? resPadronA1BloqueA2.resultados : [];
+            var resFormatoA2BloqueA2 = await CusshmiDatos.cargarFormatoA2LevantamientoParaExportar(comisionKeyActual);
+            var formatoA2RowsBloqueA2 = resFormatoA2BloqueA2.ok ? resFormatoA2BloqueA2.resultados : [];
             if (!bloqueRiegoActivoA2) return; // se apagó mientras cargaba
 
             var nuevasEntradas = [];
             var capas = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; }).map(function (p) {
                 var latlngs = p.coordenadas.map(function (par) { return [par[1], par[0]]; });
-                var poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillOpacity: 0.06, interactive: false });
+                // Mismo color por categoría de Derecho que el Plano de Predios
+                // (PDF) del escritorio — verde=licencia, amarillo=A2-Dentro
+                // Bloque, rojo=sin registro, morado=A2-Fuera Bloque.
+                var clasifBloqueA2 = (typeof clasificarDerechoPredioA2 === 'function')
+                    ? clasificarDerechoPredioA2(p, padronA1RowsBloqueA2, formatoA2RowsBloqueA2)
+                    : null;
+                var colorRellenoBloqueA2 = clasifBloqueA2 ? clasifBloqueA2.colorInfo.fill : '#00bcd4';
+                var colorBordeBloqueA2 = clasifBloqueA2 ? clasifBloqueA2.colorInfo.stroke : '#00bcd4';
+                var poligono = L.polygon(latlngs, { color: colorBordeBloqueA2, weight: 1.5, fillColor: colorRellenoBloqueA2, fillOpacity: 0.3, interactive: false });
                 // Ángulo Y longitud reales (metros) del lado más largo del predio
                 // (assets/core/mapa.js) — el ángulo orienta la etiqueta paralela a
                 // ese lado; la longitud decide, en cada zoom, qué tamaño de fuente
@@ -2017,13 +2034,18 @@
 
             canales.filter(function (c) { return c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2; }).forEach(function (c) {
                 var orden = (c.campos && c.campos.ORDEN) || '';
-                var color = c.color || COLOR_POR_ORDEN_CANAL_A2[orden] || '#ffffff';
+                // Mismo color real por orden (con el ámbar corregido de L4) que
+                // el Plano de Predios (PDF) del escritorio.
+                var color = (typeof estiloCanalPlanoA2 === 'function') ? estiloCanalPlanoA2(orden).color : (c.color || COLOR_POR_ORDEN_CANAL_A2[orden] || '#ffffff');
                 var linea = L.polyline(c.geom.coords, { color: color, weight: 2.5, opacity: 0.9, interactive: false });
                 var nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || 'Canal';
                 // Polilínea abierta (cerrado=false) — geom.coords ya es [lat,lon].
                 var medidaCanal = (typeof medirLadoMasLargo === 'function') ? medirLadoMasLargo(c.geom.coords, false) : { anguloCss: 0, longitudM: 0 };
                 var nombreCanalEsc = escapeHtml(nombreCanal);
-                var etiquetaCanal = '<span class="et-caja" style="transform:rotate(' + medidaCanal.anguloCss.toFixed(1) + 'deg);">' + nombreCanalEsc + '</span>';
+                // Píldora del mismo color de la línea (fondo claro, texto con el
+                // color real) — mismo criterio visual del Plano de Predios (PDF).
+                var colorClaroCanal = (typeof aclararColorPlanoA2 === 'function') ? aclararColorPlanoA2(color, 0.75) : 'rgba(255,255,255,0.82)';
+                var etiquetaCanal = '<span class="et-caja" style="transform:rotate(' + medidaCanal.anguloCss.toFixed(1) + 'deg);background:' + colorClaroCanal + ';color:' + color + ';">' + nombreCanalEsc + '</span>';
                 linea.bindTooltip(etiquetaCanal, { permanent: true, direction: 'center', className: 'etiqueta-canal-bloque-a2', interactive: false });
                 nuevasEntradas.push({ tipo: 'canal', layer: linea, longitudM: medidaCanal.longitudM, chars: Math.max(nombreCanalEsc.length, 1) });
                 capas.push(linea);
