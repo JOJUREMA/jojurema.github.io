@@ -4530,10 +4530,19 @@ const COMISIONES = {
             const canalesParaDibujo = canales.concat(canalesTroncales || []);
 
             // 1) Imagen satelital de fondo (opcional) — antes que cualquier
-            //    otra cosa, para que todo lo demás se dibuje encima.
+            //    otra cosa, para que todo lo demás se dibuje encima. Recortada
+            //    (con su propio save/restore, aparte del recorte persistente
+            //    de más abajo) al rectángulo INTERNO del marco — el mosaico
+            //    de teselas siempre trae un colchón de sobra alrededor del
+            //    bbox y sin este recorte se salía del recuadro.
             if (conSatelite) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(MARGEN, MARGEN, ANCHO - MARGEN * 2, ALTO_MAPA - MARGEN * 2);
+                ctx.clip();
                 try { await dibujarSateliteEnCanvasPlanoA2(ctx, proyector, bbox); }
                 catch (e) { console.warn('No se pudo cargar la imagen satelital, se continúa sin ella:', e); }
+                ctx.restore();
             }
 
             // 2) Grilla de coordenadas UTM + marco.
@@ -4723,19 +4732,17 @@ const COMISIONES = {
                 // (medida.centroPx), no en el punto medio del arreglo de
                 // vértices — así queda siempre paralelo a la dirección real
                 // de la línea justo donde se decide ponerlo, aunque el canal
-                // curvee.
+                // curvee. Sobre una "píldora" del mismo color de la línea
+                // (fondo claro, texto con el color real) — mismo criterio
+                // visual del plano de referencia.
                 const medida = medirEtiquetaPlanoA2(c.geom.coords, false, proyector.proyectar);
                 if (medida.longitudPx < 12 || !medida.centroPx) return;
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
                 if (fuente < 6.5) return;
                 fuente = Math.min(fuente, 10);
-                ctx.save();
-                ctx.translate(medida.centroPx[0], medida.centroPx[1]);
-                ctx.rotate(-medida.anguloCss * Math.PI / 180);
-                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
-                ctx.fillStyle = '#6a3d00';
-                ctx.fillText(nombreCanal, 0, -4);
-                ctx.restore();
+                const orden = (c.campos && c.campos.ORDEN) || '';
+                const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
+                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, -medida.anguloCss * Math.PI / 180, nombreCanal, colorLinea, fuente);
             });
             drenes.forEach((d, idx) => {
                 const nombreDren = (d.nombre || (d.campos && (d.campos['NOMBRE DE DREN SECUNDARIO'] || d.campos['NOMBRE DE DREN COLECTOR'])) || '').toString();
@@ -4745,13 +4752,9 @@ const COMISIONES = {
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreDren.length, 1));
                 if (fuente < 6.5) return;
                 fuente = Math.min(fuente, 9);
-                ctx.save();
-                ctx.translate(medida.centroPx[0], medida.centroPx[1]);
-                ctx.rotate(-medida.anguloCss * Math.PI / 180);
-                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
-                ctx.fillStyle = '#7a1f13';
-                ctx.fillText(nombreDren, 0, -4);
-                ctx.restore();
+                const tipoDren = (d.campos && d.campos.TIPO) || 'D1';
+                const colorLinea = (ESTILO_DREN_POR_TIPO_PLANO_A2[tipoDren] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1).color;
+                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, -medida.anguloCss * Math.PI / 180, nombreDren, colorLinea, fuente);
             });
 
             // 7) Leyenda (esquina inferior izquierda, dentro del marco) y
@@ -4854,7 +4857,15 @@ const COMISIONES = {
                 : ('PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''));
             ctx.fillText(titulo, 40, alto / 2 - 20);
             ctx.font = '400 20px Arial, sans-serif';
-            ctx.fillText(comisionNombre + ' — Formato A-2 (Levantamiento)' + (conSatelite ? ' · Imagen satelital: Esri World Imagery' : ''), 40, alto / 2 + 24);
+            // "SUBSECTOR" (una palabra) -> "SUB SECTOR" (dos palabras), a
+            // pedido explícito; en modo "Plano por Usuario" (usuarioResaltado)
+            // el subtítulo se acota a solo esto — nada de "Formato A-2
+            // (Levantamiento)" ni el crédito de la imagen satelital.
+            const comisionNombreVisible = comisionNombre.replace(/SUBSECTOR/i, 'SUB SECTOR');
+            const subtitulo = usuarioResaltado
+                ? (comisionNombreVisible + ' - PREDIO OBSERVADO (FORMATO A-2)')
+                : (comisionNombreVisible + ' — Formato A-2 (Levantamiento)' + (conSatelite ? ' · Imagen satelital: Esri World Imagery' : ''));
+            ctx.fillText(subtitulo, 40, alto / 2 + 24);
             ctx.textAlign = 'right';
             ctx.font = '400 18px Arial, sans-serif';
             const fechaTexto = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });

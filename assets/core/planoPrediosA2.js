@@ -165,6 +165,45 @@ function dibujarLineaConHaloPlanoA2(ctx, puntosPx, estilo) {
     ctx.restore();
 }
 
+// Mezcla un color hex con blanco (factor 0 = color original, 1 = blanco
+// puro) — para el fondo "más bajo" (más claro) de la píldora de las
+// etiquetas de canal/dren, siempre del mismo color que su línea.
+function aclararColorPlanoA2(hex, factor) {
+    const h = (hex || '#666666').toString().replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16) || 0;
+    const g = parseInt(h.substring(2, 4), 16) || 0;
+    const b = parseInt(h.substring(4, 6), 16) || 0;
+    const mezclar = (c) => Math.round(c + (255 - c) * factor);
+    return 'rgb(' + mezclar(r) + ',' + mezclar(g) + ',' + mezclar(b) + ')';
+}
+
+// Dibuja el nombre de un canal/dren sobre una "píldora" (cápsula
+// totalmente redondeada) del mismo color de su línea, con fondo claro y
+// texto en el color real — mismo criterio visual del plano de referencia
+// (ej. "CANAL SUR" en marrón sobre fondo tostado claro, "DREN BANANEROS -
+// SANTA CLARA" en rojo sobre fondo salmón claro). `centroPx`/`anguloRad`
+// ya vienen resueltos (ver medirEtiquetaPlanoA2) — esta función solo
+// dibuja, no mide ubicación.
+function dibujarEtiquetaPildoraPlanoA2(ctx, centroPx, anguloRad, texto, colorLinea, fuentePx) {
+    ctx.save();
+    ctx.translate(centroPx[0], centroPx[1]);
+    ctx.rotate(anguloRad);
+    ctx.font = '700 ' + fuentePx.toFixed(1) + 'px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const anchoTexto = ctx.measureText(texto).width;
+    const padX = fuentePx * 0.55, padY = fuentePx * 0.3;
+    const w = anchoTexto + padX * 2, h = fuentePx + padY * 2;
+    ctx.fillStyle = aclararColorPlanoA2(colorLinea, 0.75);
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(-w / 2, -h / 2, w, h, h / 2);
+    else ctx.rect(-w / 2, -h / 2, w, h); // respaldo si el navegador no soporta roundRect
+    ctx.fill();
+    ctx.fillStyle = colorLinea;
+    ctx.fillText(texto, 0, 0);
+    ctx.restore();
+}
+
 // ── Proyección UTM (metros) -> píxeles del lienzo del plano ──
 // North-up (norte hacia arriba, este hacia la derecha), con relleno
 // (margenPx) y preservando la relación de aspecto real del terreno —
