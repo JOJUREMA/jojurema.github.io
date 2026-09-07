@@ -4374,7 +4374,7 @@ const COMISIONES = {
                         alert('"' + usuarioElegido + '" todavía no tiene un polígono medido o importado en el Formato A-2 — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
                         return;
                     }
-                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm };
+                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario };
                 }
 
                 // bbox UTM de predios+canales (+el polígono resaltado, si lo
@@ -4562,10 +4562,8 @@ const COMISIONES = {
             //      del bloque de riego sigue mostrando TODOS sus predios sin
             //      cambios; esto es un resaltado adicional, no un reemplazo.
             if (usuarioResaltado) {
-                const puntosUsuarioPx = usuarioResaltado.verticesUtm
-                    .slice()
-                    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
-                    .map((v) => proyector.proyectar(v.easting, v.northing));
+                const verticesOrdenados = usuarioResaltado.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+                const puntosUsuarioPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
                 ctx.beginPath();
                 puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
                 ctx.closePath();
@@ -4575,6 +4573,27 @@ const COMISIONES = {
                 ctx.lineWidth = 5;
                 ctx.setLineDash([]);
                 ctx.stroke();
+
+                // Nombre del usuario sobre su propio polígono — a diferencia de
+                // las etiquetas de predios/canales de más abajo, esta NUNCA se
+                // oculta por falta de espacio (fuente mínima 9px): es el único
+                // predio de todo el plano, tiene que verse sí o sí.
+                const verticesLatLon = verticesOrdenados.map((v) => [v.lat, v.lon]);
+                const medidaUsuario = medirEtiquetaPlanoA2(verticesLatLon, true, proyector.proyectar);
+                const centroideUsuario = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
+                const centroUsuarioPx = centroideUsuario ? proyector.proyectar(centroideUsuario.easting, centroideUsuario.northing) : puntosUsuarioPx[0];
+                let fuenteUsuario = medidaUsuario.longitudPx > 0
+                    ? calcularFuenteParaAncho(medidaUsuario.longitudPx, 1, Math.max(usuarioResaltado.nombre.length, 1))
+                    : 12;
+                fuenteUsuario = Math.max(9, Math.min(fuenteUsuario, 20));
+                ctx.save();
+                ctx.translate(centroUsuarioPx[0], centroUsuarioPx[1]);
+                ctx.rotate(-medidaUsuario.anguloCss * Math.PI / 180);
+                ctx.font = '700 ' + fuenteUsuario.toFixed(1) + 'px Arial, sans-serif';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#5c4300';
+                ctx.fillText(usuarioResaltado.nombre, 0, 0);
+                ctx.restore();
             }
 
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
@@ -4631,8 +4650,82 @@ const COMISIONES = {
             // 7) Leyenda (esquina inferior izquierda, dentro del marco).
             _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes, usuarioResaltado);
 
+            // 8) Cuadro de datos del usuario resaltado (esquina superior
+            //    derecha, dentro del marco) — un cuadro DISTINTO de la
+            //    leyenda de colores: la leyenda explica símbolos, este cuadro
+            //    trae los datos concretos de ESE predio (Formato A-2 + el
+            //    área real del polígono medido).
+            if (usuarioResaltado) {
+                const ANCHO_CAJA_DATOS = 460;
+                _dibujarCuadroDatosUsuarioPlanoA2(ctx, ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS, MARGEN + 15, usuarioResaltado, ANCHO_CAJA_DATOS);
+            }
+
             ctx.restore(); // deshace el translate(0, HEADER_H)
             return canvas;
+        }
+
+        // "Sin Registro" (leyenda de colores, categoría DERECHO) y "tiene un
+        // polígono medido" (este cuadro) son dos cosas independientes: una es
+        // la situación legal/de registro del predio (cruce contra Padrón A-1
+        // y Formato A-2), la otra es si ya se le midió o importó un área en
+        // campo — un predio puede ser "Sin Registro" y tener igual su
+        // polígono medido, o tener Permiso/Licencia y no tener polígono
+        // todavía. Por eso este cuadro va aparte de la leyenda de colores.
+        function _valorCampoFormatoA2Plano(registro, campo, enJson) {
+            if (!registro) return '';
+            const v = enJson ? (registro.campos_verificacion || {})[campo] : registro[_campoASnakeCase(campo)];
+            return (v === undefined || v === null || v === '') ? '' : v;
+        }
+
+        function _dibujarCuadroDatosUsuarioPlanoA2(ctx, x0, y0, usuarioResaltado, anchoCaja) {
+            const registro = usuarioResaltado.registro || {};
+            const areaPoligonoHa = (typeof calcularAreaPoligonoHa === 'function')
+                ? calcularAreaPoligonoHa(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                : 0;
+            function truncar(texto, max) {
+                const t = (texto || '').toString();
+                return t.length > max ? (t.slice(0, max - 1) + '…') : t;
+            }
+            const areaVerificadaTotal = _valorCampoFormatoA2Plano(registro, 'areaTotalVerificadaHa', true);
+            const areaVerificadaBajoRiego = _valorCampoFormatoA2Plano(registro, 'areaBajoRiegoVerificadaHa', true);
+            const filas = [
+                ['Apellidos y Nombres', usuarioResaltado.nombre],
+                ['Unidad Catastral', _valorCampoFormatoA2Plano(registro, 'unidadCatastral', false) || '—'],
+                ['Toma', registro.toma_nombre || '—'],
+                ['Área del polígono medido', areaPoligonoHa ? (areaPoligonoHa.toFixed(2) + ' ha') : '—'],
+                ['Área Total Verificada', areaVerificadaTotal ? (areaVerificadaTotal + ' ha') : '—'],
+                ['Área Bajo Riego Verificada', areaVerificadaBajoRiego ? (areaVerificadaBajoRiego + ' ha') : '—'],
+                ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
+                ['Se ubica en el bloque', _valorCampoFormatoA2Plano(registro, 'seUbicaBloque', false) || '—'],
+                ['Cultivo', _valorCampoFormatoA2Plano(registro, 'cultivo1', true) || '—'],
+                ['Observaciones', truncar(_valorCampoFormatoA2Plano(registro, 'observaciones', false), 42) || '—'],
+            ];
+
+            const ALTO_FILA = 26;
+            const altoTotal = (filas.length + 1) * ALTO_FILA + 16;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, anchoCaja, altoTotal);
+            ctx.strokeRect(x0, y0, anchoCaja, altoTotal);
+
+            let y = y0 + 12;
+            ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+            ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
+            ctx.fillText('DATOS DEL PREDIO (FORMATO A-2)', x0 + 12, y + ALTO_FILA / 2 - 6);
+            y += ALTO_FILA;
+            filas.forEach(([etiqueta, valor]) => {
+                const yCentro = y + ALTO_FILA / 2 - 6;
+                ctx.font = '400 13px Arial, sans-serif';
+                ctx.fillStyle = '#666666';
+                ctx.fillText(etiqueta + ':', x0 + 12, yCentro);
+                ctx.font = '700 13px Arial, sans-serif';
+                ctx.fillStyle = '#000000';
+                ctx.fillText(String(valor), x0 + 230, yCentro);
+                y += ALTO_FILA;
+            });
+            ctx.restore();
         }
 
         function _dibujarMembretePlanoA2(ctx, ancho, alto, tomaNombre, comisionKey, conSatelite, usuarioResaltado) {
