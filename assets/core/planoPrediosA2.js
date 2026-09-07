@@ -14,7 +14,7 @@
 // en el Formato A2 como fuera del bloque".
 const DERECHO_PLANO_A2 = {
     PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
-    A2_DENTRO_BLOQUE: { etiqueta: 'A2-OBSERVADO', fill: '#fff099', stroke: '#bfa100' },
+    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#fff099', stroke: '#bfa100' },
     SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
     A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#d7a8e0', stroke: '#7d3c98' },
 };
@@ -83,10 +83,10 @@ function _tieneDerechoFormalPlanoA2(fila) {
 //      aceptado en el resto del proyecto).
 //   3) Está en el Padrón A-1 (aunque sin derecho confirmado) O en el
 //      Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
-//      ("A2-OBSERVADO" en la leyenda) — el usuario definió "Sin Registro"
-//      de forma explícita como AUSENCIA en AMBOS padrones a la vez; por
-//      lo tanto, aparecer en cualquiera de los dos (así sea sin derecho
-//      confirmado en el Padrón A-1) ya alcanza para esta categoría, nunca
+//      — el usuario definió "Sin Registro" de forma explícita como
+//      AUSENCIA en AMBOS padrones a la vez; por lo tanto, aparecer en
+//      cualquiera de los dos (así sea sin derecho confirmado en el
+//      Padrón A-1) ya alcanza para esta categoría, nunca
 //      para "Sin Registro".
 //   4) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
 //      pero no aparece ni en el Padrón A-1 ni en el Formato A-2 — la
