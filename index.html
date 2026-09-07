@@ -1493,9 +1493,16 @@
             </p>
             <div style="text-align:left; margin-bottom:10px;">
                 <label for="selectTomaPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Toma</label>
-                <select id="selectTomaPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                <select id="selectTomaPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;" onchange="_actualizarSelectorUsuarioPlanoA2()">
                     <option value="">Cargando…</option>
                 </select>
+            </div>
+            <div style="text-align:left; margin-bottom:14px;">
+                <label for="selectUsuarioPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Usuario (opcional)</label>
+                <select id="selectUsuarioPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                    <option value="TODOS">Todos (plano general de la toma)</option>
+                </select>
+                <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia.</p>
             </div>
             <div style="text-align:left; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; font-size:13px;">
                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -4277,8 +4284,32 @@ const COMISIONES = {
                     opt.value = t; opt.textContent = t;
                     select.appendChild(opt);
                 });
+                _actualizarSelectorUsuarioPlanoA2();
             }
         }
+
+        // Usuarios de la toma elegida — reutiliza el mismo caché de
+        // registros de Formato A-2 ya cargado por el modal "Exportar
+        // Polígonos (KML)" (_obtenerRegistrosParaExportarPoligonosA2), sin
+        // volver a consultar Supabase. El emoji 📐 marca quiénes ya tienen
+        // un polígono medido/importado (los únicos para los que "resaltar su
+        // polígono" tiene sentido, aunque igual se puede elegir a cualquiera).
+        async function _actualizarSelectorUsuarioPlanoA2() {
+            const selectToma = document.getElementById('selectTomaPlanoA2');
+            const selectUsuario = document.getElementById('selectUsuarioPlanoA2');
+            if (!selectToma || !selectUsuario) return;
+            const toma = selectToma.value;
+            selectUsuario.innerHTML = '<option value="TODOS">Cargando…</option>';
+            const registros = await _obtenerRegistrosParaExportarPoligonosA2();
+            const filtrados = registros.filter((r) => r.toma_nombre === toma);
+            const nombres = Array.from(new Set(filtrados.map((r) => r.apellidos_nombres).filter(Boolean))).sort();
+            selectUsuario.innerHTML = '<option value="TODOS">Todos (plano general de la toma)</option>' +
+                nombres.map((n) => {
+                    const tienePoligono = filtrados.some((r) => r.apellidos_nombres === n && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3);
+                    return `<option value="${escapeHtml(n)}">${escapeHtml(n)}${tienePoligono ? ' 📐' : ''}</option>`;
+                }).join('');
+        }
+
         function cerrarModalPlanoPrediosA2() {
             const modal = document.getElementById('modalPlanoPrediosA2');
             if (modal) modal.classList.remove('active');
@@ -4304,6 +4335,7 @@ const COMISIONES = {
 
         async function _generarPlanoPrediosA2() {
             const tomaNombre = document.getElementById('selectTomaPlanoA2').value;
+            const usuarioElegido = document.getElementById('selectUsuarioPlanoA2').value; // 'TODOS' o un apellidos_nombres exacto
             const conSatelite = document.getElementById('checkSateliteplanoA2').checked;
             const conMembrete = document.getElementById('checkMembretePlanoA2').checked;
             if (!tomaNombre) { alert('Elige una toma.'); return; }
@@ -4322,23 +4354,35 @@ const COMISIONES = {
                 const canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
                     .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2);
 
-                const [resPadronA1, resFormatoA2, todosLosDrenes] = await Promise.all([
+                const [resPadronA1, registrosFormatoA2, todosLosDrenes] = await Promise.all([
                     CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
-                    CusshmiDatos.cargarFormatoA2LevantamientoParaExportar(comisionKey),
+                    _obtenerRegistrosParaExportarPoligonosA2(), // ya cacheado, mismo origen que el selector de Usuario
                     _obtenerDrenesParaPlanoA2(),
                 ]);
                 const padronA1Rows = resPadronA1.ok ? resPadronA1.resultados : [];
-                const formatoA2Rows = resFormatoA2.ok ? resFormatoA2.resultados : [];
+                const formatoA2Rows = registrosFormatoA2;
 
-                // bbox UTM de predios+canales de la toma, para filtrar los drenes
-                // (que no tienen toma resuelta) por superposición geográfica.
-                const bboxTomaPrevio = calcularBboxUtmPlanoA2(
-                    predios.map((p) => p.coordenadas).concat(canales.map((c) => c.geom.coords)),
-                    false // ya se resuelve el orden real abajo, ver nota
-                );
-                // Nota: predios trae [lon,lat] y canales [lat,lon] — no se pueden
-                // mezclar en una sola llamada con un único "ordenLonLat". Se
-                // recalcula el bbox correctamente combinando ambos por separado.
+                // Plano por usuario (opcional): el polígono medido/importado del
+                // Formato A-2 de ESE usuario — "tal cual" el KML del bloque de
+                // riego sigue mostrando TODOS los predios sin cambios; esto es
+                // un resaltado adicional encima, no un reemplazo.
+                let usuarioResaltado = null;
+                if (usuarioElegido !== 'TODOS') {
+                    const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
+                    const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
+                    if (verticesUtm.length < 3) {
+                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido o importado en el Formato A-2 — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
+                        return;
+                    }
+                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm };
+                }
+
+                // bbox UTM de predios+canales (+el polígono resaltado, si lo
+                // hay, por si se sale del bloque KML) de la toma, para filtrar
+                // los drenes (que no tienen toma resuelta) por superposición
+                // geográfica. Nota: predios trae [lon,lat] y canales [lat,lon]
+                // — no se pueden mezclar en una sola llamada con un único
+                // "ordenLonLat", se calculan por separado y se combinan.
                 const bboxPredios = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
                 const bboxCanales = canales.length ? calcularBboxUtmPlanoA2(canales.map((c) => c.geom.coords), false) : null;
                 const bboxToma = {
@@ -4347,6 +4391,14 @@ const COMISIONES = {
                     minNorthing: Math.min(bboxPredios.minNorthing, bboxCanales ? bboxCanales.minNorthing : Infinity),
                     maxNorthing: Math.max(bboxPredios.maxNorthing, bboxCanales ? bboxCanales.maxNorthing : -Infinity),
                 };
+                if (usuarioResaltado) {
+                    usuarioResaltado.verticesUtm.forEach((v) => {
+                        if (v.easting < bboxToma.minEasting) bboxToma.minEasting = v.easting;
+                        if (v.easting > bboxToma.maxEasting) bboxToma.maxEasting = v.easting;
+                        if (v.northing < bboxToma.minNorthing) bboxToma.minNorthing = v.northing;
+                        if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
+                    });
+                }
                 const drenes = todosLosDrenes.filter((d) => {
                     if (!d.geom || d.geom.type !== 'LineString' || !d.geom.coords || d.geom.coords.length < 2) return false;
                     return d.geom.coords.some((par) => {
@@ -4357,11 +4409,12 @@ const COMISIONES = {
                 });
 
                 const canvas = await _dibujarPlanoPrediosA2Canvas({
-                    predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete,
+                    predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado,
                 });
 
                 const fecha = new Date().toISOString().split('T')[0];
-                const nombreArchivo = `Plano_Predios_${tomaNombre}_${conSatelite ? 'satelite' : 'sinfondo'}_${fecha}.pdf`;
+                const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_') : '';
+                const nombreArchivo = `Plano_Predio${usuarioResaltado ? '' : 's'}${sufijoUsuario}_${tomaNombre}_${conSatelite ? 'satelite' : 'sinfondo'}_${fecha}.pdf`;
                 _descargarCanvasComoPdfA2(canvas, nombreArchivo);
             } catch (e) {
                 console.error('Error al generar el Plano de Predios:', e);
@@ -4381,7 +4434,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado }) {
             const ANCHO = 2480, ALTO_MAPA = 1754; // ~A3 apaisado a 150dpi
             const MARGEN = 110;
             const HEADER_H = conMembrete ? 150 : 0;
@@ -4393,7 +4446,7 @@ const COMISIONES = {
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, ANCHO, ALTO_TOTAL);
 
-            if (conMembrete) _dibujarMembretePlanoA2(ctx, ANCHO, HEADER_H, tomaNombre, comisionKey, conSatelite);
+            if (conMembrete) _dibujarMembretePlanoA2(ctx, ANCHO, HEADER_H, tomaNombre, comisionKey, conSatelite, usuarioResaltado);
 
             ctx.save();
             ctx.translate(0, HEADER_H);
@@ -4416,6 +4469,14 @@ const COMISIONES = {
                 minNorthing: Math.min(bboxPredios.minNorthing, bboxCanales ? bboxCanales.minNorthing : Infinity),
                 maxNorthing: Math.max(bboxPredios.maxNorthing, bboxCanales ? bboxCanales.maxNorthing : -Infinity),
             };
+            if (usuarioResaltado) {
+                usuarioResaltado.verticesUtm.forEach((v) => {
+                    if (v.easting < bbox.minEasting) bbox.minEasting = v.easting;
+                    if (v.easting > bbox.maxEasting) bbox.maxEasting = v.easting;
+                    if (v.northing < bbox.minNorthing) bbox.minNorthing = v.northing;
+                    if (v.northing > bbox.maxNorthing) bbox.maxNorthing = v.northing;
+                });
+            }
             const colchonE = (bbox.maxEasting - bbox.minEasting) * 0.05 || 50;
             const colchonN = (bbox.maxNorthing - bbox.minNorthing) * 0.05 || 50;
             bbox.minEasting -= colchonE; bbox.maxEasting += colchonE;
@@ -4493,6 +4554,29 @@ const COMISIONES = {
                 ctx.lineCap = 'butt';
             });
 
+            // 5.5) Polígono resaltado del usuario elegido (opcional) — el
+            //      área medida/importada del Formato A-2, encima de todo lo
+            //      demás, con un contorno grueso bien distinguible del resto
+            //      (mismo dorado ya usado en el proyecto para "medido en
+            //      campo" — panel de comparación de Sinceramiento). El KML
+            //      del bloque de riego sigue mostrando TODOS sus predios sin
+            //      cambios; esto es un resaltado adicional, no un reemplazo.
+            if (usuarioResaltado) {
+                const puntosUsuarioPx = usuarioResaltado.verticesUtm
+                    .slice()
+                    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+                    .map((v) => proyector.proyectar(v.easting, v.northing));
+                ctx.beginPath();
+                puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(200,168,75,0.35)';
+                ctx.fill();
+                ctx.strokeStyle = '#c8a84b';
+                ctx.lineWidth = 5;
+                ctx.setLineDash([]);
+                ctx.stroke();
+            }
+
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
             //    paralelas a su lado/tramo más largo y con tamaño de fuente
             //    proporcional al espacio real disponible (mismo criterio del
@@ -4545,13 +4629,13 @@ const COMISIONES = {
             });
 
             // 7) Leyenda (esquina inferior izquierda, dentro del marco).
-            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes);
+            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes, usuarioResaltado);
 
             ctx.restore(); // deshace el translate(0, HEADER_H)
             return canvas;
         }
 
-        function _dibujarMembretePlanoA2(ctx, ancho, alto, tomaNombre, comisionKey, conSatelite) {
+        function _dibujarMembretePlanoA2(ctx, ancho, alto, tomaNombre, comisionKey, conSatelite, usuarioResaltado) {
             ctx.fillStyle = '#003876';
             ctx.fillRect(0, 0, ancho, alto);
             ctx.fillStyle = '#c8a84b';
@@ -4560,7 +4644,10 @@ const COMISIONES = {
             ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
             ctx.font = '700 34px Arial, sans-serif';
-            ctx.fillText('PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''), 40, alto / 2 - 20);
+            const titulo = usuarioResaltado
+                ? ('PLANO DE PREDIO — ' + usuarioResaltado.nombre + ' (TOMA ' + (tomaNombre || '') + ')')
+                : ('PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''));
+            ctx.fillText(titulo, 40, alto / 2 - 20);
             ctx.font = '400 20px Arial, sans-serif';
             ctx.fillText(comisionNombre + ' — Formato A-2 (Levantamiento)' + (conSatelite ? ' · Imagen satelital: Esri World Imagery' : ''), 40, alto / 2 + 24);
             ctx.textAlign = 'right';
@@ -4622,7 +4709,7 @@ const COMISIONES = {
             ctx.restore();
         }
 
-        function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, drenes) {
+        function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, drenes, usuarioResaltado) {
             // Solo se listan las combinaciones (canal orden+material, tipo de
             // dren) que de verdad aparecen en esta toma — evita una leyenda
             // larga con símbolos que no están en el plano.
@@ -4653,6 +4740,10 @@ const COMISIONES = {
             }
             filas.push({ tipo: 'subtitulo', texto: 'DERECHO' });
             Object.keys(DERECHO_PLANO_A2).forEach((k) => filas.push({ tipo: 'caja', color: DERECHO_PLANO_A2[k], texto: DERECHO_PLANO_A2[k].etiqueta }));
+            if (usuarioResaltado) {
+                filas.push({ tipo: 'subtitulo', texto: 'PREDIO RESALTADO' });
+                filas.push({ tipo: 'caja', color: { fill: 'rgba(200,168,75,0.35)', stroke: '#c8a84b' }, texto: 'Polígono medido (Formato A-2)' });
+            }
 
             const ALTO_FILA = 26, ANCHO_CAJA = 300;
             const altoTotal = filas.length * ALTO_FILA + 16;
