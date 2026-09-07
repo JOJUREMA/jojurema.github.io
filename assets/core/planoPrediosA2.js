@@ -7,16 +7,18 @@
 
 // ── Paleta "Derecho" (relleno de cada predio) ──
 // Colores confirmados contra el plano de referencia real "MAPA DE PREDIOS
-// CON DERECHO DE USO — TOMA SD5" que compartió el usuario (los 4 swatches
-// de su leyenda, con los mismos 4 nombres de categoría), y contra su
-// aclaración explícita de que los predios verdes de esa imagen son "los
-// usuarios con derecho o licencia" (PERMISO_LICENCIA, no A2_DENTRO_BLOQUE
-// — swap corregido tras un primer intento con esas dos invertidas).
+// CON DERECHO DE USO — TOMA SD5" que compartió el usuario, con 2 rondas
+// de corrección: (1) PERMISO_LICENCIA es verde, no A2_DENTRO_BLOQUE
+// (aclarado explícitamente por el usuario); (2) SIN_REGISTRO es amarillo
+// y A2_FUERA_BLOQUE es rosado/salmón — el usuario confirmó "amarillo son
+// los usuarios que no tienen derecho", que corresponde a SIN_REGISTRO
+// (sin ningún cruce), no a A2_FUERA_BLOQUE (un caso más específico:
+// observado por ANA como fuera del bloque).
 const DERECHO_PLANO_A2 = {
     PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
     A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#e2d9a3', stroke: '#8a7a3d' },
-    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
-    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#fff099', stroke: '#bfa100' },
+    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#fff099', stroke: '#bfa100' },
+    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#f5a3a3', stroke: '#c0392b' },
 };
 
 // Normaliza un nombre para cruzarlo — mismo criterio ya usado en todo el
@@ -42,12 +44,19 @@ function _buscarPorNombrePlanoA2(filas, nombrePredio) {
 // El Padrón A-1 incluye TODAS las parcelas catalogadas oficialmente, no
 // solo las que tienen licencia — algunas traen `clase_derecho` = "SIN
 // DERECHO" en texto plano (viene tal cual de la columna Q del Excel
-// oficial de ANA, ver Sistema_Riego_CUSSHMI_14.html). Que una fila exista
-// en el Padrón A-1 (origen='ana_a1') NO basta para asumir licencia — hay
-// que además confirmar que su propia `clase_derecho` no diga eso mismo.
+// oficial de ANA, ver Sistema_Riego_CUSSHMI_14.html), y otras simplemente
+// no tienen ese campo completado (en blanco). Que una fila exista en el
+// Padrón A-1 (origen='ana_a1') NO basta para asumir licencia: hace falta
+// además una `clase_derecho` EXPLÍCITA que no diga "sin derecho" — un
+// campo vacío/sin informar NO se interpreta como licencia por omisión
+// (criterio conservador: sin una clase de derecho real y positiva, no se
+// afirma que la tiene). Corrige un caso real donde casi toda una toma
+// aparecía "con licencia" solo por tener fila en el Padrón A-1, sin que
+// esa fila realmente confirmara ningún derecho.
 function _tieneDerechoFormalPlanoA2(fila) {
     if (!fila || fila.origen !== 'ana_a1') return false;
     const clase = (fila.clase_derecho || '').toString().trim().toUpperCase();
+    if (!clase) return false;
     return clase.indexOf('SIN DERECHO') === -1;
 }
 

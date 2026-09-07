@@ -4651,17 +4651,17 @@ const COMISIONES = {
             //    editor interactivo, adaptado a un plano estático).
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
-            const FUENTE_MAX_PREDIO = 18;
+            const FUENTE_MAX_PREDIO = 12;
             // Fuente ÚNICA para TODOS los predios del plano — nunca varía de
-            // un predio a otro. Se calcula como la MEDIANA (no el mínimo
-            // estricto) de la fuente "natural" de cada predio para que su UC
-            // quepa — usar el mínimo dejaba una fuente diminuta apenas por un
-            // par de predios extremos; con la mediana, los predios más chicos
-            // que ese punto medio simplemente muestran solo su UC (o esta se
-            // dibuja un poco ajustada/desbordando su propio polígono — la UC
-            // igual nunca se omite, ver el respaldo más abajo), mientras que
-            // la mayoría del plano queda con una fuente notoriamente más
-            // grande y legible, como en el plano de referencia.
+            // un predio a otro. Se calcula con el percentil 25 (no la
+            // mediana) de la fuente "natural" de cada predio para que su UC
+            // quepa — la mediana quedaba muy grande y saturaba el plano
+            // (nombres pisándose entre predios vecinos); con un percentil
+            // más bajo y un techo más chico, el plano se ve tan denso como
+            // el de referencia. Los predios más chicos que ese percentil
+            // simplemente muestran su nombre/UC un poco ajustados o
+            // desbordando su propio polígono (nunca se omiten, ver más
+            // abajo) — mejor eso que una fuente uniforme demasiado grande.
             const medidasPredios = predios.map((p) => {
                 const uc = (p.catastralKey || '').toString();
                 const nombre = (p.usuario || '(sin nombre)').toString();
@@ -4673,9 +4673,9 @@ const COMISIONES = {
                 return calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
             }).sort((a, b) => a - b);
             let fuentePredios = fuentesNaturales.length
-                ? fuentesNaturales[Math.floor(fuentesNaturales.length / 2)]
+                ? fuentesNaturales[Math.floor(fuentesNaturales.length * 0.25)]
                 : FUENTE_MAX_PREDIO;
-            fuentePredios = Math.max(10, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
+            fuentePredios = Math.max(7, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
             // Nombre y UC SIEMPRE se muestran juntos, para TODOS los predios
             // — no solo cuando "caben" dentro del propio polígono. Un predio
             // angosto es simplemente demasiado chico para su propia etiqueta
