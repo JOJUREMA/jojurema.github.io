@@ -4374,8 +4374,35 @@ const COMISIONES = {
                 const predios = (await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(tomaNombre))
                     .filter((p) => p.coordenadas && p.coordenadas.length >= 3);
                 if (predios.length === 0) { alert('No hay predios mapeados (KML del bloque de riego) para esta toma.'); return; }
+                // Filtro de sanidad geográfica: algunos canales de
+                // canal_lateral.json vienen con la toma mal etiquetada en el
+                // dato de origen (confirmado con SD11 real: dos canales
+                // llamados "CANAL SAN JOSE"/"CANAL GONZALES" con toma='SD11'
+                // — uno junto a los predios reales, otro a ~9-10 km de
+                // distancia). Sin este filtro, ese canal lejano estira el
+                // bbox del plano para abarcar ambos, dejando los predios
+                // reales aplastados en una esquina. Se excluye cualquier
+                // canal cuyo punto más cercano a los predios de la toma
+                // quede a más de 2 km — generoso frente a canales reales
+                // (el más ancho medido hasta ahora, ~1 km), muy por debajo
+                // del caso detectado (~9 km).
+                const bboxPrediosSanidad = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
+                const UMBRAL_SANIDAD_CANAL_M = 2000;
+                const canalesConTomaMalEtiquetada = [];
                 const canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
-                    .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2);
+                    .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2)
+                    .filter((c) => {
+                        const cerca = c.geom.coords.some((par) => {
+                            const utm = latLonAUtm17S(par[0], par[1]);
+                            return utm.easting >= bboxPrediosSanidad.minEasting - UMBRAL_SANIDAD_CANAL_M && utm.easting <= bboxPrediosSanidad.maxEasting + UMBRAL_SANIDAD_CANAL_M &&
+                                   utm.northing >= bboxPrediosSanidad.minNorthing - UMBRAL_SANIDAD_CANAL_M && utm.northing <= bboxPrediosSanidad.maxNorthing + UMBRAL_SANIDAD_CANAL_M;
+                        });
+                        if (!cerca) canalesConTomaMalEtiquetada.push((c.campos && c.campos.NOMBRE) || c.nombre || '(sin nombre)');
+                        return cerca;
+                    });
+                if (canalesConTomaMalEtiquetada.length) {
+                    console.warn('Plano de Predios: se omitieron ' + canalesConTomaMalEtiquetada.length + ' canal(es) con la toma "' + tomaNombre + '" pero geográficamente lejos de sus predios (posible error de etiquetado en canal_lateral.json): ' + canalesConTomaMalEtiquetada.join(', '));
+                }
 
                 const [resPadronA1, registrosFormatoA2, todosLosDrenes, todosLosCanalesTroncales] = await Promise.all([
                     CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
