@@ -13,7 +13,7 @@
 // gráfica pero sin licencia ni permiso (sin registro); morado = observado
 // en el Formato A2 como fuera del bloque".
 const DERECHO_PLANO_A2 = {
-    PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
+    PERMISO_LICENCIA: { etiqueta: 'LICENCIA/DERECHO', fill: '#a9d18e', stroke: '#4f7942' },
     A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#fff099', stroke: '#bfa100' },
     SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
     A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#d7a8e0', stroke: '#7d3c98' },
