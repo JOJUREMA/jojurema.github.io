@@ -1454,37 +1454,51 @@
             <button class="btn btn-success" id="btnExportarFormatoA2Levantamiento" onclick="exportarFormatoA2LevantamientoActualizado()" style="width: 100%; margin-top: 12px;" title="Descarga el Excel del Formato A-2 (16 hojas) con lo verificado/completado en campo hasta ahora, en el mismo formato exacto del oficial — para imprimir/entregar">
                 📥 Exportar Formato A-2 actualizado (para imprimir)
             </button>
-            <div style="margin-top:12px; border:1px solid #ddd; border-radius:6px; padding:10px; text-align:left;">
-                <p class="info-text" style="margin:0 0 8px;">
-                    <strong>Polígonos (KML):</strong> exporta lo ya medido en campo o importado, o sube un KML/KMZ con predios de usuarios del Formato A-2 (se cruzan por nombre/unidad catastral).
-                </p>
-                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-                    <div style="flex:1; min-width:140px;">
-                        <label style="font-size:11px; color:#666; display:block; margin-bottom:3px;">Toma</label>
-                        <select id="selectTomaExportarPoligonosA2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;" onchange="_actualizarSelectorUsuarioExportarPoligonosA2()">
-                            <option value="TODAS">Todas las tomas</option>
-                        </select>
-                    </div>
-                    <div style="flex:1; min-width:140px;">
-                        <label style="font-size:11px; color:#666; display:block; margin-bottom:3px;">Usuario</label>
-                        <select id="selectUsuarioExportarPoligonosA2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">
-                            <option value="TODOS">Todos</option>
-                        </select>
-                    </div>
-                </div>
-                <button class="btn btn-success" id="btnExportarPoligonosFormatoA2Levantamiento" onclick="exportarPoligonosFormatoA2Levantamiento()" style="width: 100%;" title="Descarga en KML los polígonos de área medidos en campo (móvil) o importados, acotado a la toma/usuario elegidos arriba (por defecto, todos), con los datos de verificación (cols 18-47) del usuario">
-                    🗺️ Exportar Polígonos (KML)
-                </button>
-                <button class="btn btn-primary" id="btnImportarPoligonosFormatoA2Levantamiento" onclick="document.getElementById('inputImportarPoligonosA2').click()" style="width: 100%; margin-top: 8px;" title="Sube un KML o KMZ con polígonos de usuarios del Formato A-2 — se cruzan por nombre/unidad catastral y se guardan como el polígono de cada registro emparejado">
-                    📤 Importar Polígonos (KML/KMZ)
-                </button>
-                <input type="file" id="inputImportarPoligonosA2" accept=".kml,.kmz" style="display:none;" onchange="importarPoligonosFormatoA2Levantamiento(event)">
-            </div>
+            <button class="btn btn-success" id="btnAbrirExportarPoligonosA2" onclick="abrirModalExportarPoligonosA2()" style="width: 100%; margin-top: 12px;" title="Exporta en KML los polígonos ya medidos en campo o importados, acotado a la toma o al usuario que elijas">
+                🗺️ Exportar Polígonos (KML)
+            </button>
+            <button class="btn btn-primary" id="btnImportarPoligonosFormatoA2Levantamiento" onclick="document.getElementById('inputImportarPoligonosA2').click()" style="width: 100%; margin-top: 12px;" title="Sube un KML o KMZ con polígonos de usuarios del Formato A-2 — se cruzan por nombre/unidad catastral y se guardan como el polígono de cada registro emparejado">
+                📤 Importar Polígonos (KML/KMZ)
+            </button>
+            <input type="file" id="inputImportarPoligonosA2" accept=".kml,.kmz" style="display:none;" onchange="importarPoligonosFormatoA2Levantamiento(event)">
             <button class="btn btn-primary" id="btnAvanceFormatoA2Levantamiento" onclick="mostrarPanelAvanceFormatoA2Levantamiento()" style="width: 100%; margin-top: 12px;" title="Avance del levantamiento de observaciones por toma y consolidado, con exportación a Excel">
                 📊 Avance Levantamiento A-2
             </button>
 
             <button class="btn btn-secondary" onclick="cerrarModalFormatoA2Menu()" style="width: 100%; margin-top: 12px;">
+                ❌ Cerrar
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL EXPORTAR POLÍGONOS (KML) — FORMATO A-2 -->
+    <div id="modalExportarPoligonosA2" class="modal-overlay">
+        <div class="modal-container" style="text-align: center; padding: 30px; max-width: 480px;">
+            <h3>🗺️ Exportar Polígonos (KML)</h3>
+            <p class="info-text" style="text-align:left;">
+                Exporta en KML los polígonos ya medidos en campo (móvil) o importados del Formato A-2,
+                con los datos de verificación (cols 18-47) de cada usuario — acotado a la toma o al
+                usuario que elijas abajo (por defecto, todos).
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; text-align:left;">
+                <div style="flex:1; min-width:140px;">
+                    <label style="font-size:11px; color:#666; display:block; margin-bottom:3px;">Toma</label>
+                    <select id="selectTomaExportarPoligonosA2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;" onchange="_actualizarSelectorUsuarioExportarPoligonosA2()">
+                        <option value="TODAS">Todas las tomas</option>
+                    </select>
+                </div>
+                <div style="flex:1; min-width:140px;">
+                    <label style="font-size:11px; color:#666; display:block; margin-bottom:3px;">Usuario</label>
+                    <select id="selectUsuarioExportarPoligonosA2" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:4px;">
+                        <option value="TODOS">Todos</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-success" id="btnExportarPoligonosFormatoA2Levantamiento" onclick="exportarPoligonosFormatoA2Levantamiento()" style="width: 100%;" title="Descarga en KML los polígonos de área medidos en campo (móvil) o importados, acotado a la toma/usuario elegidos arriba (por defecto, todos), con los datos de verificación (cols 18-47) del usuario">
+                🗺️ Exportar Polígonos (KML)
+            </button>
+
+            <button class="btn btn-secondary" onclick="cerrarModalExportarPoligonosA2()" style="width: 100%; margin-top: 12px;">
                 ❌ Cerrar
             </button>
         </div>
@@ -8670,11 +8684,25 @@ function cerrarModalPadronA1() {
 function abrirModalFormatoA2Menu() {
     const modal = document.getElementById('modalFormatoA2Menu');
     if (modal) modal.classList.add('active');
-    _poblarSelectorTomaExportarPoligonosA2SiHaceFalta();
 }
 
 function cerrarModalFormatoA2Menu() {
     const modal = document.getElementById('modalFormatoA2Menu');
+    if (modal) modal.classList.remove('active');
+}
+
+// "Exportar Polígonos (KML)" ahora abre su propia ventana (antes era una
+// caja dentro de modalFormatoA2Menu) — mismo criterio de apilado que el
+// resto de paneles (gana por orden de aparición en el DOM, sin cerrar el
+// menú detrás).
+function abrirModalExportarPoligonosA2() {
+    const modal = document.getElementById('modalExportarPoligonosA2');
+    if (modal) modal.classList.add('active');
+    _poblarSelectorTomaExportarPoligonosA2SiHaceFalta();
+}
+
+function cerrarModalExportarPoligonosA2() {
+    const modal = document.getElementById('modalExportarPoligonosA2');
     if (modal) modal.classList.remove('active');
 }
 
