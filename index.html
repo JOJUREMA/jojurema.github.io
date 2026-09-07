@@ -1134,7 +1134,13 @@
 <script src="assets/core/modulosRiego.js"></script>
 <script src="assets/core/inventarioInfraestructura.js"></script>
 <script src="assets/core/anexoE41.js"></script>
+<script src="assets/core/planoPrediosA2.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<!-- jsPDF standalone — el Plano de Predios (Formato A-2) dibuja su propio
+     <canvas> a mano (grilla, predios, canales/drenes con su estilo real,
+     leyenda, membrete) en vez de "fotografiar" un DOM con html2canvas —
+     así que solo hace falta el jsPDF, sin arrastrar html2canvas de nuevo. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <!-- Leaflet — primer uso en escritorio (panel de comparación de polígonos
      de Sinceramiento de Áreas); vía CDN, el escritorio no es una PWA
      offline como el móvil, no hace falta vendorizarlo. -->
@@ -1464,8 +1470,46 @@
             <button class="btn btn-primary" id="btnAvanceFormatoA2Levantamiento" onclick="mostrarPanelAvanceFormatoA2Levantamiento()" style="width: 100%; margin-top: 12px;" title="Avance del levantamiento de observaciones por toma y consolidado, con exportación a Excel">
                 📊 Avance Levantamiento A-2
             </button>
+            <button class="btn btn-success" id="btnAbrirPlanoPrediosA2" onclick="abrirModalPlanoPrediosA2()" style="width: 100%; margin-top: 12px;" title="Genera un plano imprimible (PDF) de los predios del bloque de riego de una toma, con/sin imagen satelital y con/sin membrete">
+                🗺️ Generar Plano de Predios (PDF)
+            </button>
 
             <button class="btn btn-secondary" onclick="cerrarModalFormatoA2Menu()" style="width: 100%; margin-top: 12px;">
+                ❌ Cerrar
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL PLANO DE PREDIOS (PDF) — FORMATO A-2 -->
+    <div id="modalPlanoPrediosA2" class="modal-overlay">
+        <div class="modal-container" style="text-align: center; padding: 30px; max-width: 480px;">
+            <h3>🗺️ Generar Plano de Predios</h3>
+            <p class="info-text" style="text-align:left;">
+                Genera un plano imprimible (PDF) de los predios del bloque de riego de la toma elegida:
+                grilla de coordenadas UTM, canales y drenes con su color/línea real, y cada predio
+                coloreado según su situación (Permiso/Licencia, Formato A-2 dentro/fuera de bloque, o sin
+                registro) — clasificación automática cruzando el Padrón A-1 y el Formato A-2 ya cargados
+                (puede tener algún error de cruce, igual que el reporte de nombres ya revisado).
+            </p>
+            <div style="text-align:left; margin-bottom:10px;">
+                <label for="selectTomaPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Toma</label>
+                <select id="selectTomaPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                    <option value="">Cargando…</option>
+                </select>
+            </div>
+            <div style="text-align:left; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; font-size:13px;">
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="checkSateliteplanoA2"> Con imagen satelital de fondo
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                    <input type="checkbox" id="checkMembretePlanoA2" checked> Con membrete (encabezado institucional)
+                </label>
+            </div>
+            <button class="btn btn-success" id="btnGenerarPlanoPrediosA2" onclick="_generarPlanoPrediosA2()" style="width: 100%;" title="Genera y descarga el plano en PDF">
+                🗺️ Generar PDF
+            </button>
+
+            <button class="btn btn-secondary" onclick="cerrarModalPlanoPrediosA2()" style="width: 100%; margin-top: 12px;">
                 ❌ Cerrar
             </button>
         </div>
@@ -4211,6 +4255,443 @@ const COMISIONES = {
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
             }
+        }
+
+        // ── Plano de Predios (Formato A-2) — PDF imprimible, con/sin imagen
+        // satelital y con/sin membrete. Dibuja TODO a mano en un <canvas>
+        // (grilla de coordenadas, predios coloreados por Derecho, canales/
+        // drenes con su estilo real, leyenda, membrete) en vez de "fotografiar"
+        // un mapa Leaflet — control total sobre patrones de línea y texto
+        // rotado, y evita el problema de "canvas contaminado" de las teselas
+        // de Google (sin CORS) que sí usa el editor interactivo; acá se usa
+        // Esri World Imagery, con CORS confirmado, solo para este plano.
+        function abrirModalPlanoPrediosA2() {
+            const modal = document.getElementById('modalPlanoPrediosA2');
+            if (modal) modal.classList.add('active');
+            const select = document.getElementById('selectTomaPlanoA2');
+            if (select && !select.dataset.poblado) {
+                select.dataset.poblado = '1';
+                select.innerHTML = '';
+                TOMAS_FORMATO_A2_LEVANTAMIENTO.forEach((t) => {
+                    const opt = document.createElement('option');
+                    opt.value = t; opt.textContent = t;
+                    select.appendChild(opt);
+                });
+            }
+        }
+        function cerrarModalPlanoPrediosA2() {
+            const modal = document.getElementById('modalPlanoPrediosA2');
+            if (modal) modal.classList.remove('active');
+        }
+
+        // Drenes (Principal + D1/D2) — su KMZ no trae "toma" resuelta (a
+        // diferencia de Canal Lateral), así que se descargan completos una
+        // sola vez y se filtran más adelante por caja envolvente (bounding
+        // box) contra los predios/canales de la toma elegida.
+        let _drenesInventarioGisTodosPlanoA2 = null;
+        async function _obtenerDrenesParaPlanoA2() {
+            if (_drenesInventarioGisTodosPlanoA2 === null) {
+                try {
+                    const [rp, rs] = await Promise.all([
+                        fetch('mapas/inventario_gis/dren_principal.json').then((r) => (r.ok ? r.json() : [])),
+                        fetch('mapas/inventario_gis/dren_secundario.json').then((r) => (r.ok ? r.json() : [])),
+                    ]);
+                    _drenesInventarioGisTodosPlanoA2 = rp.concat(rs);
+                } catch (e) { _drenesInventarioGisTodosPlanoA2 = []; }
+            }
+            return _drenesInventarioGisTodosPlanoA2;
+        }
+
+        async function _generarPlanoPrediosA2() {
+            const tomaNombre = document.getElementById('selectTomaPlanoA2').value;
+            const conSatelite = document.getElementById('checkSateliteplanoA2').checked;
+            const conMembrete = document.getElementById('checkMembretePlanoA2').checked;
+            if (!tomaNombre) { alert('Elige una toma.'); return; }
+            if (!window.CusshmiDatos) { alert('No hay conexión con Supabase. Intenta de nuevo en un momento.'); return; }
+            if (!window.jspdf) { alert('No se pudo cargar la librería de PDF. Intenta de nuevo en un momento.'); return; }
+
+            const btn = document.getElementById('btnGenerarPlanoPrediosA2');
+            const textoOriginal = btn.textContent;
+            btn.disabled = true; btn.textContent = '🗺️ Generando plano…';
+
+            try {
+                const comisionKey = localStorage.getItem('cusshmi_comision');
+                const predios = (await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(tomaNombre))
+                    .filter((p) => p.coordenadas && p.coordenadas.length >= 3);
+                if (predios.length === 0) { alert('No hay predios mapeados (KML del bloque de riego) para esta toma.'); return; }
+                const canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
+                    .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2);
+
+                const [resPadronA1, resFormatoA2, todosLosDrenes] = await Promise.all([
+                    CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
+                    CusshmiDatos.cargarFormatoA2LevantamientoParaExportar(comisionKey),
+                    _obtenerDrenesParaPlanoA2(),
+                ]);
+                const padronA1Rows = resPadronA1.ok ? resPadronA1.resultados : [];
+                const formatoA2Rows = resFormatoA2.ok ? resFormatoA2.resultados : [];
+
+                // bbox UTM de predios+canales de la toma, para filtrar los drenes
+                // (que no tienen toma resuelta) por superposición geográfica.
+                const bboxTomaPrevio = calcularBboxUtmPlanoA2(
+                    predios.map((p) => p.coordenadas).concat(canales.map((c) => c.geom.coords)),
+                    false // ya se resuelve el orden real abajo, ver nota
+                );
+                // Nota: predios trae [lon,lat] y canales [lat,lon] — no se pueden
+                // mezclar en una sola llamada con un único "ordenLonLat". Se
+                // recalcula el bbox correctamente combinando ambos por separado.
+                const bboxPredios = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
+                const bboxCanales = canales.length ? calcularBboxUtmPlanoA2(canales.map((c) => c.geom.coords), false) : null;
+                const bboxToma = {
+                    minEasting: Math.min(bboxPredios.minEasting, bboxCanales ? bboxCanales.minEasting : Infinity),
+                    maxEasting: Math.max(bboxPredios.maxEasting, bboxCanales ? bboxCanales.maxEasting : -Infinity),
+                    minNorthing: Math.min(bboxPredios.minNorthing, bboxCanales ? bboxCanales.minNorthing : Infinity),
+                    maxNorthing: Math.max(bboxPredios.maxNorthing, bboxCanales ? bboxCanales.maxNorthing : -Infinity),
+                };
+                const drenes = todosLosDrenes.filter((d) => {
+                    if (!d.geom || d.geom.type !== 'LineString' || !d.geom.coords || d.geom.coords.length < 2) return false;
+                    return d.geom.coords.some((par) => {
+                        const utm = latLonAUtm17S(par[0], par[1]);
+                        return utm.easting >= bboxToma.minEasting - 300 && utm.easting <= bboxToma.maxEasting + 300 &&
+                               utm.northing >= bboxToma.minNorthing - 300 && utm.northing <= bboxToma.maxNorthing + 300;
+                    });
+                });
+
+                const canvas = await _dibujarPlanoPrediosA2Canvas({
+                    predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete,
+                });
+
+                const fecha = new Date().toISOString().split('T')[0];
+                const nombreArchivo = `Plano_Predios_${tomaNombre}_${conSatelite ? 'satelite' : 'sinfondo'}_${fecha}.pdf`;
+                _descargarCanvasComoPdfA2(canvas, nombreArchivo);
+            } catch (e) {
+                console.error('Error al generar el Plano de Predios:', e);
+                alert('No se pudo generar el plano: ' + (e.message || e));
+            } finally {
+                btn.disabled = false; btn.textContent = textoOriginal;
+            }
+        }
+
+        function _descargarCanvasComoPdfA2(canvas, nombreArchivo) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+            doc.addImage(dataUrl, 'JPEG', 0, 0, canvas.width, canvas.height);
+            doc.save(nombreArchivo);
+        }
+
+        // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
+        // agregarlo al DOM — solo se usa para generar el PDF).
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete }) {
+            const ANCHO = 2480, ALTO_MAPA = 1754; // ~A3 apaisado a 150dpi
+            const MARGEN = 110;
+            const HEADER_H = conMembrete ? 150 : 0;
+            const ALTO_TOTAL = ALTO_MAPA + HEADER_H;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = ANCHO; canvas.height = ALTO_TOTAL;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, ANCHO, ALTO_TOTAL);
+
+            if (conMembrete) _dibujarMembretePlanoA2(ctx, ANCHO, HEADER_H, tomaNombre, comisionKey, conSatelite);
+
+            ctx.save();
+            ctx.translate(0, HEADER_H);
+            // Recorta todo lo que se dibuje de acá en adelante (satélite,
+            // grilla, predios, canales, leyenda) al rectángulo del mapa — sin
+            // esto, el "colchón" de una tesela extra alrededor del bbox (ver
+            // dibujarSateliteEnCanvasPlanoA2) puede sobresalir por encima del
+            // margen y tapar el membrete.
+            ctx.beginPath();
+            ctx.rect(0, 0, ANCHO, ALTO_MAPA);
+            ctx.clip();
+
+            // bbox con un pequeño colchón (5% del rango) para que ningún predio
+            // quede pegado al marco.
+            const bboxPredios = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
+            const bboxCanales = canales.length ? calcularBboxUtmPlanoA2(canales.map((c) => c.geom.coords), false) : null;
+            const bbox = {
+                minEasting: Math.min(bboxPredios.minEasting, bboxCanales ? bboxCanales.minEasting : Infinity),
+                maxEasting: Math.max(bboxPredios.maxEasting, bboxCanales ? bboxCanales.maxEasting : -Infinity),
+                minNorthing: Math.min(bboxPredios.minNorthing, bboxCanales ? bboxCanales.minNorthing : Infinity),
+                maxNorthing: Math.max(bboxPredios.maxNorthing, bboxCanales ? bboxCanales.maxNorthing : -Infinity),
+            };
+            const colchonE = (bbox.maxEasting - bbox.minEasting) * 0.05 || 50;
+            const colchonN = (bbox.maxNorthing - bbox.minNorthing) * 0.05 || 50;
+            bbox.minEasting -= colchonE; bbox.maxEasting += colchonE;
+            bbox.minNorthing -= colchonN; bbox.maxNorthing += colchonN;
+
+            const proyector = crearProyectorUtmPlanoA2(bbox, ANCHO, ALTO_MAPA, MARGEN);
+
+            // 1) Imagen satelital de fondo (opcional) — antes que cualquier
+            //    otra cosa, para que todo lo demás se dibuje encima.
+            if (conSatelite) {
+                try { await dibujarSateliteEnCanvasPlanoA2(ctx, proyector, bbox); }
+                catch (e) { console.warn('No se pudo cargar la imagen satelital, se continúa sin ella:', e); }
+            }
+
+            // 2) Grilla de coordenadas UTM + marco.
+            _dibujarGrillaUtmPlanoA2(ctx, proyector, bbox, ANCHO, ALTO_MAPA, MARGEN);
+
+            // 3) Predios, coloreados por categoría de Derecho.
+            const alphaRelleno = conSatelite ? 0.6 : 1;
+            predios.forEach((p) => {
+                const clasif = clasificarDerechoPredioA2(p, padronA1Rows, formatoA2Rows);
+                const puntosPx = p.coordenadas.map((par) => {
+                    const utm = latLonAUtm17S(par[1], par[0]); // [lon,lat] -> lat,lon
+                    return proyector.proyectar(utm.easting, utm.northing);
+                });
+                ctx.beginPath();
+                puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                ctx.closePath();
+                ctx.globalAlpha = alphaRelleno;
+                ctx.fillStyle = clasif.colorInfo.fill;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = clasif.colorInfo.stroke;
+                ctx.lineWidth = 1.4;
+                ctx.setLineDash([]);
+                ctx.stroke();
+            });
+
+            // 4) Canales (color real por orden, patrón por material).
+            const latlngsCanalPx = canales.map((c) => c.geom.coords.map((par) => {
+                const utm = latLonAUtm17S(par[0], par[1]);
+                return proyector.proyectar(utm.easting, utm.northing);
+            }));
+            canales.forEach((c, idx) => {
+                const orden = (c.campos && c.campos.ORDEN) || '';
+                const material = (c.campos && c.campos.MATERIAL_C) || '';
+                const estilo = estiloCanalPlanoA2(orden, material);
+                const puntosPx = latlngsCanalPx[idx];
+                ctx.beginPath();
+                puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                ctx.strokeStyle = estilo.color;
+                ctx.lineWidth = estilo.weight;
+                ctx.setLineDash(estilo.dash);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            });
+
+            // 5) Drenes (color/línea por tipo — convención propia, ver
+            //    planoPrediosA2.js).
+            drenes.forEach((d) => {
+                const tipo = (d.campos && d.campos.TIPO) || 'D1';
+                const estilo = ESTILO_DREN_POR_TIPO_PLANO_A2[tipo] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1;
+                const puntosPx = d.geom.coords.map((par) => {
+                    const utm = latLonAUtm17S(par[0], par[1]);
+                    return proyector.proyectar(utm.easting, utm.northing);
+                });
+                ctx.beginPath();
+                puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                ctx.strokeStyle = estilo.color;
+                ctx.lineWidth = estilo.weight;
+                ctx.setLineDash(estilo.dash);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.lineCap = 'butt';
+            });
+
+            // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
+            //    paralelas a su lado/tramo más largo y con tamaño de fuente
+            //    proporcional al espacio real disponible (mismo criterio del
+            //    editor interactivo, adaptado a un plano estático).
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            predios.forEach((p) => {
+                const nombre = (p.usuario || '(sin nombre)').toString();
+                const uc = (p.catastralKey || '').toString();
+                const textoCompleto = uc ? (nombre + ' / UC ' + uc) : nombre;
+                const textoCompacto = uc ? ('UC ' + uc) : nombre;
+                const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
+                if (medida.longitudPx < 12) return;
+                let texto = textoCompleto, chars = Math.max(textoCompleto.length, 1);
+                let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, chars);
+                if (fuente < 9) { texto = textoCompacto; chars = Math.max(textoCompacto.length, 1); fuente = calcularFuenteParaAncho(medida.longitudPx, 1, chars); }
+                if (fuente < 6.5) return; // no cabe ni la versión compacta — se omite, no se atropella al vecino
+                fuente = Math.min(fuente, 15);
+
+                const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
+                const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
+                if (!centroPx) return;
+
+                ctx.save();
+                ctx.translate(centroPx[0], centroPx[1]);
+                ctx.rotate(-medida.anguloCss * Math.PI / 180); // canvas rota en sentido horario con ángulo positivo; anguloCss ya está en convención CSS
+                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                ctx.fillStyle = '#002b52';
+                ctx.fillText(texto, 0, 0);
+                ctx.restore();
+            });
+            canales.forEach((c, idx) => {
+                const nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || '';
+                if (!nombreCanal) return;
+                const medida = medirEtiquetaPlanoA2(c.geom.coords, false, proyector.proyectar);
+                if (medida.longitudPx < 12) return;
+                let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
+                if (fuente < 6.5) return;
+                fuente = Math.min(fuente, 13);
+                const puntosPx = latlngsCanalPx[idx];
+                const medioIdx = Math.floor(puntosPx.length / 2);
+                const centro = puntosPx[medioIdx];
+                ctx.save();
+                ctx.translate(centro[0], centro[1]);
+                ctx.rotate(-medida.anguloCss * Math.PI / 180);
+                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                ctx.fillStyle = '#6a3d00';
+                ctx.fillText(nombreCanal, 0, -4);
+                ctx.restore();
+            });
+
+            // 7) Leyenda (esquina inferior izquierda, dentro del marco).
+            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes);
+
+            ctx.restore(); // deshace el translate(0, HEADER_H)
+            return canvas;
+        }
+
+        function _dibujarMembretePlanoA2(ctx, ancho, alto, tomaNombre, comisionKey, conSatelite) {
+            ctx.fillStyle = '#003876';
+            ctx.fillRect(0, 0, ancho, alto);
+            ctx.fillStyle = '#c8a84b';
+            ctx.fillRect(0, alto - 6, ancho, 6);
+            const comisionNombre = (typeof COMISIONES !== 'undefined' && COMISIONES[comisionKey] && COMISIONES[comisionKey].nombre) || comisionKey || '';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.font = '700 34px Arial, sans-serif';
+            ctx.fillText('PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''), 40, alto / 2 - 20);
+            ctx.font = '400 20px Arial, sans-serif';
+            ctx.fillText(comisionNombre + ' — Formato A-2 (Levantamiento)' + (conSatelite ? ' · Imagen satelital: Esri World Imagery' : ''), 40, alto / 2 + 24);
+            ctx.textAlign = 'right';
+            ctx.font = '400 18px Arial, sans-serif';
+            const fechaTexto = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });
+            ctx.fillText('Generado: ' + fechaTexto, ancho - 40, alto / 2);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        }
+
+        function _dibujarGrillaUtmPlanoA2(ctx, proyector, bbox, ancho, alto, margen) {
+            const rangoE = bbox.maxEasting - bbox.minEasting;
+            const rangoN = bbox.maxNorthing - bbox.minNorthing;
+            const intervalo = elegirIntervaloGrillaPlanoA2(Math.max(rangoE, rangoN));
+
+            ctx.save();
+            ctx.strokeStyle = '#999999';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([6, 5]);
+            ctx.fillStyle = '#333333';
+            ctx.font = '600 20px Arial, sans-serif';
+
+            const primerE = Math.ceil(bbox.minEasting / intervalo) * intervalo;
+            for (let e = primerE; e <= bbox.maxEasting; e += intervalo) {
+                const [x] = proyector.proyectar(e, bbox.minNorthing);
+                ctx.beginPath(); ctx.moveTo(x, margen); ctx.lineTo(x, alto - margen); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(e).toString(), x, margen - 18);
+                ctx.fillText(Math.round(e).toString(), x, alto - margen + 30);
+                ctx.setLineDash([6, 5]);
+            }
+            const primerN = Math.ceil(bbox.minNorthing / intervalo) * intervalo;
+            for (let n = primerN; n <= bbox.maxNorthing; n += intervalo) {
+                const [, y] = proyector.proyectar(bbox.minEasting, n);
+                ctx.beginPath(); ctx.moveTo(margen, y); ctx.lineTo(ancho - margen, y); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.save();
+                ctx.translate(margen - 22, y); ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(n).toString(), 0, 0);
+                ctx.restore();
+                ctx.save();
+                ctx.translate(ancho - margen + 22, y); ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.round(n).toString(), 0, 0);
+                ctx.restore();
+                ctx.setLineDash([6, 5]);
+            }
+            ctx.setLineDash([]);
+            ctx.restore();
+
+            // Marco doble (borde exterior del plano).
+            ctx.save();
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(4, 4, ancho - 8, alto - 8);
+            ctx.lineWidth = 1;
+            ctx.strokeRect(margen, margen, ancho - margen * 2, alto - margen * 2);
+            ctx.restore();
+        }
+
+        function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, drenes) {
+            // Solo se listan las combinaciones (canal orden+material, tipo de
+            // dren) que de verdad aparecen en esta toma — evita una leyenda
+            // larga con símbolos que no están en el plano.
+            const combosCanalPresentes = new Map();
+            canales.forEach((c) => {
+                const orden = (c.campos && c.campos.ORDEN) || '';
+                const material = ((c.campos && c.campos.MATERIAL_C) || '').toString().trim().toUpperCase() || 'TIERRA';
+                combosCanalPresentes.set(orden + '|' + material, { orden, material });
+            });
+            const ordenCanalOrden = ['L1', 'L2', 'L3', 'L4', 'L5'];
+            const ordenMaterial = ['CONCRETO', 'PVC', 'TIERRA'];
+            const combosCanal = Array.from(combosCanalPresentes.values()).sort((a, b) => {
+                const oi = ordenCanalOrden.indexOf(a.orden) - ordenCanalOrden.indexOf(b.orden);
+                return oi !== 0 ? oi : ordenMaterial.indexOf(a.material) - ordenMaterial.indexOf(b.material);
+            });
+            const tiposDrenPresentes = Array.from(new Set(drenes.map((d) => (d.campos && d.campos.TIPO) || 'D1')))
+                .sort((a, b) => (a === 'PRINCIPAL' ? -1 : b === 'PRINCIPAL' ? 1 : a.localeCompare(b)));
+
+            const filas = [];
+            filas.push({ tipo: 'titulo', texto: 'LEYENDA' });
+            if (tiposDrenPresentes.length) {
+                filas.push({ tipo: 'subtitulo', texto: 'DRENES' });
+                tiposDrenPresentes.forEach((t) => filas.push({ tipo: 'linea', estilo: ESTILO_DREN_POR_TIPO_PLANO_A2[t] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1, texto: t }));
+            }
+            if (combosCanal.length) {
+                filas.push({ tipo: 'subtitulo', texto: 'CANALES' });
+                combosCanal.forEach((c) => filas.push({ tipo: 'linea', estilo: estiloCanalPlanoA2(c.orden, c.material), texto: c.orden + ', ' + c.material }));
+            }
+            filas.push({ tipo: 'subtitulo', texto: 'DERECHO' });
+            Object.keys(DERECHO_PLANO_A2).forEach((k) => filas.push({ tipo: 'caja', color: DERECHO_PLANO_A2[k], texto: DERECHO_PLANO_A2[k].etiqueta }));
+
+            const ALTO_FILA = 26, ANCHO_CAJA = 300;
+            const altoTotal = filas.length * ALTO_FILA + 16;
+            const y0 = yInferior - altoTotal;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, ANCHO_CAJA, altoTotal);
+            ctx.strokeRect(x0, y0, ANCHO_CAJA, altoTotal);
+
+            let y = y0 + 12;
+            ctx.textBaseline = 'middle';
+            filas.forEach((f) => {
+                const yCentro = y + ALTO_FILA / 2 - 6;
+                if (f.tipo === 'titulo') {
+                    ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000'; ctx.textAlign = 'left';
+                    ctx.fillText(f.texto, x0 + 12, yCentro);
+                } else if (f.tipo === 'subtitulo') {
+                    ctx.font = '700 14px Arial, sans-serif'; ctx.fillStyle = '#000000'; ctx.textAlign = 'left';
+                    ctx.fillText(f.texto, x0 + 12, yCentro);
+                } else if (f.tipo === 'linea') {
+                    ctx.save();
+                    ctx.strokeStyle = f.estilo.color; ctx.lineWidth = Math.max(f.estilo.weight, 2);
+                    ctx.setLineDash(f.estilo.dash);
+                    ctx.beginPath(); ctx.moveTo(x0 + 14, yCentro); ctx.lineTo(x0 + 54, yCentro); ctx.stroke();
+                    ctx.restore();
+                    ctx.font = '400 13px Arial, sans-serif'; ctx.fillStyle = '#333333'; ctx.textAlign = 'left';
+                    ctx.fillText(f.texto, x0 + 62, yCentro);
+                } else if (f.tipo === 'caja') {
+                    ctx.fillStyle = f.color.fill; ctx.strokeStyle = f.color.stroke; ctx.lineWidth = 1.2;
+                    ctx.fillRect(x0 + 14, yCentro - 8, 26, 16);
+                    ctx.strokeRect(x0 + 14, yCentro - 8, 26, 16);
+                    ctx.font = '400 13px Arial, sans-serif'; ctx.fillStyle = '#333333'; ctx.textAlign = 'left';
+                    ctx.fillText(f.texto, x0 + 50, yCentro);
+                }
+                y += ALTO_FILA;
+            });
+            ctx.restore();
         }
 
         // ── Panel "Avance Levantamiento A-2" (admin/programador) ────────────
