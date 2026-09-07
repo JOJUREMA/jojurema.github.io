@@ -4631,20 +4631,20 @@ const COMISIONES = {
 
             // 5.5) Polígono resaltado del usuario elegido (opcional) — el
             //      área medida/importada del Formato A-2, encima de todo lo
-            //      demás, con un contorno grueso bien distinguible del resto
-            //      (mismo dorado ya usado en el proyecto para "medido en
-            //      campo" — panel de comparación de Sinceramiento). El KML
-            //      del bloque de riego sigue mostrando TODOS sus predios sin
-            //      cambios; esto es un resaltado adicional, no un reemplazo.
+            //      demás, con un contorno grueso bien distinguible del resto,
+            //      en MORADO (misma familia que A2-Fuera Bloque, a pedido
+            //      explícito — antes era dorado). El KML del bloque de riego
+            //      sigue mostrando TODOS sus predios sin cambios; esto es un
+            //      resaltado adicional, no un reemplazo.
             if (usuarioResaltado) {
                 const verticesOrdenados = usuarioResaltado.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
                 const puntosUsuarioPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
                 ctx.beginPath();
                 puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
                 ctx.closePath();
-                ctx.fillStyle = 'rgba(200,168,75,0.35)';
+                ctx.fillStyle = 'rgba(155,89,182,0.35)';
                 ctx.fill();
-                ctx.strokeStyle = '#c8a84b';
+                ctx.strokeStyle = '#8e44ad';
                 ctx.lineWidth = 5;
                 ctx.setLineDash([]);
                 ctx.stroke();
@@ -4666,7 +4666,7 @@ const COMISIONES = {
                 ctx.rotate(medidaUsuario.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
                 ctx.font = '700 ' + fuenteUsuario.toFixed(1) + 'px Arial, sans-serif';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#5c4300';
+                ctx.fillStyle = '#4a235a';
                 ctx.fillText(usuarioResaltado.nombre, 0, 0);
                 ctx.restore();
             }
@@ -4820,11 +4820,16 @@ const COMISIONES = {
             }
             const areaVerificadaTotal = _valorCampoFormatoA2Plano(registro, 'areaTotalVerificadaHa', true);
             const areaVerificadaBajoRiego = _valorCampoFormatoA2Plano(registro, 'areaBajoRiegoVerificadaHa', true);
+            const centroidePredio = (typeof calcularCentroidePoligono === 'function')
+                ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                : null;
             const filas = [
                 ['Apellidos y Nombres', usuarioResaltado.nombre],
                 ['Unidad Catastral', _valorCampoFormatoA2Plano(registro, 'unidadCatastral', false) || '—'],
                 ['Toma', registro.toma_nombre || '—'],
                 ['Área del polígono medido', areaPoligonoHa ? (areaPoligonoHa.toFixed(2) + ' ha') : '—'],
+                ['Este (Centroide)', centroidePredio ? (Math.round(centroidePredio.easting) + ' m') : '—'],
+                ['Norte (Centroide)', centroidePredio ? (Math.round(centroidePredio.northing) + ' m') : '—'],
                 ['Área Total Verificada', areaVerificadaTotal ? (areaVerificadaTotal + ' ha') : '—'],
                 ['Área Bajo Riego Verificada', areaVerificadaBajoRiego ? (areaVerificadaBajoRiego + ' ha') : '—'],
                 ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
@@ -4975,7 +4980,7 @@ const COMISIONES = {
             }
             if (usuarioResaltado) {
                 filas.push({ tipo: 'subtitulo', texto: 'A2-OBSERVADO' });
-                filas.push({ tipo: 'caja', color: { fill: 'rgba(200,168,75,0.35)', stroke: '#c8a84b' }, texto: 'PREDIO OBSERVADO (FORMATO A-2)' });
+                filas.push({ tipo: 'caja', color: { fill: 'rgba(155,89,182,0.35)', stroke: '#8e44ad' }, texto: 'PREDIO OBSERVADO (FORMATO A-2)' });
             }
 
             const ALTO_FILA = 26, ANCHO_CAJA = 300;
