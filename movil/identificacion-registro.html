@@ -1854,6 +1854,8 @@
         var prediosBloqueRiegoCacheA2 = {}; // cache por toma, mismo criterio que prediosTomaKmlCache de Sinceramiento
         var canalesBloqueRiegoCacheA2 = {}; // cache por toma de los canales (mapas/inventario_gis/canal_lateral.json)
         var canalesInventarioGisTodosA2 = null; // el .json completo, descargado una sola vez
+        var canalesTroncalesTodosA2 = null; // canales sin toma propia (Canal Sur/Derivación, toma:null) — ver obtenerCanalesTroncalesBloqueRiegoA2
+        var drenesTodosA2 = null; // dren_principal + dren_secundario completos — ver obtenerDrenesBloqueRiegoA2
         var zoomListenerBloqueRiegoA2Puesto = false;
         // Entradas activas de etiquetas (predios+canales) del bloque de riego
         // actualmente mostrado — cada una con la longitud real (metros) de su
@@ -1927,6 +1929,40 @@
             return canales;
         }
 
+        // Canales "troncales" (Canal Sur/Derivación, orden L1) — alimentan a
+        // VARIAS tomas a la vez, así que en canal_lateral.json traen
+        // `toma: null` y obtenerCanalesBloqueRiegoA2 (filtro estricto
+        // f.toma===tomaNombre) nunca los devuelve. Mismo criterio ya
+        // verificado en el Plano de Predios (PDF) del escritorio
+        // (_obtenerCanalesTroncalesParaPlanoA2): se cachean una sola vez y se
+        // filtran por cercanía geográfica en toggleBloqueRiegoEditorA2.
+        async function obtenerCanalesTroncalesBloqueRiegoA2() {
+            if (canalesTroncalesTodosA2 === null) {
+                try {
+                    var resp = await fetch('../mapas/inventario_gis/canal_lateral.json');
+                    var todos = resp.ok ? await resp.json() : [];
+                    canalesTroncalesTodosA2 = todos.filter(function (f) { return !f.toma; });
+                } catch (e) { canalesTroncalesTodosA2 = []; }
+            }
+            return canalesTroncalesTodosA2;
+        }
+
+        // Drenes (principal + secundario) — tampoco tienen "toma" resuelta en
+        // su origen GIS, mismo criterio de filtrado por cercanía geográfica
+        // que canales troncales. Ver _obtenerDrenesParaPlanoA2 en escritorio.
+        async function obtenerDrenesBloqueRiegoA2() {
+            if (drenesTodosA2 === null) {
+                try {
+                    var respP = await fetch('../mapas/inventario_gis/dren_principal.json');
+                    var respS = await fetch('../mapas/inventario_gis/dren_secundario.json');
+                    var rp = respP.ok ? await respP.json() : [];
+                    var rs = respS.ok ? await respS.json() : [];
+                    drenesTodosA2 = rp.concat(rs);
+                } catch (e) { drenesTodosA2 = []; }
+            }
+            return drenesTodosA2;
+        }
+
         // Recalcula, para cada etiqueta activa, el tamaño de fuente que cabe
         // dentro de su predio/canal al zoom actual — y qué variante de texto
         // mostrar (completa/compacta/ninguna) — y lo aplica directamente por
@@ -1982,7 +2018,9 @@
             if (btn) btn.textContent = '🗺️ Cargando bloque de riego…';
             var tomaNombre = registroA2Actual.tomaNombre;
             var predios = await obtenerPrediosBloqueRiegoA2(tomaNombre);
-            var canales = await obtenerCanalesBloqueRiegoA2(tomaNombre);
+            var canalesCrudosA2 = await obtenerCanalesBloqueRiegoA2(tomaNombre);
+            var todosLosCanalesTroncalesA2 = await obtenerCanalesTroncalesBloqueRiegoA2();
+            var todosLosDrenesA2 = await obtenerDrenesBloqueRiegoA2();
             // Mismos datos que usa el Plano de Predios (PDF) del escritorio,
             // para clasificar cada predio por categoría de Derecho — se pide
             // una sola vez, sin caché (esta pantalla se abre una vez por
@@ -1993,8 +2031,50 @@
             var formatoA2RowsBloqueA2 = resFormatoA2BloqueA2.ok ? resFormatoA2BloqueA2.resultados : [];
             if (!bloqueRiegoActivoA2) return; // se apagó mientras cargaba
 
+            var prediosValidosA2 = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; });
+            // Mismo filtro de sanidad geográfica que el Plano de Predios (PDF,
+            // ver _generarPlanoPrediosA2 en escritorio): descarta canales con
+            // la toma mal etiquetada en canal_lateral.json.
+            var bboxPrediosSanidadA2 = (prediosValidosA2.length && typeof calcularBboxUtmPlanoA2 === 'function')
+                ? calcularBboxUtmPlanoA2(prediosValidosA2.map(function (p) { return p.coordenadas; }), true) : null;
+            var UMBRAL_SANIDAD_CANAL_A2 = 2000;
+            var canales = (!bboxPrediosSanidadA2) ? canalesCrudosA2 : canalesCrudosA2.filter(function (c) {
+                if (!c.geom || c.geom.type !== 'LineString' || !c.geom.coords || c.geom.coords.length < 2) return false;
+                return c.geom.coords.some(function (par) {
+                    var utm = latLonAUtm17S(par[0], par[1]);
+                    return utm.easting >= bboxPrediosSanidadA2.minEasting - UMBRAL_SANIDAD_CANAL_A2 && utm.easting <= bboxPrediosSanidadA2.maxEasting + UMBRAL_SANIDAD_CANAL_A2 &&
+                           utm.northing >= bboxPrediosSanidadA2.minNorthing - UMBRAL_SANIDAD_CANAL_A2 && utm.northing <= bboxPrediosSanidadA2.maxNorthing + UMBRAL_SANIDAD_CANAL_A2;
+                });
+            });
+
+            // Canal Sur/troncales y drenes no tienen "toma" resuelta — se
+            // filtran por cercanía geográfica al bbox de predios+canales de
+            // esta toma, mismo criterio (300m) que el Plano de Predios (PDF).
+            var bboxCanalesA2 = (canales.length && typeof calcularBboxUtmPlanoA2 === 'function')
+                ? calcularBboxUtmPlanoA2(canales.map(function (c) { return c.geom.coords; }), false) : null;
+            var bboxTomaA2 = bboxPrediosSanidadA2 ? {
+                minEasting: Math.min(bboxPrediosSanidadA2.minEasting, bboxCanalesA2 ? bboxCanalesA2.minEasting : Infinity),
+                maxEasting: Math.max(bboxPrediosSanidadA2.maxEasting, bboxCanalesA2 ? bboxCanalesA2.maxEasting : -Infinity),
+                minNorthing: Math.min(bboxPrediosSanidadA2.minNorthing, bboxCanalesA2 ? bboxCanalesA2.minNorthing : Infinity),
+                maxNorthing: Math.max(bboxPrediosSanidadA2.maxNorthing, bboxCanalesA2 ? bboxCanalesA2.maxNorthing : -Infinity),
+            } : null;
+            var filtroCercaniaA2 = function (figuras) {
+                if (!bboxTomaA2) return [];
+                return figuras.filter(function (f) {
+                    if (!f.geom || f.geom.type !== 'LineString' || !f.geom.coords || f.geom.coords.length < 2) return false;
+                    return f.geom.coords.some(function (par) {
+                        var utm = latLonAUtm17S(par[0], par[1]);
+                        return utm.easting >= bboxTomaA2.minEasting - 300 && utm.easting <= bboxTomaA2.maxEasting + 300 &&
+                               utm.northing >= bboxTomaA2.minNorthing - 300 && utm.northing <= bboxTomaA2.maxNorthing + 300;
+                    });
+                });
+            };
+            var canalesTroncalesA2 = filtroCercaniaA2(todosLosCanalesTroncalesA2);
+            var drenesA2 = filtroCercaniaA2(todosLosDrenesA2);
+            var canalesParaDibujoA2 = canales.concat(canalesTroncalesA2);
+
             var nuevasEntradas = [];
-            var capas = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; }).map(function (p) {
+            var capas = prediosValidosA2.map(function (p) {
                 var latlngs = p.coordenadas.map(function (par) { return [par[1], par[0]]; });
                 // Mismo color por categoría de Derecho que el Plano de Predios
                 // (PDF) del escritorio — verde=licencia, amarillo=A2-Dentro
@@ -2032,23 +2112,51 @@
                 return poligono;
             });
 
-            canales.filter(function (c) { return c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2; }).forEach(function (c) {
+            // Dibuja una línea (canal o dren) con su etiqueta en píldora
+            // colocada y rotada según el MISMO tramo más largo
+            // (medirLadoMasLargoConCentro, assets/core/mapa.js) — un marcador
+            // INVISIBLE anclado al centro real de ese tramo sostiene el
+            // tooltip, en vez de enlazarlo a la polilínea completa (Leaflet
+            // centra un tooltip de polilínea en el centro de sus BOUNDS, que
+            // para un canal largo como Canal Sur podía quedar lejos del tramo
+            // usado para el ángulo — etiqueta desalineada o fuera de vista).
+            // Mismo criterio ya verificado en el Plano de Predios (PDF).
+            function _agregarLineaConEtiquetaBloqueA2(geomCoords, color, nombre, tipoEntrada) {
+                var linea = L.polyline(geomCoords, { color: color, weight: 2.5, opacity: 0.9, interactive: false });
+                capas.push(linea);
+                var medida = (typeof medirLadoMasLargoConCentro === 'function')
+                    ? medirLadoMasLargoConCentro(geomCoords, false)
+                    : { anguloCss: 0, longitudM: 0, centro: null };
+                var nombreEsc = escapeHtml(nombre);
+                var colorClaro = (typeof aclararColorPlanoA2 === 'function') ? aclararColorPlanoA2(color, 0.75) : 'rgba(255,255,255,0.82)';
+                var etiquetaHtml = '<span class="et-caja" style="transform:rotate(' + medida.anguloCss.toFixed(1) + 'deg);background:' + colorClaro + ';color:' + color + ';">' + nombreEsc + '</span>';
+                var puntoEtiqueta = medida.centro || geomCoords[Math.floor(geomCoords.length / 2)];
+                var marcadorEtiqueta = L.marker(puntoEtiqueta, { opacity: 0, interactive: false });
+                marcadorEtiqueta.bindTooltip(etiquetaHtml, { permanent: true, direction: 'center', className: 'etiqueta-canal-bloque-a2', interactive: false });
+                capas.push(marcadorEtiqueta);
+                nuevasEntradas.push({ tipo: tipoEntrada, layer: marcadorEtiqueta, longitudM: medida.longitudM, chars: Math.max(nombreEsc.length, 1) });
+            }
+
+            canalesParaDibujoA2.filter(function (c) { return c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2; }).forEach(function (c) {
                 var orden = (c.campos && c.campos.ORDEN) || '';
                 // Mismo color real por orden (con el ámbar corregido de L4) que
                 // el Plano de Predios (PDF) del escritorio.
                 var color = (typeof estiloCanalPlanoA2 === 'function') ? estiloCanalPlanoA2(orden).color : (c.color || COLOR_POR_ORDEN_CANAL_A2[orden] || '#ffffff');
-                var linea = L.polyline(c.geom.coords, { color: color, weight: 2.5, opacity: 0.9, interactive: false });
                 var nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || 'Canal';
-                // Polilínea abierta (cerrado=false) — geom.coords ya es [lat,lon].
-                var medidaCanal = (typeof medirLadoMasLargo === 'function') ? medirLadoMasLargo(c.geom.coords, false) : { anguloCss: 0, longitudM: 0 };
-                var nombreCanalEsc = escapeHtml(nombreCanal);
-                // Píldora del mismo color de la línea (fondo claro, texto con el
-                // color real) — mismo criterio visual del Plano de Predios (PDF).
-                var colorClaroCanal = (typeof aclararColorPlanoA2 === 'function') ? aclararColorPlanoA2(color, 0.75) : 'rgba(255,255,255,0.82)';
-                var etiquetaCanal = '<span class="et-caja" style="transform:rotate(' + medidaCanal.anguloCss.toFixed(1) + 'deg);background:' + colorClaroCanal + ';color:' + color + ';">' + nombreCanalEsc + '</span>';
-                linea.bindTooltip(etiquetaCanal, { permanent: true, direction: 'center', className: 'etiqueta-canal-bloque-a2', interactive: false });
-                nuevasEntradas.push({ tipo: 'canal', layer: linea, longitudM: medidaCanal.longitudM, chars: Math.max(nombreCanalEsc.length, 1) });
-                capas.push(linea);
+                _agregarLineaConEtiquetaBloqueA2(c.geom.coords, color, nombreCanal, 'canal');
+            });
+
+            // Drenes — antes ausentes por completo de este editor. Mismo
+            // color por tipo (ESTILO_DREN_POR_TIPO_PLANO_A2, de
+            // planoPrediosA2.js) y mismo criterio de nombre que el Plano de
+            // Predios (PDF) del escritorio.
+            drenesA2.filter(function (d) { return d.geom && d.geom.type === 'LineString' && d.geom.coords && d.geom.coords.length >= 2; }).forEach(function (d) {
+                var tipoDren = (d.campos && d.campos.TIPO) || 'D1';
+                var estiloDren = (typeof ESTILO_DREN_POR_TIPO_PLANO_A2 !== 'undefined')
+                    ? (ESTILO_DREN_POR_TIPO_PLANO_A2[tipoDren] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1)
+                    : { color: '#c0392b' };
+                var nombreDren = (d.nombre || (d.campos && (d.campos['NOMBRE DE DREN SECUNDARIO'] || d.campos['NOMBRE DE DREN COLECTOR'])) || 'Dren').toString();
+                _agregarLineaConEtiquetaBloqueA2(d.geom.coords, estiloDren.color, nombreDren, 'canal');
             });
 
             capaBloqueRiegoEditorA2 = L.layerGroup(capas).addTo(mapaEditorUbicacionA2);
@@ -2073,8 +2181,8 @@
             _actualizarEtiquetasBloqueA2();
             if (leyenda) leyenda.style.display = 'flex';
             if (btn) {
-                var totalFiguras = predios.length + canales.length;
-                btn.textContent = '🗺️ Ocultar bloque de riego' + (totalFiguras ? ' (' + predios.length + ' predios, ' + canales.length + ' canales)' : ' (sin datos para esta toma)');
+                var totalFiguras = prediosValidosA2.length + canalesParaDibujoA2.length + drenesA2.length;
+                btn.textContent = '🗺️ Ocultar bloque de riego' + (totalFiguras ? ' (' + prediosValidosA2.length + ' predios, ' + canalesParaDibujoA2.length + ' canales, ' + drenesA2.length + ' drenes)' : ' (sin datos para esta toma)');
             }
         }
 

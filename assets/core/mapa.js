@@ -179,15 +179,15 @@ function _tramoMasLargoUtm(puntosLatLon, cerrado) {
     const puntosUtm = puntosLatLon.map((par) => latLonAUtm17S(par[0], par[1]));
     const n = puntosUtm.length;
     const tramos = cerrado ? n : n - 1;
-    let mejorLongitud = -1, mejorEasting = 0, mejorNorthing = 0;
+    let mejorLongitud = -1, mejorEasting = 0, mejorNorthing = 0, mejorA = null, mejorB = null;
     for (let i = 0; i < tramos; i++) {
         const a = puntosUtm[i], b = puntosUtm[(i + 1) % n];
         const de = b.easting - a.easting, dn = b.northing - a.northing;
         const longitud = Math.sqrt(de * de + dn * dn);
-        if (longitud > mejorLongitud) { mejorLongitud = longitud; mejorEasting = de; mejorNorthing = dn; }
+        if (longitud > mejorLongitud) { mejorLongitud = longitud; mejorEasting = de; mejorNorthing = dn; mejorA = a; mejorB = b; }
     }
     if (mejorLongitud <= 0) return null;
-    return { longitudM: mejorLongitud, dEasting: mejorEasting, dNorthing: mejorNorthing };
+    return { longitudM: mejorLongitud, dEasting: mejorEasting, dNorthing: mejorNorthing, utmA: mejorA, utmB: mejorB };
 }
 
 // Ángulo CSS (listo para `transform:rotate()`) de un vector este/norte —
@@ -222,6 +222,28 @@ function medirLadoMasLargo(puntosLatLon, cerrado) {
     const tramo = _tramoMasLargoUtm(puntosLatLon, cerrado);
     if (!tramo) return { anguloCss: 0, longitudM: 0 };
     return { anguloCss: _anguloCssDesdeVector(tramo.dEasting, tramo.dNorthing), longitudM: tramo.longitudM };
+}
+
+// Igual que medirLadoMasLargo, pero ADEMÁS devuelve el punto medio (lat,lon)
+// del propio tramo más largo — para canales/drenes en el mapa Leaflet en
+// vivo (editor de ubicación), donde el rótulo NO puede ir en un tooltip
+// atado a toda la polilínea (Leaflet lo posiciona en el centro de sus
+// bounds, que no necesariamente coincide con el tramo cuyo ángulo se está
+// usando — un canal que zigzaguea puede terminar con el texto en un punto
+// cuya dirección real no es la del ángulo aplicado). Con el marcador
+// dedicado en `centro`, posición y ángulo siempre corresponden al MISMO
+// tramo. Devuelve `centro: null` si no hay suficientes puntos.
+function medirLadoMasLargoConCentro(puntosLatLon, cerrado) {
+    const tramo = _tramoMasLargoUtm(puntosLatLon, cerrado);
+    if (!tramo || typeof utm17SALatLon !== 'function') return { anguloCss: 0, longitudM: 0, centro: null };
+    const centroEasting = (tramo.utmA.easting + tramo.utmB.easting) / 2;
+    const centroNorthing = (tramo.utmA.northing + tramo.utmB.northing) / 2;
+    const centroLatLon = utm17SALatLon(centroEasting, centroNorthing);
+    return {
+        anguloCss: _anguloCssDesdeVector(tramo.dEasting, tramo.dNorthing),
+        longitudM: tramo.longitudM,
+        centro: [centroLatLon.lat, centroLatLon.lon],
+    };
 }
 
 // Metros representados por un pixel de pantalla en la proyección Web
