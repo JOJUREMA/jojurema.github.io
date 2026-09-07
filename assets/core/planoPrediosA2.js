@@ -72,26 +72,56 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
 
 // ── Estilo de línea de Canal Lateral (color ya real, por orden L1-L5;
 // el patrón de guiones es una convención propia por MATERIAL, ya que el
-// KMZ no trae un patrón de línea, solo el color) ──
+// KMZ no trae un patrón de línea, solo el color) — pesos subidos (y con
+// halo oscuro detrás, ver dibujarLineaConHaloPlanoA2 en el llamador) para
+// que la red de riego se note claramente sobre el fondo, sea satelital o
+// la maraña de predios/etiquetas del plano sin imagen.
 const COLOR_POR_ORDEN_CANAL_PLANO_A2 = { L1: '#a83800', L2: '#005ce6', L3: '#4ce600', L4: '#ffff00', L5: '#000000' };
 function estiloCanalPlanoA2(orden, material) {
     const color = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
     const mat = (material || '').toString().trim().toUpperCase();
     let dash;
-    if (mat === 'CONCRETO') dash = [10, 3, 2, 3]; // guion largo + punto
-    else if (mat === 'PVC') dash = [6, 3];         // guion medio
-    else dash = [2, 3];                            // TIERRA u otro: punteado fino
-    return { color, dash, weight: orden === 'L1' ? 3 : (orden === 'L2' ? 2.5 : 2) };
+    if (mat === 'CONCRETO') dash = [16, 5, 3, 5]; // guion largo + punto
+    else if (mat === 'PVC') dash = [10, 5];        // guion medio
+    else dash = [3, 5];                            // TIERRA u otro: punteado fino
+    const pesosPorOrden = { L1: 6, L2: 5.5, L3: 5, L4: 4.5, L5: 4 };
+    return { color, dash, weight: pesosPorOrden[orden] || 4.5 };
 }
 
 // ── Estilo de línea de Dren, por TIPO (PRINCIPAL/D1/D2) — el KMZ de
 // Drenes no trae color propio (a diferencia de Canal Lateral), así que
 // esta es una convención propia (documentada), no un dato extraído. ──
 const ESTILO_DREN_POR_TIPO_PLANO_A2 = {
-    PRINCIPAL: { color: '#c0392b', dash: [1, 5], weight: 3 },
-    D1: { color: '#e74c3c', dash: [1, 4], weight: 2 },
-    D2: { color: '#cb4335', dash: [1, 4], weight: 1.5 },
+    PRINCIPAL: { color: '#c0392b', dash: [2, 8], weight: 5.5 },
+    D1: { color: '#e74c3c', dash: [2, 7], weight: 4.5 },
+    D2: { color: '#cb4335', dash: [2, 7], weight: 4 },
 };
+
+// Dibuja una polilínea con un "halo" oscuro semitransparente detrás — hace
+// que la línea (de cualquier color, incluido el amarillo de L4, que casi
+// no se ve sobre blanco) resalte tanto sobre fondo satelital como sobre
+// el blanco/predios del plano sin imagen. Usado para canales y drenes —
+// la red de riego es la que menos se notaba en el plano sin este halo.
+function dibujarLineaConHaloPlanoA2(ctx, puntosPx, estilo) {
+    if (!puntosPx || puntosPx.length < 2) return;
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = estilo.weight + 3.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    ctx.beginPath();
+    puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+    ctx.strokeStyle = estilo.color;
+    ctx.lineWidth = estilo.weight;
+    ctx.setLineDash(estilo.dash);
+    ctx.stroke();
+    ctx.restore();
+}
 
 // ── Proyección UTM (metros) -> píxeles del lienzo del plano ──
 // North-up (norte hacia arriba, este hacia la derecha), con relleno
