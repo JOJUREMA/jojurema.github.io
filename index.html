@@ -4593,24 +4593,35 @@ const COMISIONES = {
             //    editor interactivo, adaptado a un plano estático).
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
-            const FUENTE_MIN_UNALINEA_PREDIO = 9, FUENTE_MIN_DOSLINEAS_PREDIO = 6.5, FUENTE_MAX_PREDIO = 15;
-            // Fuente única (la más chica que necesite cualquiera de las líneas
-            // dadas) para que un mismo bloque de texto de varias líneas quede
-            // parejo — nunca una línea grande y otra diminuta.
-            function _fuenteQueCabeTodasPlanoA2(medida, textos) {
-                let minFuente = Infinity;
-                textos.forEach((t) => {
-                    const f = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max((t || '').length, 1));
-                    if (f < minFuente) minFuente = f;
-                });
-                return textos.length ? minFuente : 0;
-            }
-            predios.forEach((p) => {
-                const nombre = (p.usuario || '(sin nombre)').toString();
+            const FUENTE_MAX_PREDIO = 13;
+            // Fuente ÚNICA para TODOS los predios del plano — nunca varía de
+            // un predio a otro. Se calcula como la más chica que garantiza que
+            // la UC (que siempre debe verse) quepa incluso en el predio más
+            // angosto del plano; en los predios más grandes, con ese mismo
+            // tamaño, sobra espacio para que además quepa el nombre. Un piso
+            // de 6px evita una fuente ilegible si hay algún predio extremo muy
+            // angosto — en ese caso puntual la UC puede quedar apretada.
+            const medidasPredios = predios.map((p) => {
                 const uc = (p.catastralKey || '').toString();
-                const textoUc = uc ? ('UC ' + uc) : '';
+                const nombre = (p.usuario || '(sin nombre)').toString();
                 const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
-                if (medida.longitudPx < 12) return;
+                return { p, uc, nombre, medida };
+            }).filter((m) => m.medida.longitudPx >= 12);
+            let fuentePredios = FUENTE_MAX_PREDIO;
+            medidasPredios.forEach((m) => {
+                const textoBase = m.uc ? ('UC ' + m.uc) : m.nombre;
+                const f = calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
+                if (f < fuentePredios) fuentePredios = f;
+            });
+            fuentePredios = Math.max(6, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
+            // A esta fuente fija, ¿el texto cabe a lo largo del lado más largo
+            // del predio? (equivalente a comparar contra calcularFuenteParaAncho,
+            // que ya incorpora el mismo margen de seguridad y ancho por carácter).
+            function _cabeAFuentePlanoA2(medida, texto) {
+                return fuentePredios <= calcularFuenteParaAncho(medida.longitudPx, 1, Math.max((texto || '').length, 1));
+            }
+            medidasPredios.forEach(({ p, uc, nombre, medida }) => {
+                const textoUc = uc ? ('UC ' + uc) : '';
 
                 const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
                 const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
@@ -4618,35 +4629,31 @@ const COMISIONES = {
 
                 // La unidad catastral SIEMPRE debe verse, en su propia línea
                 // (nunca unida al nombre con "/"). El nombre del titular
-                // acompaña cuando cabe: (1) nombre en una línea + UC debajo;
-                // (2) el nombre PARTIDO en 2 líneas balanceadas (nunca a mitad
-                // de palabra) + UC debajo; (3) si ni así cabe, se omite el
-                // nombre y queda solo la UC (que nunca se omite si el predio
-                // trae unidad catastral).
-                let lineas = null, fuente = null;
-                let f = _fuenteQueCabeTodasPlanoA2(medida, textoUc ? [nombre, textoUc] : [nombre]);
-                if (f >= FUENTE_MIN_UNALINEA_PREDIO) { lineas = textoUc ? [nombre, textoUc] : [nombre]; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                // acompaña cuando cabe, a esta MISMA fuente para todos: (1)
+                // nombre en una línea + UC debajo; (2) el nombre PARTIDO en 2
+                // líneas balanceadas (nunca a mitad de palabra) + UC debajo;
+                // (3) si ni así cabe, se omite el nombre y queda solo la UC.
+                let lineas = null;
+                if (textoUc ? (_cabeAFuentePlanoA2(medida, nombre) && _cabeAFuentePlanoA2(medida, textoUc)) : _cabeAFuentePlanoA2(medida, nombre)) {
+                    lineas = textoUc ? [nombre, textoUc] : [nombre];
+                }
                 if (!lineas) {
                     const partes = partirNombreEnDosLineas(nombre);
-                    if (partes[1]) {
-                        const textos = textoUc ? [partes[0], partes[1], textoUc] : [partes[0], partes[1]];
-                        f = _fuenteQueCabeTodasPlanoA2(medida, textos);
-                        if (f >= FUENTE_MIN_DOSLINEAS_PREDIO) { lineas = textos; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                    if (partes[1] && _cabeAFuentePlanoA2(medida, partes[0]) && _cabeAFuentePlanoA2(medida, partes[1]) && (!textoUc || _cabeAFuentePlanoA2(medida, textoUc))) {
+                        lineas = textoUc ? [partes[0], partes[1], textoUc] : partes;
                     }
                 }
                 if (!lineas && textoUc) {
                     // Último recurso: la UC nunca se omite, aunque el nombre no
-                    // quepa de ninguna forma — se usa el mejor tamaño posible,
-                    // con un piso más bajo que el de las demás etiquetas.
-                    f = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(textoUc.length, 1));
+                    // quepa de ninguna forma a esta fuente.
                     lineas = [textoUc];
-                    fuente = Math.max(5, Math.min(f, FUENTE_MAX_PREDIO));
                 }
                 if (!lineas) return; // ni nombre ni UC (predio sin unidad catastral y sin espacio para el nombre)
 
                 ctx.save();
                 ctx.translate(centroPx[0], centroPx[1]);
                 ctx.rotate(-medida.anguloCss * Math.PI / 180); // canvas rota en sentido horario con ángulo positivo; anguloCss ya está en convención CSS
+                const fuente = fuentePredios;
                 ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
                 ctx.fillStyle = '#002b52';
                 if (lineas.length === 1) {
