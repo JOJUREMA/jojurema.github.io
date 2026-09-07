@@ -39,20 +39,36 @@ function _buscarPorNombrePlanoA2(filas, nombrePredio) {
     return filas.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === nombrePredio) || null;
 }
 
+// El Padrón A-1 incluye TODAS las parcelas catalogadas oficialmente, no
+// solo las que tienen licencia — algunas traen `clase_derecho` = "SIN
+// DERECHO" en texto plano (viene tal cual de la columna Q del Excel
+// oficial de ANA, ver Sistema_Riego_CUSSHMI_14.html). Que una fila exista
+// en el Padrón A-1 (origen='ana_a1') NO basta para asumir licencia — hay
+// que además confirmar que su propia `clase_derecho` no diga eso mismo.
+function _tieneDerechoFormalPlanoA2(fila) {
+    if (!fila || fila.origen !== 'ana_a1') return false;
+    const clase = (fila.clase_derecho || '').toString().trim().toUpperCase();
+    return clase.indexOf('SIN DERECHO') === -1;
+}
+
 // Clasifica UN predio del bloque de riego (forma {usuario, catastralKey})
 // contra el Padrón Oficial A-1 (¿tiene Permiso/Licencia?) y el Formato A-2
 // (¿está observado, y dentro o fuera del bloque?). Prioridad, de mayor a
 // menor certeza legal:
-//   1) Padrón A-1 con UNIDAD CATASTRAL exacta -> PERMISO_LICENCIA
+//   1) Padrón A-1 con UNIDAD CATASTRAL exacta Y `clase_derecho` distinta
+//      de "SIN DERECHO" -> PERMISO_LICENCIA
 //      — la licencia SOLO cuenta si la propia parcela (por UC, no por
-//      nombre) figura en el Padrón A-1. Un cruce por nombre no sirve
-//      acá: una misma persona puede tener varias parcelas y solo
-//      algunas con licencia — si se aceptara el nombre solo, la parcela
-//      SIN licencia de esa persona heredaría por error el estatus de
-//      licencia de su OTRA parcela (bug real, confirmado con casos
-//      reales: UC 44548/38770/38771/38722/38717 aparecían como "con
-//      licencia" sin tenerla, solo por compartir nombre con el titular
-//      de una parcela licenciada distinta).
+//      nombre) figura en el Padrón A-1 CON un derecho real. Un cruce por
+//      nombre no sirve acá: una misma persona puede tener varias
+//      parcelas y solo algunas con licencia — si se aceptara el nombre
+//      solo, la parcela SIN licencia de esa persona heredaría por error
+//      el estatus de licencia de su OTRA parcela. Tampoco basta con que
+//      la UC exista en el Padrón A-1: esa misma fila puede traer
+//      `clase_derecho`="SIN DERECHO" (bug real, confirmado con casos
+//      reales — UC 44548/38770/38771/38722/38717 aparecían como "con
+//      licencia" sin tenerla; UC 38771/DIOSES ALCAS EDY, por ejemplo,
+//      SÍ está en el Padrón A-1 con esa UC exacta, pero su
+//      `clase_derecho` es literalmente "SIN DERECHO").
 //   2) Formato A-2 (por UC, o por nombre si ese registro no trae UC) con
 //      se_ubica_bloque='Fuera' -> A2_FUERA_BLOQUE — acá sí se acepta el
 //      cruce por nombre porque muchos registros observados no traen UC
@@ -62,7 +78,7 @@ function _buscarPorNombrePlanoA2(filas, nombrePredio) {
 //   4) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
 //      pero no aparece ni en el Padrón A-1 ni en el Formato A-2)
 // `padronA1Rows`: filas de padron_oficial_a1 (con unidad_catastral,
-// apellidos_nombres, origen). `formatoA2Rows`: filas de
+// apellidos_nombres, origen, clase_derecho). `formatoA2Rows`: filas de
 // formato_a2_levantamiento (con unidad_catastral, apellidos_nombres,
 // se_ubica_bloque). Devuelve { categoria, colorInfo, matchInfo }.
 function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
@@ -70,7 +86,7 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const nombrePredio = _normNombrePlanoA2(predio.usuario);
 
     const licenciaPorUc = _buscarPorUcPlanoA2(padronA1Rows, ucPredio);
-    if (licenciaPorUc && licenciaPorUc.origen === 'ana_a1') {
+    if (_tieneDerechoFormalPlanoA2(licenciaPorUc)) {
         return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: licenciaPorUc };
     }
 

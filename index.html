@@ -4333,6 +4333,29 @@ const COMISIONES = {
             return _drenesInventarioGisTodosPlanoA2;
         }
 
+        // Canales "troncales" (Canal Sur / Derivación, orden L1) — a
+        // diferencia de "Canal Principal SDx" (un lateral propio de cada
+        // toma), estos alimentan a VARIAS tomas a la vez y por eso en
+        // canal_lateral.json traen `toma: null` — _obtenerCanalesBloqueRiego...
+        // los descarta al filtrar por `f.toma === tomaNombre`, así que sin
+        // esto nunca aparecían en el plano de ninguna toma. Se cachean una
+        // sola vez (mismo criterio que _obtenerDrenesParaPlanoA2) y se
+        // filtran por cercanía geográfica al bbox de la toma en
+        // _generarPlanoPrediosA2 — igual que los drenes, para no inflar el
+        // encuadre del plano con la longitud completa de un canal que cruza
+        // toda la comisión.
+        let _canalesTroncalesTodosPlanoA2 = null;
+        async function _obtenerCanalesTroncalesParaPlanoA2() {
+            if (_canalesTroncalesTodosPlanoA2 === null) {
+                try {
+                    const resp = await fetch('mapas/inventario_gis/canal_lateral.json');
+                    const todos = resp.ok ? await resp.json() : [];
+                    _canalesTroncalesTodosPlanoA2 = todos.filter((f) => !f.toma);
+                } catch (e) { _canalesTroncalesTodosPlanoA2 = []; }
+            }
+            return _canalesTroncalesTodosPlanoA2;
+        }
+
         async function _generarPlanoPrediosA2() {
             const tomaNombre = document.getElementById('selectTomaPlanoA2').value;
             const usuarioElegido = document.getElementById('selectUsuarioPlanoA2').value; // 'TODOS' o un apellidos_nombres exacto
@@ -4354,10 +4377,11 @@ const COMISIONES = {
                 const canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
                     .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2);
 
-                const [resPadronA1, registrosFormatoA2, todosLosDrenes] = await Promise.all([
+                const [resPadronA1, registrosFormatoA2, todosLosDrenes, todosLosCanalesTroncales] = await Promise.all([
                     CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
                     _obtenerRegistrosParaExportarPoligonosA2(), // ya cacheado, mismo origen que el selector de Usuario
                     _obtenerDrenesParaPlanoA2(),
+                    _obtenerCanalesTroncalesParaPlanoA2(),
                 ]);
                 const padronA1Rows = resPadronA1.ok ? resPadronA1.resultados : [];
                 const formatoA2Rows = registrosFormatoA2;
@@ -4407,9 +4431,22 @@ const COMISIONES = {
                                utm.northing >= bboxToma.minNorthing - 300 && utm.northing <= bboxToma.maxNorthing + 300;
                     });
                 });
+                // Canales troncales (Canal Sur/Derivación, sin toma propia,
+                // ver _obtenerCanalesTroncalesParaPlanoA2) — mismo filtro de
+                // cercanía que los drenes, para no arrastrar la longitud
+                // completa de un canal que cruza toda la comisión ni inflar
+                // el encuadre del plano con ella.
+                const canalesTroncales = todosLosCanalesTroncales.filter((c) => {
+                    if (!c.geom || c.geom.type !== 'LineString' || !c.geom.coords || c.geom.coords.length < 2) return false;
+                    return c.geom.coords.some((par) => {
+                        const utm = latLonAUtm17S(par[0], par[1]);
+                        return utm.easting >= bboxToma.minEasting - 300 && utm.easting <= bboxToma.maxEasting + 300 &&
+                               utm.northing >= bboxToma.minNorthing - 300 && utm.northing <= bboxToma.maxNorthing + 300;
+                    });
+                });
 
                 const canvas = await _dibujarPlanoPrediosA2Canvas({
-                    predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado,
+                    predios, canales, canalesTroncales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado,
                 });
 
                 const fecha = new Date().toISOString().split('T')[0];
@@ -4434,7 +4471,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, drenes, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado }) {
             const ANCHO = 2480, ALTO_MAPA = 1754; // ~A3 apaisado a 150dpi
             const MARGEN = 110;
             const HEADER_H = conMembrete ? 150 : 0;
@@ -4484,6 +4521,14 @@ const COMISIONES = {
 
             const proyector = crearProyectorUtmPlanoA2(bbox, ANCHO, ALTO_MAPA, MARGEN);
 
+            // Canales a DIBUJAR (incluye los troncales, ej. Canal Sur, que
+            // alimentan varias tomas y por eso quedaron fuera del bbox de
+            // arriba — mismo criterio que los drenes, para no inflar el
+            // encuadre del plano con la longitud completa de un canal que
+            // cruza toda la comisión). El bbox/encuadre del plano sigue
+            // basado solo en `canales` (los propios de esta toma).
+            const canalesParaDibujo = canales.concat(canalesTroncales || []);
+
             // 1) Imagen satelital de fondo (opcional) — antes que cualquier
             //    otra cosa, para que todo lo demás se dibuje encima.
             if (conSatelite) {
@@ -4532,12 +4577,13 @@ const COMISIONES = {
                 ctx.stroke();
             });
 
-            // 4) Canales (color real por orden, patrón por material).
-            const latlngsCanalPx = canales.map((c) => c.geom.coords.map((par) => {
+            // 4) Canales (color real por orden). Se usa canalesParaDibujo
+            //    (incluye los troncales, ej. Canal Sur) — ver arriba.
+            const latlngsCanalPx = canalesParaDibujo.map((c) => c.geom.coords.map((par) => {
                 const utm = latLonAUtm17S(par[0], par[1]);
                 return proyector.proyectar(utm.easting, utm.northing);
             }));
-            canales.forEach((c, idx) => {
+            canalesParaDibujo.forEach((c, idx) => {
                 const orden = (c.campos && c.campos.ORDEN) || '';
                 const estilo = estiloCanalPlanoA2(orden);
                 dibujarLineaConHaloPlanoA2(ctx, latlngsCanalPx[idx], estilo);
@@ -4630,12 +4676,17 @@ const COMISIONES = {
                 ? fuentesNaturales[Math.floor(fuentesNaturales.length / 2)]
                 : FUENTE_MAX_PREDIO;
             fuentePredios = Math.max(10, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
-            // A esta fuente fija, ¿el texto cabe a lo largo del lado más largo
-            // del predio? (equivalente a comparar contra calcularFuenteParaAncho,
-            // que ya incorpora el mismo margen de seguridad y ancho por carácter).
-            function _cabeAFuentePlanoA2(medida, texto) {
-                return fuentePredios <= calcularFuenteParaAncho(medida.longitudPx, 1, Math.max((texto || '').length, 1));
-            }
+            // Nombre y UC SIEMPRE se muestran juntos, para TODOS los predios
+            // — no solo cuando "caben" dentro del propio polígono. Un predio
+            // angosto es simplemente demasiado chico para su propia etiqueta
+            // a una fuente legible y pareja con el resto del plano; en vez de
+            // sacrificar el nombre (que es la información más importante), el
+            // texto puede sobresalir un poco de un polígono chico — igual
+            // criterio que ya se usaba como "último recurso" solo para la UC,
+            // ahora aplicado también al nombre. El nombre se parte en 2
+            // líneas balanceadas (nunca a mitad de palabra) solo si es largo,
+            // para no dejar una sola línea excesivamente ancha.
+            const UMBRAL_PARTIR_NOMBRE_PLANO_A2 = 24;
             medidasPredios.forEach(({ p, uc, nombre, medida }) => {
                 const textoUc = uc ? ('UC ' + uc) : '';
 
@@ -4643,28 +4694,12 @@ const COMISIONES = {
                 const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
                 if (!centroPx) return;
 
-                // La unidad catastral SIEMPRE debe verse, en su propia línea
-                // (nunca unida al nombre con "/"). El nombre del titular
-                // acompaña cuando cabe, a esta MISMA fuente para todos: (1)
-                // nombre en una línea + UC debajo; (2) el nombre PARTIDO en 2
-                // líneas balanceadas (nunca a mitad de palabra) + UC debajo;
-                // (3) si ni así cabe, se omite el nombre y queda solo la UC.
-                let lineas = null;
-                if (textoUc ? (_cabeAFuentePlanoA2(medida, nombre) && _cabeAFuentePlanoA2(medida, textoUc)) : _cabeAFuentePlanoA2(medida, nombre)) {
-                    lineas = textoUc ? [nombre, textoUc] : [nombre];
-                }
-                if (!lineas) {
+                let lineasNombre = [nombre];
+                if (nombre.length > UMBRAL_PARTIR_NOMBRE_PLANO_A2) {
                     const partes = partirNombreEnDosLineas(nombre);
-                    if (partes[1] && _cabeAFuentePlanoA2(medida, partes[0]) && _cabeAFuentePlanoA2(medida, partes[1]) && (!textoUc || _cabeAFuentePlanoA2(medida, textoUc))) {
-                        lineas = textoUc ? [partes[0], partes[1], textoUc] : partes;
-                    }
+                    if (partes[1]) lineasNombre = partes;
                 }
-                if (!lineas && textoUc) {
-                    // Último recurso: la UC nunca se omite, aunque el nombre no
-                    // quepa de ninguna forma a esta fuente.
-                    lineas = [textoUc];
-                }
-                if (!lineas) return; // ni nombre ni UC (predio sin unidad catastral y sin espacio para el nombre)
+                const lineas = textoUc ? lineasNombre.concat([textoUc]) : lineasNombre;
 
                 ctx.save();
                 ctx.translate(centroPx[0], centroPx[1]);
@@ -4681,7 +4716,7 @@ const COMISIONES = {
                 }
                 ctx.restore();
             });
-            canales.forEach((c, idx) => {
+            canalesParaDibujo.forEach((c, idx) => {
                 const nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || '';
                 if (!nombreCanal) return;
                 // El rótulo se dibuja EN el punto medio del tramo más largo
@@ -4724,7 +4759,7 @@ const COMISIONES = {
             //    leyenda) — barra segmentada en vez de una razón "1:N" fija,
             //    porque sigue siendo correcta sin importar a qué tamaño de
             //    papel se termine imprimiendo el PDF.
-            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes, usuarioResaltado, categoriasDerechoPresentes);
+            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canalesParaDibujo, drenes, usuarioResaltado, categoriasDerechoPresentes);
             dibujarEscalaGraficaPlanoA2(ctx, ANCHO - MARGEN - 15, ALTO_MAPA - MARGEN - 15, metrosPorPixelPlanoA2(proyector));
 
             // 8) Cuadro de datos del usuario resaltado (esquina superior
