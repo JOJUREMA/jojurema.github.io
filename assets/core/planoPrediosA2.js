@@ -6,19 +6,17 @@
 // escritorio (Formato A-2 → 🗺️ Generar Plano de Predios).
 
 // ── Paleta "Derecho" (relleno de cada predio) ──
-// Colores confirmados contra el plano de referencia real "MAPA DE PREDIOS
-// CON DERECHO DE USO — TOMA SD5" que compartió el usuario, con 2 rondas
-// de corrección: (1) PERMISO_LICENCIA es verde, no A2_DENTRO_BLOQUE
-// (aclarado explícitamente por el usuario); (2) SIN_REGISTRO es amarillo
-// y A2_FUERA_BLOQUE es rosado/salmón — el usuario confirmó "amarillo son
-// los usuarios que no tienen derecho", que corresponde a SIN_REGISTRO
-// (sin ningún cruce), no a A2_FUERA_BLOQUE (un caso más específico:
-// observado por ANA como fuera del bloque).
+// Colores dados de forma EXPLÍCITA por el usuario (no por muestreo de
+// pixeles sobre el plano de referencia, que en rondas anteriores llevó a
+// más de una corrección): "verde = con licencia/derecho; amarillo = sin
+// derecho pero con permiso (A2 dentro del bloque); rojo = en la base
+// gráfica pero sin licencia ni permiso (sin registro); morado = observado
+// en el Formato A2 como fuera del bloque".
 const DERECHO_PLANO_A2 = {
     PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
-    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#e2d9a3', stroke: '#8a7a3d' },
-    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#fff099', stroke: '#bfa100' },
-    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#f5a3a3', stroke: '#c0392b' },
+    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#fff099', stroke: '#bfa100' },
+    SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
+    A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#d7a8e0', stroke: '#7d3c98' },
 };
 
 // Normaliza un nombre para cruzarlo — mismo criterio ya usado en todo el
