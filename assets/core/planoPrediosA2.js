@@ -123,7 +123,11 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
 // dibujarLineaConHaloPlanoA2 en el llamador) para que la red de riego se
 // note claramente sobre el fondo, sea satelital o la maraña de predios/
 // etiquetas del plano sin imagen.
-const COLOR_POR_ORDEN_CANAL_PLANO_A2 = { L1: '#a83800', L2: '#005ce6', L3: '#4ce600', L4: '#ffff00', L5: '#000000' };
+// L4 usa un dorado/ámbar (no el amarillo puro #ffff00 real del KMZ) —
+// el amarillo puro se pierde casi por completo sobre fondos verdes o
+// satelitales incluso con el halo oscuro detrás; el ámbar mantiene la
+// misma familia de color pero con contraste real.
+const COLOR_POR_ORDEN_CANAL_PLANO_A2 = { L1: '#a83800', L2: '#005ce6', L3: '#4ce600', L4: '#d9a300', L5: '#000000' };
 function estiloCanalPlanoA2(orden) {
     const color = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
     const pesosPorOrden = { L1: 6, L2: 5.5, L3: 5, L4: 4.5, L5: 4 };

@@ -4529,6 +4529,23 @@ const COMISIONES = {
             // basado solo en `canales` (los propios de esta toma).
             const canalesParaDibujo = canales.concat(canalesTroncales || []);
 
+            // Recorta los puntos de una línea (canal/dren) a los que caen
+            // dentro del bbox visible del plano — un canal "troncal" (ej.
+            // Canal Sur) trae cientos de vértices que recorren TODA la
+            // comisión; sin este recorte, medirEtiquetaPlanoA2 buscaría el
+            // "tramo más largo" en TODA la línea (incluida la parte lejos de
+            // esta toma), y el rótulo terminaría posicionado miles de
+            // píxeles fuera del lienzo — invisible, aunque la línea sí se
+            // dibuje bien (el dibujo no depende de esto, solo la etiqueta).
+            function _coordsVisiblesPlanoA2(coords) {
+                const visibles = coords.filter((par) => {
+                    const utm = latLonAUtm17S(par[0], par[1]);
+                    return utm.easting >= bbox.minEasting && utm.easting <= bbox.maxEasting &&
+                           utm.northing >= bbox.minNorthing && utm.northing <= bbox.maxNorthing;
+                });
+                return visibles.length >= 2 ? visibles : coords;
+            }
+
             // 1) Imagen satelital de fondo (opcional) — antes que cualquier
             //    otra cosa, para que todo lo demás se dibuje encima. Recortada
             //    (con su propio save/restore, aparte del recorte persistente
@@ -4646,7 +4663,7 @@ const COMISIONES = {
                 fuenteUsuario = Math.max(9, Math.min(fuenteUsuario, 20));
                 ctx.save();
                 ctx.translate(centroUsuarioPx[0], centroUsuarioPx[1]);
-                ctx.rotate(-medidaUsuario.anguloCss * Math.PI / 180);
+                ctx.rotate(medidaUsuario.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
                 ctx.font = '700 ' + fuenteUsuario.toFixed(1) + 'px Arial, sans-serif';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#5c4300';
@@ -4712,7 +4729,7 @@ const COMISIONES = {
 
                 ctx.save();
                 ctx.translate(centroPx[0], centroPx[1]);
-                ctx.rotate(-medida.anguloCss * Math.PI / 180); // canvas rota en sentido horario con ángulo positivo; anguloCss ya está en convención CSS
+                ctx.rotate(medida.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
                 const fuente = fuentePredios;
                 ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
                 ctx.fillStyle = '#002b52';
@@ -4735,26 +4752,26 @@ const COMISIONES = {
                 // curvee. Sobre una "píldora" del mismo color de la línea
                 // (fondo claro, texto con el color real) — mismo criterio
                 // visual del plano de referencia.
-                const medida = medirEtiquetaPlanoA2(c.geom.coords, false, proyector.proyectar);
+                const medida = medirEtiquetaPlanoA2(_coordsVisiblesPlanoA2(c.geom.coords), false, proyector.proyectar);
                 if (medida.longitudPx < 12 || !medida.centroPx) return;
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
                 if (fuente < 6.5) return;
                 fuente = Math.min(fuente, 10);
                 const orden = (c.campos && c.campos.ORDEN) || '';
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
-                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, -medida.anguloCss * Math.PI / 180, nombreCanal, colorLinea, fuente);
+                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, medida.anguloCss * Math.PI / 180, nombreCanal, colorLinea, fuente);
             });
             drenes.forEach((d, idx) => {
                 const nombreDren = (d.nombre || (d.campos && (d.campos['NOMBRE DE DREN SECUNDARIO'] || d.campos['NOMBRE DE DREN COLECTOR'])) || '').toString();
                 if (!nombreDren) return;
-                const medida = medirEtiquetaPlanoA2(d.geom.coords, false, proyector.proyectar);
+                const medida = medirEtiquetaPlanoA2(_coordsVisiblesPlanoA2(d.geom.coords), false, proyector.proyectar);
                 if (medida.longitudPx < 12 || !medida.centroPx) return;
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreDren.length, 1));
                 if (fuente < 6.5) return;
                 fuente = Math.min(fuente, 9);
                 const tipoDren = (d.campos && d.campos.TIPO) || 'D1';
                 const colorLinea = (ESTILO_DREN_POR_TIPO_PLANO_A2[tipoDren] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1).color;
-                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, -medida.anguloCss * Math.PI / 180, nombreDren, colorLinea, fuente);
+                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, medida.anguloCss * Math.PI / 180, nombreDren, colorLinea, fuente);
             });
 
             // 7) Leyenda (esquina inferior izquierda, dentro del marco) y
@@ -4860,11 +4877,10 @@ const COMISIONES = {
             // "SUBSECTOR" (una palabra) -> "SUB SECTOR" (dos palabras), a
             // pedido explícito; en modo "Plano por Usuario" (usuarioResaltado)
             // el subtítulo se acota a solo esto — nada de "Formato A-2
-            // (Levantamiento)" ni el crédito de la imagen satelital.
+            // (Levantamiento)" ni el crédito de la imagen satelital, en
+            // NINGÚN modo (por usuario o general) — a pedido explícito.
             const comisionNombreVisible = comisionNombre.replace(/SUBSECTOR/i, 'SUB SECTOR');
-            const subtitulo = usuarioResaltado
-                ? (comisionNombreVisible + ' - PREDIO OBSERVADO (FORMATO A-2)')
-                : (comisionNombreVisible + ' — Formato A-2 (Levantamiento)' + (conSatelite ? ' · Imagen satelital: Esri World Imagery' : ''));
+            const subtitulo = comisionNombreVisible + ' - PREDIO OBSERVADO (FORMATO A-2)';
             ctx.fillText(subtitulo, 40, alto / 2 + 24);
             ctx.textAlign = 'right';
             ctx.font = '400 18px Arial, sans-serif';
