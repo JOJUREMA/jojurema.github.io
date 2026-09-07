@@ -188,6 +188,93 @@ function medirEtiquetaPlanoA2(puntosLatLon, cerrado, proyectarFn) {
     return { anguloCss, longitudPx };
 }
 
+// Divide el nombre de un titular en 2 líneas lo más balanceadas posible
+// (por cantidad de caracteres), cortando siempre entre palabras completas
+// — nunca a mitad de una palabra. Se usa cuando el nombre completo no cabe
+// en una sola línea a lo largo del lado más largo del predio. Si el
+// nombre trae una sola palabra (no se puede partir), devuelve ['', '']
+// para que el llamador sepa que esta estrategia no aplica.
+function partirNombreEnDosLineas(nombre) {
+    const palabras = (nombre || '').toString().trim().split(/\s+/).filter(Boolean);
+    if (palabras.length < 2) return ['', ''];
+    let mejorCorte = 1, mejorDif = Infinity;
+    for (let i = 1; i < palabras.length; i++) {
+        const linea1 = palabras.slice(0, i).join(' ');
+        const linea2 = palabras.slice(i).join(' ');
+        const dif = Math.abs(linea1.length - linea2.length);
+        if (dif < mejorDif) { mejorDif = dif; mejorCorte = i; }
+    }
+    return [palabras.slice(0, mejorCorte).join(' '), palabras.slice(mejorCorte).join(' ')];
+}
+
+// Mayor número "redondo" (1, 2 o 5 × una potencia de 10, en metros) que
+// cabe dentro de `anchoDeseadoPx * metrosPorPx` sin excederlo — para que
+// la barra de escala gráfica del plano represente una distancia legible
+// (100 m, 200 m, 500 m...) en vez de un número arbitrario.
+function elegirLongitudEscalaBarraM(anchoDeseadoPx, metrosPorPx) {
+    if (!(metrosPorPx > 0)) return 100;
+    const bruto = anchoDeseadoPx * metrosPorPx;
+    if (bruto <= 0) return 100;
+    const potencia = Math.pow(10, Math.floor(Math.log10(bruto)));
+    const pasos = [1, 2, 5, 10];
+    let mejor = potencia;
+    for (let i = 0; i < pasos.length; i++) {
+        const candidato = potencia * pasos[i];
+        if (candidato <= bruto) mejor = candidato; else break;
+    }
+    return mejor;
+}
+
+// Dibuja la escala gráfica (barra segmentada blanco/azul + etiquetas en
+// metros) del plano, anclada por su esquina inferior DERECHA en
+// (xDerecha, yInferior) — mismo criterio de anclaje que
+// _dibujarLeyendaPlanoA2 (que ancla por su esquina inferior izquierda),
+// para que ambos cuadros queden simétricos dentro del marco sin chocar.
+function dibujarEscalaGraficaPlanoA2(ctx, xDerecha, yInferior, metrosPorPx) {
+    if (!(metrosPorPx > 0)) return;
+    const ANCHO_OBJETIVO_PX = 260;
+    const N_SEGMENTOS = 4;
+    const ALTO_BARRA = 9;
+    const longitudTotalM = elegirLongitudEscalaBarraM(ANCHO_OBJETIVO_PX, metrosPorPx);
+    const anchoBarraPx = longitudTotalM / metrosPorPx;
+    const segPx = anchoBarraPx / N_SEGMENTOS;
+    const segM = longitudTotalM / N_SEGMENTOS;
+    const xIzq = xDerecha - anchoBarraPx;
+    const yBarra = yInferior - 24;
+    const padding = 10;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.fillRect(xIzq - padding, yBarra - 15, anchoBarraPx + padding * 2, 15 + ALTO_BARRA + 22);
+    ctx.strokeRect(xIzq - padding, yBarra - 15, anchoBarraPx + padding * 2, 15 + ALTO_BARRA + 22);
+
+    ctx.font = '600 10px Arial, sans-serif';
+    ctx.fillStyle = '#002b52';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('ESCALA GRÁFICA (metros)', xIzq + anchoBarraPx / 2, yBarra - 3);
+
+    for (let i = 0; i < N_SEGMENTOS; i++) {
+        ctx.fillStyle = (i % 2 === 0) ? '#002b52' : '#ffffff';
+        ctx.fillRect(xIzq + i * segPx, yBarra, segPx, ALTO_BARRA);
+        ctx.strokeStyle = '#002b52';
+        ctx.strokeRect(xIzq + i * segPx, yBarra, segPx, ALTO_BARRA);
+    }
+
+    ctx.font = '500 9px Arial, sans-serif';
+    ctx.fillStyle = '#002b52';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i <= N_SEGMENTOS; i++) {
+        const etiqueta = i === 0 ? '0' : (i === N_SEGMENTOS ? (longitudTotalM + ' m') : String(Math.round(segM * i)));
+        ctx.textAlign = i === 0 ? 'left' : (i === N_SEGMENTOS ? 'right' : 'center');
+        const xTexto = i === 0 ? xIzq : (i === N_SEGMENTOS ? xIzq + anchoBarraPx : xIzq + i * segPx);
+        ctx.fillText(etiqueta, xTexto, yBarra + ALTO_BARRA + 3);
+    }
+    ctx.restore();
+}
+
 // Elige un intervalo de grilla "redondo" (1, 2 o 5 × una potencia de 10)
 // que produzca entre ~4 y ~10 líneas dentro del rango dado — mismo
 // criterio que cualquier software GIS al dibujar una grilla de

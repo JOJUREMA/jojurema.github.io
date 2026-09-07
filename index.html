@@ -4593,29 +4593,58 @@ const COMISIONES = {
             //    editor interactivo, adaptado a un plano estático).
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
+            const FUENTE_MIN_UNALINEA_PREDIO = 9, FUENTE_MIN_DOSLINEAS_PREDIO = 6.5, FUENTE_MAX_PREDIO = 15;
             predios.forEach((p) => {
                 const nombre = (p.usuario || '(sin nombre)').toString();
                 const uc = (p.catastralKey || '').toString();
-                const textoCompleto = uc ? (nombre + ' / UC ' + uc) : nombre;
-                const textoCompacto = uc ? ('UC ' + uc) : nombre;
+                const textoConUc = uc ? (nombre + ' / UC ' + uc) : nombre;
                 const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
                 if (medida.longitudPx < 12) return;
-                let texto = textoCompleto, chars = Math.max(textoCompleto.length, 1);
-                let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, chars);
-                if (fuente < 9) { texto = textoCompacto; chars = Math.max(textoCompacto.length, 1); fuente = calcularFuenteParaAncho(medida.longitudPx, 1, chars); }
-                if (fuente < 6.5) return; // no cabe ni la versión compacta — se omite, no se atropella al vecino
-                fuente = Math.min(fuente, 15);
 
                 const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
                 const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
                 if (!centroPx) return;
+
+                // El nombre del titular SIEMPRE debe verse — prioridad, de más a
+                // menos legible: (1) nombre + UC en una línea; (2) solo el nombre
+                // en una línea; (3) el nombre partido en 2 líneas balanceadas
+                // (nunca a mitad de palabra); (4) último recurso, solo "UC ####"
+                // si ni partido en dos cabe el nombre. Solo se omite la etiqueta
+                // por completo si el predio es tan pequeño que ni eso entra.
+                let lineas = null, fuente = null;
+                let f = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(textoConUc.length, 1));
+                if (f >= FUENTE_MIN_UNALINEA_PREDIO) { lineas = [textoConUc]; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                if (!lineas) {
+                    f = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombre.length, 1));
+                    if (f >= FUENTE_MIN_UNALINEA_PREDIO) { lineas = [nombre]; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                }
+                if (!lineas) {
+                    const partes = partirNombreEnDosLineas(nombre);
+                    if (partes[1]) {
+                        const largoMax = Math.max(partes[0].length, partes[1].length, 1);
+                        f = calcularFuenteParaAncho(medida.longitudPx, 1, largoMax);
+                        if (f >= FUENTE_MIN_DOSLINEAS_PREDIO) { lineas = partes; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                    }
+                }
+                if (!lineas && uc) {
+                    const textoUc = 'UC ' + uc;
+                    f = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(textoUc.length, 1));
+                    if (f >= FUENTE_MIN_DOSLINEAS_PREDIO) { lineas = [textoUc]; fuente = Math.min(f, FUENTE_MAX_PREDIO); }
+                }
+                if (!lineas) return; // de verdad no cabe ninguna versión legible
 
                 ctx.save();
                 ctx.translate(centroPx[0], centroPx[1]);
                 ctx.rotate(-medida.anguloCss * Math.PI / 180); // canvas rota en sentido horario con ángulo positivo; anguloCss ya está en convención CSS
                 ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
                 ctx.fillStyle = '#002b52';
-                ctx.fillText(texto, 0, 0);
+                if (lineas.length === 1 || !lineas[1]) {
+                    ctx.fillText(lineas[0], 0, 0);
+                } else {
+                    const alturaLinea = fuente * 1.15;
+                    ctx.fillText(lineas[0], 0, -alturaLinea / 2);
+                    ctx.fillText(lineas[1], 0, alturaLinea / 2);
+                }
                 ctx.restore();
             });
             canales.forEach((c, idx) => {
@@ -4638,8 +4667,13 @@ const COMISIONES = {
                 ctx.restore();
             });
 
-            // 7) Leyenda (esquina inferior izquierda, dentro del marco).
+            // 7) Leyenda (esquina inferior izquierda, dentro del marco) y
+            //    escala gráfica (esquina inferior derecha, simétrica a la
+            //    leyenda) — barra segmentada en vez de una razón "1:N" fija,
+            //    porque sigue siendo correcta sin importar a qué tamaño de
+            //    papel se termine imprimiendo el PDF.
             _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canales, drenes, usuarioResaltado, categoriasDerechoPresentes);
+            dibujarEscalaGraficaPlanoA2(ctx, ANCHO - MARGEN - 15, ALTO_MAPA - MARGEN - 15, metrosPorPixelPlanoA2(proyector));
 
             // 8) Cuadro de datos del usuario resaltado (esquina superior
             //    derecha, dentro del marco) — un cuadro DISTINTO de la
