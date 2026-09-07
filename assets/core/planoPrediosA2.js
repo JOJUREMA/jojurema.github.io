@@ -14,7 +14,7 @@
 // en el Formato A2 como fuera del bloque".
 const DERECHO_PLANO_A2 = {
     PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
-    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#fff099', stroke: '#bfa100' },
+    A2_DENTRO_BLOQUE: { etiqueta: 'A2-OBSERVADO', fill: '#fff099', stroke: '#bfa100' },
     SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
     A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#d7a8e0', stroke: '#7d3c98' },
 };
@@ -81,9 +81,16 @@ function _tieneDerechoFormalPlanoA2(fila) {
 //      cruce por nombre porque muchos registros observados no traen UC
 //      y es la única forma de vincularlos (riesgo ya documentado y
 //      aceptado en el resto del proyecto).
-//   3) Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
+//   3) Está en el Padrón A-1 (aunque sin derecho confirmado) O en el
+//      Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
+//      ("A2-OBSERVADO" en la leyenda) — el usuario definió "Sin Registro"
+//      de forma explícita como AUSENCIA en AMBOS padrones a la vez; por
+//      lo tanto, aparecer en cualquiera de los dos (así sea sin derecho
+//      confirmado en el Padrón A-1) ya alcanza para esta categoría, nunca
+//      para "Sin Registro".
 //   4) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
-//      pero no aparece ni en el Padrón A-1 ni en el Formato A-2)
+//      pero no aparece ni en el Padrón A-1 ni en el Formato A-2 — la
+//      definición exacta que dio el usuario para esta categoría)
 // `padronA1Rows`: filas de padron_oficial_a1 (con unidad_catastral,
 // apellidos_nombres, origen, clase_derecho). `formatoA2Rows`: filas de
 // formato_a2_levantamiento (con unidad_catastral, apellidos_nombres,
@@ -92,9 +99,9 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const ucPredio = _normUcPlanoA2(predio.catastralKey);
     const nombrePredio = _normNombrePlanoA2(predio.usuario);
 
-    const licenciaPorUc = _buscarPorUcPlanoA2(padronA1Rows, ucPredio);
-    if (_tieneDerechoFormalPlanoA2(licenciaPorUc)) {
-        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: licenciaPorUc };
+    const enPadronA1PorUc = _buscarPorUcPlanoA2(padronA1Rows, ucPredio);
+    if (_tieneDerechoFormalPlanoA2(enPadronA1PorUc)) {
+        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: enPadronA1PorUc };
     }
 
     const enFormatoA2 = _buscarPorUcPlanoA2(formatoA2Rows, ucPredio) || _buscarPorNombrePlanoA2(formatoA2Rows, nombrePredio);
@@ -102,8 +109,8 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
         return { categoria: 'A2_FUERA_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_FUERA_BLOQUE, matchInfo: enFormatoA2 };
     }
 
-    if (enFormatoA2) {
-        return { categoria: 'A2_DENTRO_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_DENTRO_BLOQUE, matchInfo: enFormatoA2 };
+    if (enFormatoA2 || enPadronA1PorUc) {
+        return { categoria: 'A2_DENTRO_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_DENTRO_BLOQUE, matchInfo: enFormatoA2 || enPadronA1PorUc };
     }
     return { categoria: 'SIN_REGISTRO', colorInfo: DERECHO_PLANO_A2.SIN_REGISTRO, matchInfo: null };
 }
