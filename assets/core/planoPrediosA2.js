@@ -8,11 +8,13 @@
 // ── Paleta "Derecho" (relleno de cada predio) ──
 // Colores confirmados contra el plano de referencia real "MAPA DE PREDIOS
 // CON DERECHO DE USO — TOMA SD5" que compartió el usuario (los 4 swatches
-// de su leyenda, con los mismos 4 nombres de categoría) — reemplaza una
-// convención propia anterior que tenía los 4 colores mal asignados.
+// de su leyenda, con los mismos 4 nombres de categoría), y contra su
+// aclaración explícita de que los predios verdes de esa imagen son "los
+// usuarios con derecho o licencia" (PERMISO_LICENCIA, no A2_DENTRO_BLOQUE
+// — swap corregido tras un primer intento con esas dos invertidas).
 const DERECHO_PLANO_A2 = {
-    PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#e2d9a3', stroke: '#8a7a3d' },
-    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#a9d18e', stroke: '#4f7942' },
+    PERMISO_LICENCIA: { etiqueta: 'PERMISO/LICENCIA', fill: '#a9d18e', stroke: '#4f7942' },
+    A2_DENTRO_BLOQUE: { etiqueta: 'A2 - DENTRO BLOQUE', fill: '#e2d9a3', stroke: '#8a7a3d' },
     SIN_REGISTRO: { etiqueta: 'SIN REGISTRO', fill: '#f5a3a3', stroke: '#c0392b' },
     A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#fff099', stroke: '#bfa100' },
 };
