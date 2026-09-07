@@ -41,19 +41,25 @@ function _buscarPorNombrePlanoA2(filas, nombrePredio) {
 
 // Clasifica UN predio del bloque de riego (forma {usuario, catastralKey})
 // contra el Padrón Oficial A-1 (¿tiene Permiso/Licencia?) y el Formato A-2
-// (¿está observado, y dentro o fuera del bloque?) — mismo algoritmo de
-// cruce (UC sin ceros a la izquierda, si no por nombre) ya probado en el
-// resto de la app. Prioridad, de mayor a menor certeza legal:
-//   1) Padrón A-1 confirmado por UC (identificador preciso) -> PERMISO_LICENCIA
-//      — una licencia oficial encontrada así NUNCA debe perderse por un
-//      cruce más débil (solo por nombre) del Formato A-2 hacia "Fuera del
-//      bloque": el predio observado puede no traer UC y calzar por nombre
-//      con alguien más, mientras que el cruce por UC contra el Padrón A-1
-//      es mucho más confiable.
-//   2) Formato A-2 (por UC o por nombre) con se_ubica_bloque='Fuera' -> A2_FUERA_BLOQUE
-//   3) Padrón A-1 confirmado solo por nombre (sin UC) -> PERMISO_LICENCIA
-//   4) Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
-//   5) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
+// (¿está observado, y dentro o fuera del bloque?). Prioridad, de mayor a
+// menor certeza legal:
+//   1) Padrón A-1 con UNIDAD CATASTRAL exacta -> PERMISO_LICENCIA
+//      — la licencia SOLO cuenta si la propia parcela (por UC, no por
+//      nombre) figura en el Padrón A-1. Un cruce por nombre no sirve
+//      acá: una misma persona puede tener varias parcelas y solo
+//      algunas con licencia — si se aceptara el nombre solo, la parcela
+//      SIN licencia de esa persona heredaría por error el estatus de
+//      licencia de su OTRA parcela (bug real, confirmado con casos
+//      reales: UC 44548/38770/38771/38722/38717 aparecían como "con
+//      licencia" sin tenerla, solo por compartir nombre con el titular
+//      de una parcela licenciada distinta).
+//   2) Formato A-2 (por UC, o por nombre si ese registro no trae UC) con
+//      se_ubica_bloque='Fuera' -> A2_FUERA_BLOQUE — acá sí se acepta el
+//      cruce por nombre porque muchos registros observados no traen UC
+//      y es la única forma de vincularlos (riesgo ya documentado y
+//      aceptado en el resto del proyecto).
+//   3) Formato A-2 (cualquier otro caso, incl. 'Dentro') -> A2_DENTRO_BLOQUE
+//   4) Sin ningún cruce -> SIN_REGISTRO (hay geometría/KML para el predio,
 //      pero no aparece ni en el Padrón A-1 ni en el Formato A-2)
 // `padronA1Rows`: filas de padron_oficial_a1 (con unidad_catastral,
 // apellidos_nombres, origen). `formatoA2Rows`: filas de
@@ -73,33 +79,25 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
         return { categoria: 'A2_FUERA_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_FUERA_BLOQUE, matchInfo: enFormatoA2 };
     }
 
-    const licenciaPorNombre = _buscarPorNombrePlanoA2(padronA1Rows, nombrePredio);
-    if (licenciaPorNombre && licenciaPorNombre.origen === 'ana_a1') {
-        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: licenciaPorNombre };
-    }
-
     if (enFormatoA2) {
         return { categoria: 'A2_DENTRO_BLOQUE', colorInfo: DERECHO_PLANO_A2.A2_DENTRO_BLOQUE, matchInfo: enFormatoA2 };
     }
     return { categoria: 'SIN_REGISTRO', colorInfo: DERECHO_PLANO_A2.SIN_REGISTRO, matchInfo: null };
 }
 
-// ── Estilo de línea de Canal Lateral (color ya real, por orden L1-L5;
-// el patrón de guiones es una convención propia por MATERIAL, ya que el
-// KMZ no trae un patrón de línea, solo el color) — pesos subidos (y con
-// halo oscuro detrás, ver dibujarLineaConHaloPlanoA2 en el llamador) para
-// que la red de riego se note claramente sobre el fondo, sea satelital o
-// la maraña de predios/etiquetas del plano sin imagen.
+// ── Estilo de línea de Canal Lateral (color ya real, por orden L1-L5) ──
+// Sin distinción por MATERIAL (concreto/tierra/PVC) a pedido explícito
+// del usuario — un canal se identifica solo por su orden (L1, L2...),
+// igual que en su plano de referencia real; un único patrón de guiones
+// para todos. Pesos subidos (y con halo oscuro detrás, ver
+// dibujarLineaConHaloPlanoA2 en el llamador) para que la red de riego se
+// note claramente sobre el fondo, sea satelital o la maraña de predios/
+// etiquetas del plano sin imagen.
 const COLOR_POR_ORDEN_CANAL_PLANO_A2 = { L1: '#a83800', L2: '#005ce6', L3: '#4ce600', L4: '#ffff00', L5: '#000000' };
-function estiloCanalPlanoA2(orden, material) {
+function estiloCanalPlanoA2(orden) {
     const color = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
-    const mat = (material || '').toString().trim().toUpperCase();
-    let dash;
-    if (mat === 'CONCRETO') dash = [16, 5, 3, 5]; // guion largo + punto
-    else if (mat === 'PVC') dash = [10, 5];        // guion medio
-    else dash = [3, 5];                            // TIERRA u otro: punteado fino
     const pesosPorOrden = { L1: 6, L2: 5.5, L3: 5, L4: 4.5, L5: 4 };
-    return { color, dash, weight: pesosPorOrden[orden] || 4.5 };
+    return { color, dash: [12, 5], weight: pesosPorOrden[orden] || 4.5 };
 }
 
 // ── Estilo de línea de Dren, por TIPO (PRINCIPAL/D1/D2) — el KMZ de
@@ -170,18 +168,25 @@ function metrosPorPixelPlanoA2(proyector) {
     return proyector.escala > 0 ? 1 / proyector.escala : 0;
 }
 
-// Ángulo (reutiliza medirLadoMasLargo de mapa.js, ya cargado) Y longitud
-// EN PÍXELES DEL LIENZO (no en metros) del lado/tramo más largo de un
-// predio o canal — la longitud en píxeles es lo que hace falta para
-// calcular el tamaño de fuente de su etiqueta en el plano impreso (ver
-// calcularFuenteParaAncho, reutilizable pasando metrosPorPx=1 y esta
-// longitud como si fuera "metros"). No se reutiliza el cálculo interno de
-// mapa.js para la longitud porque acá además hace falta saber qué 2
-// vértices proyectar. `puntosLatLon`: [[lat,lon],...]; `proyectarFn`:
+// Ángulo (reutiliza medirLadoMasLargo de mapa.js, ya cargado), longitud EN
+// PÍXELES DEL LIENZO (no en metros) y punto medio (en píxeles) del
+// lado/tramo más largo de un predio o canal. La longitud en píxeles es lo
+// que hace falta para calcular el tamaño de fuente de su etiqueta en el
+// plano impreso (ver calcularFuenteParaAncho, reutilizable pasando
+// metrosPorPx=1 y esta longitud como si fuera "metros"). El punto medio
+// se devuelve para que, en líneas (canal/dren, sin un centroide propio
+// como sí tiene un polígono), el rótulo se ubique EXACTAMENTE en el mismo
+// tramo cuyo ángulo se está usando — así el nombre siempre queda paralelo
+// a la dirección real de la línea justo donde se decide ponerlo, en vez de
+// heredar el ángulo del tramo más largo pero dibujarse en otra posición
+// (ej. el punto medio del arreglo de vértices) que puede apuntar para otro
+// lado si la línea curvea. No se reutiliza el cálculo interno de mapa.js
+// para la longitud porque acá además hace falta saber qué 2 vértices
+// proyectar. `puntosLatLon`: [[lat,lon],...]; `proyectarFn`:
 // (easting,northing)=>[x,y] del proyector del plano actual.
 function medirEtiquetaPlanoA2(puntosLatLon, cerrado, proyectarFn) {
     if (!Array.isArray(puntosLatLon) || puntosLatLon.length < 2 || typeof latLonAUtm17S !== 'function') {
-        return { anguloCss: 0, longitudPx: 0 };
+        return { anguloCss: 0, longitudPx: 0, centroPx: null };
     }
     const puntosUtm = puntosLatLon.map((par) => latLonAUtm17S(par[0], par[1]));
     const n = puntosUtm.length;
@@ -194,12 +199,13 @@ function medirEtiquetaPlanoA2(puntosLatLon, cerrado, proyectarFn) {
         const longitud = Math.sqrt(de * de + dn * dn);
         if (longitud > mejorLongitudM) { mejorLongitudM = longitud; mejorI = i; mejorJ = j; }
     }
-    if (mejorLongitudM <= 0) return { anguloCss: 0, longitudPx: 0 };
+    if (mejorLongitudM <= 0) return { anguloCss: 0, longitudPx: 0, centroPx: null };
     const anguloCss = (typeof medirLadoMasLargo === 'function') ? medirLadoMasLargo(puntosLatLon, cerrado).anguloCss : 0;
     const pA = proyectarFn(puntosUtm[mejorI].easting, puntosUtm[mejorI].northing);
     const pB = proyectarFn(puntosUtm[mejorJ].easting, puntosUtm[mejorJ].northing);
     const longitudPx = Math.sqrt(Math.pow(pB[0] - pA[0], 2) + Math.pow(pB[1] - pA[1], 2));
-    return { anguloCss, longitudPx };
+    const centroPx = [(pA[0] + pB[0]) / 2, (pA[1] + pB[1]) / 2];
+    return { anguloCss, longitudPx, centroPx };
 }
 
 // Divide el nombre de un titular en 2 líneas lo más balanceadas posible

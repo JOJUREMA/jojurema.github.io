@@ -4494,6 +4494,17 @@ const COMISIONES = {
             // 2) Grilla de coordenadas UTM + marco.
             _dibujarGrillaUtmPlanoA2(ctx, proyector, bbox, ANCHO, ALTO_MAPA, MARGEN);
 
+            // Recorte adicional al rectángulo INTERNO del marco (dentro de
+            // los bordes dobles) para todo lo que se dibuje de acá en
+            // adelante — sin esto, un dren (filtrado por un colchón de
+            // ±300m, no por este bbox exacto de predios+canales) puede
+            // sobresalir del recuadro. No afecta a la grilla/marco ya
+            // dibujados arriba, ni a las etiquetas de coordenadas del borde
+            // (esas van fuera de este rectángulo, en el margen).
+            ctx.beginPath();
+            ctx.rect(MARGEN, MARGEN, ANCHO - MARGEN * 2, ALTO_MAPA - MARGEN * 2);
+            ctx.clip();
+
             // 3) Predios, coloreados por categoría de Derecho — se registra
             //    qué categorías aparecen de verdad (categoriasDerechoPresentes)
             //    para que la leyenda (más abajo) solo liste esas, no las 4
@@ -4528,21 +4539,22 @@ const COMISIONES = {
             }));
             canales.forEach((c, idx) => {
                 const orden = (c.campos && c.campos.ORDEN) || '';
-                const material = (c.campos && c.campos.MATERIAL_C) || '';
-                const estilo = estiloCanalPlanoA2(orden, material);
+                const estilo = estiloCanalPlanoA2(orden);
                 dibujarLineaConHaloPlanoA2(ctx, latlngsCanalPx[idx], estilo);
             });
 
             // 5) Drenes (color/línea por tipo — convención propia, ver
-            //    planoPrediosA2.js).
-            drenes.forEach((d) => {
+            //    planoPrediosA2.js). Se cachean sus puntos en píxel (mismo
+            //    criterio que latlngsCanalPx) para reutilizarlos al dibujar
+            //    su nombre más abajo, sin reproyectar dos veces.
+            const latlngsDrenPx = drenes.map((d) => d.geom.coords.map((par) => {
+                const utm = latLonAUtm17S(par[0], par[1]);
+                return proyector.proyectar(utm.easting, utm.northing);
+            }));
+            drenes.forEach((d, idx) => {
                 const tipo = (d.campos && d.campos.TIPO) || 'D1';
                 const estilo = ESTILO_DREN_POR_TIPO_PLANO_A2[tipo] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1;
-                const puntosPx = d.geom.coords.map((par) => {
-                    const utm = latLonAUtm17S(par[0], par[1]);
-                    return proyector.proyectar(utm.easting, utm.northing);
-                });
-                dibujarLineaConHaloPlanoA2(ctx, puntosPx, estilo);
+                dibujarLineaConHaloPlanoA2(ctx, latlngsDrenPx[idx], estilo);
             });
 
             // 5.5) Polígono resaltado del usuario elegido (opcional) — el
@@ -4593,27 +4605,31 @@ const COMISIONES = {
             //    editor interactivo, adaptado a un plano estático).
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
-            const FUENTE_MAX_PREDIO = 13;
+            const FUENTE_MAX_PREDIO = 18;
             // Fuente ÚNICA para TODOS los predios del plano — nunca varía de
-            // un predio a otro. Se calcula como la más chica que garantiza que
-            // la UC (que siempre debe verse) quepa incluso en el predio más
-            // angosto del plano; en los predios más grandes, con ese mismo
-            // tamaño, sobra espacio para que además quepa el nombre. Un piso
-            // de 6px evita una fuente ilegible si hay algún predio extremo muy
-            // angosto — en ese caso puntual la UC puede quedar apretada.
+            // un predio a otro. Se calcula como la MEDIANA (no el mínimo
+            // estricto) de la fuente "natural" de cada predio para que su UC
+            // quepa — usar el mínimo dejaba una fuente diminuta apenas por un
+            // par de predios extremos; con la mediana, los predios más chicos
+            // que ese punto medio simplemente muestran solo su UC (o esta se
+            // dibuja un poco ajustada/desbordando su propio polígono — la UC
+            // igual nunca se omite, ver el respaldo más abajo), mientras que
+            // la mayoría del plano queda con una fuente notoriamente más
+            // grande y legible, como en el plano de referencia.
             const medidasPredios = predios.map((p) => {
                 const uc = (p.catastralKey || '').toString();
                 const nombre = (p.usuario || '(sin nombre)').toString();
                 const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
                 return { p, uc, nombre, medida };
             }).filter((m) => m.medida.longitudPx >= 12);
-            let fuentePredios = FUENTE_MAX_PREDIO;
-            medidasPredios.forEach((m) => {
+            const fuentesNaturales = medidasPredios.map((m) => {
                 const textoBase = m.uc ? ('UC ' + m.uc) : m.nombre;
-                const f = calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
-                if (f < fuentePredios) fuentePredios = f;
-            });
-            fuentePredios = Math.max(6, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
+                return calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
+            }).sort((a, b) => a - b);
+            let fuentePredios = fuentesNaturales.length
+                ? fuentesNaturales[Math.floor(fuentesNaturales.length / 2)]
+                : FUENTE_MAX_PREDIO;
+            fuentePredios = Math.max(10, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
             // A esta fuente fija, ¿el texto cabe a lo largo del lado más largo
             // del predio? (equivalente a comparar contra calcularFuenteParaAncho,
             // que ya incorpora el mismo margen de seguridad y ancho por carácter).
@@ -4668,20 +4684,38 @@ const COMISIONES = {
             canales.forEach((c, idx) => {
                 const nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || '';
                 if (!nombreCanal) return;
+                // El rótulo se dibuja EN el punto medio del tramo más largo
+                // (medida.centroPx), no en el punto medio del arreglo de
+                // vértices — así queda siempre paralelo a la dirección real
+                // de la línea justo donde se decide ponerlo, aunque el canal
+                // curvee.
                 const medida = medirEtiquetaPlanoA2(c.geom.coords, false, proyector.proyectar);
-                if (medida.longitudPx < 12) return;
+                if (medida.longitudPx < 12 || !medida.centroPx) return;
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
                 if (fuente < 6.5) return;
-                fuente = Math.min(fuente, 13);
-                const puntosPx = latlngsCanalPx[idx];
-                const medioIdx = Math.floor(puntosPx.length / 2);
-                const centro = puntosPx[medioIdx];
+                fuente = Math.min(fuente, 15);
                 ctx.save();
-                ctx.translate(centro[0], centro[1]);
+                ctx.translate(medida.centroPx[0], medida.centroPx[1]);
                 ctx.rotate(-medida.anguloCss * Math.PI / 180);
                 ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
                 ctx.fillStyle = '#6a3d00';
                 ctx.fillText(nombreCanal, 0, -4);
+                ctx.restore();
+            });
+            drenes.forEach((d, idx) => {
+                const nombreDren = (d.nombre || (d.campos && (d.campos['NOMBRE DE DREN SECUNDARIO'] || d.campos['NOMBRE DE DREN COLECTOR'])) || '').toString();
+                if (!nombreDren) return;
+                const medida = medirEtiquetaPlanoA2(d.geom.coords, false, proyector.proyectar);
+                if (medida.longitudPx < 12 || !medida.centroPx) return;
+                let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreDren.length, 1));
+                if (fuente < 6.5) return;
+                fuente = Math.min(fuente, 14);
+                ctx.save();
+                ctx.translate(medida.centroPx[0], medida.centroPx[1]);
+                ctx.rotate(-medida.anguloCss * Math.PI / 180);
+                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                ctx.fillStyle = '#7a1f13';
+                ctx.fillText(nombreDren, 0, -4);
                 ctx.restore();
             });
 
@@ -4846,21 +4880,15 @@ const COMISIONES = {
         }
 
         function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, drenes, usuarioResaltado, categoriasDerechoPresentes) {
-            // Solo se listan las combinaciones (canal orden+material, tipo de
-            // dren) que de verdad aparecen en esta toma — evita una leyenda
-            // larga con símbolos que no están en el plano.
-            const combosCanalPresentes = new Map();
-            canales.forEach((c) => {
-                const orden = (c.campos && c.campos.ORDEN) || '';
-                const material = ((c.campos && c.campos.MATERIAL_C) || '').toString().trim().toUpperCase() || 'TIERRA';
-                combosCanalPresentes.set(orden + '|' + material, { orden, material });
-            });
+            // Solo se listan los órdenes de canal / tipos de dren que de
+            // verdad aparecen en esta toma — evita una leyenda larga con
+            // símbolos que no están en el plano. Los canales ya no distinguen
+            // material (concreto/tierra/PVC) — solo su orden (L1, L2...), a
+            // pedido explícito del usuario.
             const ordenCanalOrden = ['L1', 'L2', 'L3', 'L4', 'L5'];
-            const ordenMaterial = ['CONCRETO', 'PVC', 'TIERRA'];
-            const combosCanal = Array.from(combosCanalPresentes.values()).sort((a, b) => {
-                const oi = ordenCanalOrden.indexOf(a.orden) - ordenCanalOrden.indexOf(b.orden);
-                return oi !== 0 ? oi : ordenMaterial.indexOf(a.material) - ordenMaterial.indexOf(b.material);
-            });
+            const ordenesCanalPresentes = Array.from(new Set(canales.map((c) => (c.campos && c.campos.ORDEN) || '')))
+                .filter(Boolean)
+                .sort((a, b) => ordenCanalOrden.indexOf(a) - ordenCanalOrden.indexOf(b));
             const tiposDrenPresentes = Array.from(new Set(drenes.map((d) => (d.campos && d.campos.TIPO) || 'D1')))
                 .sort((a, b) => (a === 'PRINCIPAL' ? -1 : b === 'PRINCIPAL' ? 1 : a.localeCompare(b)));
 
@@ -4870,9 +4898,9 @@ const COMISIONES = {
                 filas.push({ tipo: 'subtitulo', texto: 'DRENES' });
                 tiposDrenPresentes.forEach((t) => filas.push({ tipo: 'linea', estilo: ESTILO_DREN_POR_TIPO_PLANO_A2[t] || ESTILO_DREN_POR_TIPO_PLANO_A2.D1, texto: t }));
             }
-            if (combosCanal.length) {
+            if (ordenesCanalPresentes.length) {
                 filas.push({ tipo: 'subtitulo', texto: 'CANALES' });
-                combosCanal.forEach((c) => filas.push({ tipo: 'linea', estilo: estiloCanalPlanoA2(c.orden, c.material), texto: c.orden + ', ' + c.material }));
+                ordenesCanalPresentes.forEach((orden) => filas.push({ tipo: 'linea', estilo: estiloCanalPlanoA2(orden), texto: orden }));
             }
             // Solo las categorías de Derecho que de verdad aparecen entre los
             // predios de este plano — mismo criterio que canales/drenes: la
