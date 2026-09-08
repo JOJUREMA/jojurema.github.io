@@ -3165,7 +3165,34 @@ const COMISIONES = {
                     // Formato nuevo (con consolidado, usuariosG3, turnos, etc.) o formato antiguo (solo programacionPorToma)
                     if (parsed.programacionPorToma || parsed.consolidadoDemandas || parsed.usuariosG3 || parsed.turnosDeRiego) {
                         window.programacionPorToma = parsed.programacionPorToma || {};
-                        consolidadoDemandas = Array.isArray(parsed.consolidadoDemandas) ? parsed.consolidadoDemandas : [];
+                        const consolidadoCrudo = Array.isArray(parsed.consolidadoDemandas) ? parsed.consolidadoDemandas : [];
+                        // Defensa extra: el bug ya corregido (ver comentario de arriba)
+                        // pudo haber guardado, EN ESTE MISMO NAVEGADOR, un
+                        // localStorage con tomas de una semana distinta mezcladas
+                        // adentro de la clave de esta semana — un archivo .json
+                        // "instantánea" de lo que hubiera en memoria en el momento
+                        // de guardar, a diferencia de Supabase (una fila por
+                        // toma+semana, ya verificado sin este problema). Se
+                        // descarta cualquier toma cuyo propio `semanaInicio`
+                        // interno no coincida con la semana que se está cargando
+                        // — nunca se confía en la clave del localStorage sola.
+                        const tomasDescartadasPorSemana = [];
+                        consolidadoDemandas = consolidadoCrudo.filter((t) => {
+                            if (!t || !t.semanaInicio || t.semanaInicio === semanaPDA.fechaInicio) return true;
+                            tomasDescartadasPorSemana.push(t.toma + ' (' + t.semanaInicio + ')');
+                            return false;
+                        });
+                        if (tomasDescartadasPorSemana.length) {
+                            console.warn('cargarProgramacionPorTomaDeStorage: se descartaron ' + tomasDescartadasPorSemana.length +
+                                ' toma(s) guardadas localmente con una semana distinta a la elegida (' + semanaPDA.fechaInicio + '): ' +
+                                tomasDescartadasPorSemana.join(', '));
+                            // Autocorrección: se reemplaza de inmediato el archivo
+                            // guardado en este navegador por la versión ya
+                            // filtrada, para que la próxima vez que se abra esta
+                            // misma semana (en este mismo navegador) ya no haga
+                            // falta volver a descartar nada.
+                            guardarProgramacionPorTomaEnStorage();
+                        }
                         window.usuariosG3 = parsed.usuariosG3 || {};
                         window.turnosDeRiego = parsed.turnosDeRiego || {};
                         window._g3Programadas = parsed.g3Programadas || {};
