@@ -1137,6 +1137,7 @@
 
 <!-- ══ Núcleo compartido (Fase 0 PWA) — mismo código para escritorio y móvil ══ -->
 <script src="assets/core/clasificacion.js"></script>
+<script src="assets/core/resumenCultivos.js"></script>
 <script src="assets/core/utilidades.js"></script>
 <script src="assets/core/anexoG2.js"></script>
 <script src="assets/core/ordenRiego.js"></script>
@@ -1322,6 +1323,9 @@
                 </button>
 <button class="btn btn-success" id="btnAccederConsolidado" onclick="mostrarConsolidadoDemandas()" style="background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);">
     🌱 Avance de siembra
+</button>
+<button class="btn btn-primary" id="btnResumenCultivos" onclick="mostrarPanelResumenCultivos()" style="background: linear-gradient(135deg, #6c3fa8 0%, #4a2a75 100%);" title="Hectáreas y usuarios por cultivo en toda la comisión (o por toma), con detalle por usuario y predios sin cultivo declarado — a partir del padrón completo del Excel cargado.">
+    📊 Resumen por Cultivo
 </button>
             </div>
 
@@ -17039,6 +17043,348 @@ function bannerSemanaVencidaHtml(semanaInicioISO, semanaFinISO) {
             vuelve a hacer "Avance de Siembra" para generarla de nuevo — y revisa también la fecha/hora de
             esta computadora (esquina inferior derecha de Windows), podría estar mal configurada.
         </div>`;
+}
+
+// ══ Panel "Resumen por Cultivo" — hectáreas/usuarios por cultivo en el
+// ámbito de la comisión (todo el padrón del Excel cargado, no depende
+// de la semana activa en Programar PDA) ══
+// Cálculo puro en assets/core/resumenCultivos.js — este bloque solo
+// arma el panel (modal), lo re-renderiza según el filtro de toma/
+// búsqueda de usuario elegido, y exporta a Excel/PDF.
+let _resumenCultivosEstado = { tomaFiltro: '', cultivoSeleccionado: '', busqueda: '' };
+
+function _cerrarPanelResumenCultivosEsc() {
+    const modal = document.getElementById('modalResumenCultivos');
+    if (modal) modal.remove();
+    _resumenCultivosEstado = { tomaFiltro: '', cultivoSeleccionado: '', busqueda: '' };
+}
+
+function mostrarPanelResumenCultivos() {
+    if (!tomasData || Object.keys(tomasData).length === 0) {
+        alert('Primero carga el archivo Excel (TOMAS.xlsx) para poder ver el resumen por cultivo.');
+        return;
+    }
+    _cerrarPanelResumenCultivosEsc();
+
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const comisionNombre = (typeof COMISIONES !== 'undefined' && COMISIONES[comisionKey]?.nombre) || comisionKey;
+    const nombresToma = obtenerTomasOrdenadasPorGrupo(Object.keys(tomasData));
+
+    const modalHtml = `
+        <div id="modalResumenCultivos" class="modal-overlay active" style="z-index:99996;background:rgba(0,20,50,0.88);">
+            <div class="modal-container" style="max-width:1150px;max-height:92vh;overflow-y:auto;text-align:left;">
+                <h3 style="margin-bottom:4px;">📊 Resumen por Cultivo — ${escapeHtml(comisionNombre)}</h3>
+                <div style="font-size:12px;color:#666;margin-bottom:14px;">
+                    Hectáreas y usuarios por cultivo a partir del padrón completo cargado (todas las tomas, o una en particular).
+                </div>
+
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+                    <div style="min-width:220px;">
+                        <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Toma</label>
+                        <select id="selectTomaResumenCultivos" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                            <option value="">Todas las tomas (comisión completa)</option>
+                            ${nombresToma.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:220px;">
+                        <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Buscar usuario</label>
+                        <input type="text" id="inputBuscarUsuarioResumenCultivos" placeholder="Nombre del usuario..." style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="_exportarResumenCultivosExcel()"
+                            style="padding:9px 14px;background:#1a6e3c;color:white;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">
+                            📊 Excel
+                        </button>
+                        <button onclick="_imprimirResumenCultivosPDF()"
+                            style="padding:9px 14px;background:#0070c0;color:white;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">
+                            🖨️ Imprimir / PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div id="indicadoresResumenCultivos" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:16px;"></div>
+                <div id="contenidoResumenCultivos" style="overflow-x:auto;"></div>
+
+                <div style="display:flex;gap:10px;margin-top:18px;">
+                    <button onclick="_cerrarPanelResumenCultivosEsc()"
+                        style="padding:9px 18px;background:#888;color:white;border:none;border-radius:4px;font-weight:600;font-size:13px;cursor:pointer;">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>`;
+
+    const div = document.createElement('div');
+    div.innerHTML = modalHtml;
+    document.body.appendChild(div.firstElementChild);
+
+    document.getElementById('selectTomaResumenCultivos').addEventListener('change', (e) => {
+        _resumenCultivosEstado.tomaFiltro = e.target.value;
+        _resumenCultivosEstado.cultivoSeleccionado = '';
+        _renderizarResumenCultivosEsc();
+    });
+    document.getElementById('inputBuscarUsuarioResumenCultivos').addEventListener('input', (e) => {
+        _resumenCultivosEstado.busqueda = e.target.value;
+        _renderizarResumenCultivosEsc();
+    });
+
+    _renderizarResumenCultivosEsc();
+}
+
+function _tarjetaIndicadorResumenCultivosHtml(valor, etiqueta, colorFondo) {
+    return `
+        <div style="background:${colorFondo || '#f4f6f9'};border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#003876;">${valor}</div>
+            <div style="font-size:11px;color:#666;margin-top:2px;">${etiqueta}</div>
+        </div>`;
+}
+
+function _renderizarResumenCultivosEsc() {
+    const estado = _resumenCultivosEstado;
+    const resumen = calcularResumenCultivosComision(tomasData, estado.tomaFiltro || null);
+    window._resumenCultivosActual = resumen; // usado por exportar Excel/PDF, sin recalcular
+
+    const indicadores = document.getElementById('indicadoresResumenCultivos');
+    if (indicadores) {
+        indicadores.innerHTML = [
+            _tarjetaIndicadorResumenCultivosHtml(resumen.areaTotalGeneral.toFixed(2) + ' ha', 'Área total (padrón)'),
+            _tarjetaIndicadorResumenCultivosHtml(resumen.totalPrediosPadron.toLocaleString('es-PE'), 'N° de predios'),
+            _tarjetaIndicadorResumenCultivosHtml(resumen.cultivos.length.toLocaleString('es-PE'), 'Cultivos distintos'),
+            _tarjetaIndicadorResumenCultivosHtml(
+                resumen.sinCultivo.usuarios.length.toLocaleString('es-PE') + ' (' + resumen.sinCultivo.areaTotal.toFixed(2) + ' ha)',
+                'Predios sin cultivo declarado', 'rgba(192,57,43,0.10)'
+            ),
+        ].join('');
+    }
+
+    const contenedor = document.getElementById('contenidoResumenCultivos');
+    if (!contenedor) return;
+
+    const hayBusqueda = (estado.busqueda || '').trim().length > 0;
+    if (estado.cultivoSeleccionado || hayBusqueda) {
+        // ── Vista de detalle por usuario (drill-down de un cultivo, o búsqueda) ──
+        let filas = aplanarDetalleUsuariosResumenCultivos(resumen, estado.cultivoSeleccionado || null);
+        if (hayBusqueda) {
+            const texto = estado.busqueda.trim().toUpperCase();
+            filas = filas.filter((f) => (f.nombre || '').toUpperCase().includes(texto));
+        }
+        const tituloDetalle = estado.cultivoSeleccionado
+            ? `Usuarios — ${escapeHtml(estado.cultivoSeleccionado)}`
+            : `Usuarios que coinciden con "${escapeHtml(estado.busqueda.trim())}"`;
+
+        contenedor.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                <div style="font-weight:700;color:#003876;font-size:13px;">${tituloDetalle} (${filas.length})</div>
+                ${estado.cultivoSeleccionado ? `<button onclick="_volverResumenCultivosEsc()" style="padding:6px 12px;background:#eee;border:1px solid #ccc;border-radius:4px;font-size:12px;cursor:pointer;">← Volver al resumen</button>` : ''}
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead>
+                    <tr style="background:#003876;color:white;">
+                        <th style="padding:6px 8px;text-align:left;">N°</th>
+                        <th style="padding:6px 8px;text-align:left;">Nombre</th>
+                        <th style="padding:6px 8px;text-align:left;">Unidad Catastral</th>
+                        <th style="padding:6px 8px;text-align:left;">Toma</th>
+                        <th style="padding:6px 8px;text-align:left;">Cultivo</th>
+                        <th style="padding:6px 8px;text-align:right;">Área (ha)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filas.map((f, i) => `
+                        <tr style="border-bottom:1px solid #eee;${f.cultivo === ETIQUETA_SIN_CULTIVO_RESUMEN ? 'background:rgba(192,57,43,0.06);' : ''}">
+                            <td style="padding:5px 8px;">${i + 1}</td>
+                            <td style="padding:5px 8px;">${escapeHtml(f.nombre)}</td>
+                            <td style="padding:5px 8px;">${escapeHtml(f.unidadCatastral)}</td>
+                            <td style="padding:5px 8px;">${escapeHtml(f.toma)}</td>
+                            <td style="padding:5px 8px;">${escapeHtml(f.cultivo)}</td>
+                            <td style="padding:5px 8px;text-align:right;">${f.area.toFixed(2)}</td>
+                        </tr>`).join('') || '<tr><td colspan="6" style="padding:14px;text-align:center;color:#888;">Sin resultados.</td></tr>'}
+                </tbody>
+            </table>`;
+        return;
+    }
+
+    // ── Vista principal: una fila por cultivo ──
+    const filasCultivo = resumen.cultivos.map((c) => `
+        <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:6px 8px;">${escapeHtml(c.cultivo)}</td>
+            <td style="padding:6px 8px;text-align:right;">${c.usuarios.length.toLocaleString('es-PE')}</td>
+            <td style="padding:6px 8px;text-align:right;">${c.areaTotal.toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;">${resumen.areaTotalGeneral > 0 ? ((c.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : '0.0'}%</td>
+            <td style="padding:6px 8px;text-align:center;">
+                <button onclick="_verDetalleCultivoResumenEsc('${escapeJsString(c.cultivo)}')" style="padding:4px 10px;background:#eef2f7;border:1px solid #ccc;border-radius:4px;font-size:11px;cursor:pointer;">👁 Ver usuarios</button>
+            </td>
+        </tr>`).join('');
+
+    const filaSinCultivo = resumen.sinCultivo.usuarios.length > 0 ? `
+        <tr style="border-bottom:1px solid #eee;background:rgba(192,57,43,0.08);">
+            <td style="padding:6px 8px;font-weight:700;color:#c0392b;">${ETIQUETA_SIN_CULTIVO_RESUMEN}</td>
+            <td style="padding:6px 8px;text-align:right;">${resumen.sinCultivo.usuarios.length.toLocaleString('es-PE')}</td>
+            <td style="padding:6px 8px;text-align:right;">${resumen.sinCultivo.areaTotal.toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;">${resumen.areaTotalGeneral > 0 ? ((resumen.sinCultivo.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : '0.0'}%</td>
+            <td style="padding:6px 8px;text-align:center;">
+                <button onclick="_verDetalleCultivoResumenEsc('${escapeJsString(ETIQUETA_SIN_CULTIVO_RESUMEN)}')" style="padding:4px 10px;background:#eef2f7;border:1px solid #ccc;border-radius:4px;font-size:11px;cursor:pointer;">👁 Ver predios</button>
+            </td>
+        </tr>` : '';
+
+    contenedor.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+                <tr style="background:#003876;color:white;">
+                    <th style="padding:6px 8px;text-align:left;">Cultivo</th>
+                    <th style="padding:6px 8px;text-align:right;">N° Usuarios</th>
+                    <th style="padding:6px 8px;text-align:right;">Área (ha)</th>
+                    <th style="padding:6px 8px;text-align:right;">% del área</th>
+                    <th style="padding:6px 8px;text-align:center;">Detalle</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filasCultivo || '<tr><td colspan="5" style="padding:14px;text-align:center;color:#888;">Sin cultivos registrados.</td></tr>'}
+                ${filaSinCultivo}
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:700;background:#f4f6f9;">
+                    <td style="padding:6px 8px;">TOTAL</td>
+                    <td style="padding:6px 8px;text-align:right;">${resumen.usuariosTotalGeneral.toLocaleString('es-PE')}</td>
+                    <td style="padding:6px 8px;text-align:right;">${resumen.areaTotalGeneral.toFixed(2)}</td>
+                    <td style="padding:6px 8px;text-align:right;">100.0%</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>`;
+}
+
+function _verDetalleCultivoResumenEsc(cultivo) {
+    _resumenCultivosEstado.cultivoSeleccionado = cultivo;
+    _resumenCultivosEstado.busqueda = '';
+    const input = document.getElementById('inputBuscarUsuarioResumenCultivos');
+    if (input) input.value = '';
+    _renderizarResumenCultivosEsc();
+}
+
+function _volverResumenCultivosEsc() {
+    _resumenCultivosEstado.cultivoSeleccionado = '';
+    _renderizarResumenCultivosEsc();
+}
+
+async function _exportarResumenCultivosExcel() {
+    if (!window.ExcelJS) { alert('Librería Excel no disponible.'); return; }
+    const resumen = window._resumenCultivosActual || calcularResumenCultivosComision(tomasData, _resumenCultivosEstado.tomaFiltro || null);
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const alcance = _resumenCultivosEstado.tomaFiltro || 'TODAS LAS TOMAS';
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'CUSSHMI';
+    wb.created = new Date();
+
+    const wsResumen = wb.addWorksheet('Resumen por Cultivo');
+    wsResumen.columns = [{ width: 26 }, { width: 14 }, { width: 14 }, { width: 12 }];
+    wsResumen.addRow(['Resumen por Cultivo — ' + alcance]).font = { bold: true, size: 13 };
+    wsResumen.addRow(['Generado', new Date().toLocaleString('es-PE')]);
+    wsResumen.addRow([]);
+    const filaEnc = wsResumen.addRow(['Cultivo', 'N° Usuarios', 'Área (ha)', '% del área']);
+    filaEnc.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    filaEnc.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003876' } }; });
+    resumen.cultivos.forEach((c) => {
+        wsResumen.addRow([c.cultivo, c.usuarios.length, +c.areaTotal.toFixed(2), resumen.areaTotalGeneral > 0 ? +((c.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : 0]);
+    });
+    if (resumen.sinCultivo.usuarios.length > 0) {
+        const filaSC = wsResumen.addRow([ETIQUETA_SIN_CULTIVO_RESUMEN, resumen.sinCultivo.usuarios.length, +resumen.sinCultivo.areaTotal.toFixed(2), resumen.areaTotalGeneral > 0 ? +((resumen.sinCultivo.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : 0]);
+        filaSC.font = { color: { argb: 'FFC0392B' }, bold: true };
+    }
+    const filaTotal = wsResumen.addRow(['TOTAL', resumen.usuariosTotalGeneral, +resumen.areaTotalGeneral.toFixed(2), 100]);
+    filaTotal.font = { bold: true };
+
+    const wsDetalle = wb.addWorksheet('Detalle por Usuario');
+    wsDetalle.columns = [{ width: 6 }, { width: 32 }, { width: 16 }, { width: 12 }, { width: 22 }, { width: 12 }];
+    const filaEncDet = wsDetalle.addRow(['N°', 'Nombre', 'Unidad Catastral', 'Toma', 'Cultivo', 'Área (ha)']);
+    filaEncDet.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    filaEncDet.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003876' } }; });
+    const detalle = aplanarDetalleUsuariosResumenCultivos(resumen, null);
+    detalle.forEach((f, i) => wsDetalle.addRow([i + 1, f.nombre, f.unidadCatastral, f.toma, f.cultivo, +f.area.toFixed(2)]));
+
+    const fecha = new Date().toISOString().split('T')[0];
+    const sufijo = (_resumenCultivosEstado.tomaFiltro || comisionKey).toString().replace(/[^A-Za-z0-9.]+/g, '_');
+    await _descargarWorkbook(wb, `Resumen_Cultivos_${sufijo}_${fecha}.xlsx`);
+}
+
+function _imprimirResumenCultivosPDF() {
+    const resumen = window._resumenCultivosActual || calcularResumenCultivosComision(tomasData, _resumenCultivosEstado.tomaFiltro || null);
+    const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const comisionNombre = (typeof COMISIONES !== 'undefined' && COMISIONES[comisionKey]?.nombre) || comisionKey;
+    const alcance = _resumenCultivosEstado.tomaFiltro || 'Todas las tomas (comisión completa)';
+    const fecha = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });
+    const detalle = aplanarDetalleUsuariosResumenCultivos(resumen, null);
+
+    const filasCultivoHtml = resumen.cultivos.map((c) => `
+        <tr>
+            <td>${escapeHtml(c.cultivo)}</td>
+            <td style="text-align:right;">${c.usuarios.length}</td>
+            <td style="text-align:right;">${c.areaTotal.toFixed(2)}</td>
+            <td style="text-align:right;">${resumen.areaTotalGeneral > 0 ? ((c.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : '0.0'}%</td>
+        </tr>`).join('');
+    const filaSinCultivoHtml = resumen.sinCultivo.usuarios.length > 0 ? `
+        <tr style="color:#c0392b;font-weight:700;">
+            <td>${ETIQUETA_SIN_CULTIVO_RESUMEN}</td>
+            <td style="text-align:right;">${resumen.sinCultivo.usuarios.length}</td>
+            <td style="text-align:right;">${resumen.sinCultivo.areaTotal.toFixed(2)}</td>
+            <td style="text-align:right;">${resumen.areaTotalGeneral > 0 ? ((resumen.sinCultivo.areaTotal / resumen.areaTotalGeneral) * 100).toFixed(1) : '0.0'}%</td>
+        </tr>` : '';
+    const filasDetalleHtml = detalle.map((f, i) => `
+        <tr${f.cultivo === ETIQUETA_SIN_CULTIVO_RESUMEN ? ' style="color:#c0392b;"' : ''}>
+            <td>${i + 1}</td><td>${escapeHtml(f.nombre)}</td><td>${escapeHtml(f.unidadCatastral)}</td>
+            <td>${escapeHtml(f.toma)}</td><td>${escapeHtml(f.cultivo)}</td><td style="text-align:right;">${f.area.toFixed(2)}</td>
+        </tr>`).join('');
+
+    const ventanaImpresion = window.open('', '_blank', 'width=900,height=1000');
+    if (!ventanaImpresion) {
+        alert('El navegador bloqueó la ventana de vista previa (revisa el bloqueador de pop-ups) e inténtalo de nuevo.');
+        return;
+    }
+    const html = `<!DOCTYPE html>
+    <html lang="es"><head><meta charset="UTF-8"><title>Resumen_Cultivos_${escapeHtml(alcance)}_${fecha}</title>
+    <style>
+        body { font-family: Arial, sans-serif; color:#000; background:#e8e8e8; margin:0; padding:20px 0; }
+        .hoja { max-width:900px; margin:0 auto 16px; background:#fff; padding:24px 28px; box-shadow:0 2px 8px rgba(0,0,0,0.25); }
+        h1 { font-size:16px; text-align:center; margin:0 0 4px; }
+        .subt { text-align:center; font-size:12px; color:#333; margin-bottom:14px; }
+        table { width:100%; border-collapse:collapse; font-size:11px; margin-bottom:18px; }
+        th, td { border:1px solid #999; padding:4px 6px; }
+        th { background:#003876; color:#fff; text-align:left; }
+        .no-print { position:sticky; top:0; text-align:center; padding:10px; background:#fff; border-bottom:1px solid #ccc; margin-bottom:16px; }
+        .btn-print { background:#0070c0; color:#fff; border:none; padding:10px 30px; font-size:14px; cursor:pointer; border-radius:6px; }
+        @media print {
+            body { background:#fff; padding:0; }
+            .no-print { display:none; }
+            .hoja { box-shadow:none; margin:0; page-break-after: always; }
+            .hoja:last-child { page-break-after: auto; }
+            @page { size: A4 portrait; margin: 10mm; }
+        }
+    </style></head>
+    <body>
+        <div class="no-print">
+            <button class="btn-print" onclick="window.print();">🖨️ Imprimir / Guardar como PDF</button>
+            <p style="font-size:11px;color:#666;margin-top:8px;">Para guardar como PDF, elige "Guardar como PDF" en el destino de la impresión.</p>
+        </div>
+        <div class="hoja">
+            <h1>RESUMEN POR CULTIVO — ${escapeHtml(comisionNombre)}</h1>
+            <div class="subt">${escapeHtml(alcance)} &nbsp;·&nbsp; Generado: ${fecha}</div>
+            <table>
+                <thead><tr><th>Cultivo</th><th style="text-align:right;">N° Usuarios</th><th style="text-align:right;">Área (ha)</th><th style="text-align:right;">% del área</th></tr></thead>
+                <tbody>${filasCultivoHtml}${filaSinCultivoHtml}</tbody>
+                <tfoot><tr style="font-weight:700;background:#f4f6f9;"><td>TOTAL</td><td style="text-align:right;">${resumen.usuariosTotalGeneral}</td><td style="text-align:right;">${resumen.areaTotalGeneral.toFixed(2)}</td><td style="text-align:right;">100.0%</td></tr></tfoot>
+            </table>
+        </div>
+        <div class="hoja">
+            <h1>DETALLE POR USUARIO</h1>
+            <div class="subt">${escapeHtml(alcance)} &nbsp;·&nbsp; ${detalle.length} predio(s)</div>
+            <table>
+                <thead><tr><th>N°</th><th>Nombre</th><th>Unidad Catastral</th><th>Toma</th><th>Cultivo</th><th style="text-align:right;">Área (ha)</th></tr></thead>
+                <tbody>${filasDetalleHtml}</tbody>
+            </table>
+        </div>
+    </body></html>`;
+    ventanaImpresion.document.write(html);
+    ventanaImpresion.document.close();
 }
 
 async function mostrarConsolidadoDemandas() {
