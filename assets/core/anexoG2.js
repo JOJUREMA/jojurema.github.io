@@ -95,11 +95,21 @@ function generarDatosAnexoG2(ordenTomasDesktop) {
         let numUsuariosAptos = 0;
         let numUsuariosNoAptos = 0;
         const noAptosYaContados = []; // {cultivo, nombre, area} — para no duplicar contra usuariosProgramados
+        // Recolecta TODOS los usuarios contados (aptos + no aptos) de esta toma, con la
+        // misma forma que espera calcularAreaUnicaG3 (nombre/area/unidadCatastral/esNoApto/
+        // cultivo) — para calcular el ÁREA BAJO RIEGO en vivo con el MISMO criterio
+        // anti-duplicado (por isla) que ya usa el Anexo G-3 en pantalla/Excel, en vez de
+        // depender de `toma.totalArea` (un valor que solo se refresca al confirmar "Horas
+        // de riego por día" y podía quedar desactualizado si después se agregaban/quitaban
+        // usuarios no aptos sin volver a confirmar — a diferencia de N° de usuarios y
+        // Volumen Programado, que ya se recalculaban en vivo más abajo).
+        const usuariosParaAreaToma = [];
         (toma.cultivos || []).forEach(cultObj => {
             const seleccionados = (typeof obtenerUsuariosG3Seleccionados === 'function')
                 ? (obtenerUsuariosG3Seleccionados(toma.toma, cultObj.cultivo) || [])
                 : [];
             seleccionados.forEach(u => {
+                usuariosParaAreaToma.push(Object.assign({}, u, { cultivo: cultObj.cultivo }));
                 if (u.programadoNoApto || u.esNoApto) {
                     numUsuariosNoAptos++;
                     noAptosYaContados.push({
@@ -129,7 +139,16 @@ function generarDatosAnexoG2(ordenTomasDesktop) {
             const yaContado = noAptosYaContados.some(nc =>
                 nc.cultivo === cultivoU && nc.nombre === (u.nombre || '-').toString() && Math.abs(nc.area - areaU) < 0.001
             );
-            if (!yaContado) numUsuariosNoAptos++;
+            if (!yaContado) {
+                numUsuariosNoAptos++;
+                usuariosParaAreaToma.push({
+                    nombre: (u.nombre || '-').toString(),
+                    area: areaU,
+                    unidadCatastral: u.unidadCatastral || '-',
+                    esNoApto: true,
+                    cultivo: cultivoU,
+                });
+            }
         });
 
         console.log(`   Usuarios no aptos programados encontrados: ${numUsuariosNoAptos}`);
@@ -158,7 +177,12 @@ function generarDatosAnexoG2(ordenTomasDesktop) {
         const volumenProgramado = (turnoToma && Number.isFinite(turnoToma.volumenProgramado) && turnoToma.volumenProgramado > 0)
             ? turnoToma.volumenProgramado
             : toma.totalVolCorregido;
-        const areaTotal = toma.totalArea;
+        // Respaldo a toma.totalArea SOLO si no hay ningún usuario en memoria todavía para
+        // esta toma (poco común — mostrarAnexoG2 ya refresca window.usuariosG3 desde
+        // Supabase para cada toma/cultivo antes de llamar acá, ver Sistema_Riego_CUSSHMI_14.html).
+        const areaTotal = (typeof calcularAreaUnicaG3 === 'function' && usuariosParaAreaToma.length > 0)
+            ? calcularAreaUnicaG3(usuariosParaAreaToma)
+            : toma.totalArea;
 
         // Calcular caudal ajustado según la programación
         let caudalAjustado;
