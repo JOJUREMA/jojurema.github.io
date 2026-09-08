@@ -550,11 +550,18 @@
             background: var(--color-info-bg);
         }
 
-        /* ─── BOTONES EXPORT ─── */
+        /* ─── BOTONES EXPORT ───
+           Ya no viven dentro de .sidebar — se ubican en la fila siguiente
+           de la grilla de .main-content (grid-column:2), directamente
+           debajo de .content-area, alineados con su mismo ancho/padding —
+           nunca debajo de la barra lateral. */
         #exportButtons {
             display: none;
-            margin-top: 16px;
-            gap: 8px;
+            grid-column: 2;
+            gap: 10px;
+            padding: 0 32px 24px;
+            border-top: 1px solid var(--color-border);
+            padding-top: 16px;
         }
 
         #exportButtons.show {
@@ -1053,6 +1060,11 @@
                 border-right: none;
                 border-bottom: 1px solid var(--color-border);
             }
+            #exportButtons {
+                grid-column: 1;
+                padding-left: 20px;
+                padding-right: 20px;
+            }
             .avance-siembra th small {
                 font-size: 11px;
                 display: block;
@@ -1311,19 +1323,6 @@
 <button class="btn btn-success" id="btnAccederConsolidado" onclick="mostrarConsolidadoDemandas()" style="background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%);">
     🌱 Avance de siembra
 </button>
-
-
-                <div id="exportButtons">
-                    <button class="btn-export btn-export-excel" id="btnExportExcel">
-                        📊 Excel
-                    </button>
-                    <button class="btn-export btn-export-csv" id="btnExportCSV">
-                        📄 CSV
-                    </button>
-                    <button class="btn-export btn-export-pdf" id="btnPrint">
-                        🖨️ Imprimir
-                    </button>
-                </div>
             </div>
 
             <div class="content-area" id="contentArea">
@@ -1332,7 +1331,7 @@
                     <h2>Bienvenido al Sistema de Gestión de Riego</h2>
                     <p>Carga tu archivo Excel TOMAS.xlsx para comenzar a generar reportes<br>
                     de usuarios con derecho de uso de agua para riego.</p>
-                    
+
                     <div class="alert alert-info" style="text-align: left; max-width: 600px; margin: 30px auto;">
                         <strong>📌 Instrucciones:</strong><br>
                         1. Arrastra o selecciona tu archivo TOMAS.xlsx<br>
@@ -1341,6 +1340,25 @@
                         4. Haz clic en "Generar Reporte"
                     </div>
                 </div>
+            </div>
+
+            <!-- Debajo del área de reporte (no en la barra lateral) — misma
+                 columna de la grilla que .content-area (grid-column:2), para
+                 que quede alineado justo debajo de la tabla/lista generada,
+                 nunca debajo de la barra lateral. Sigue siendo hermano de
+                 #contentArea (no un hijo suyo), así que sobrevive a que el
+                 contenido de #contentArea se reemplace por completo al
+                 generar cada reporte. -->
+            <div id="exportButtons">
+                <button class="btn-export btn-export-excel" id="btnExportExcel">
+                    📊 Excel
+                </button>
+                <button class="btn-export btn-export-csv" id="btnExportCSV">
+                    📄 CSV
+                </button>
+                <button class="btn-export btn-export-pdf" id="btnPrint">
+                    🖨️ Imprimir
+                </button>
             </div>
         </div>
     </div>
