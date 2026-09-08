@@ -3137,6 +3137,24 @@ const COMISIONES = {
         }
 
         function cargarProgramacionPorTomaDeStorage() {
+            // Los 2 únicos llamadores (confirmarSemanaAutomatica/confirmarSemanaSimulada,
+            // justo después de fijar `semanaPDA` a la semana recién elegida) esperan
+            // que, al terminar, el estado en memoria refleje SOLO esa semana — nunca
+            // lo que hubiera quedado de una semana distinta ya cargada en pantalla.
+            // Antes, si la semana nueva todavía no tenía nada guardado (el caso más
+            // común: recién empieza a programarse), la función simplemente no hacía
+            // nada (`if (!raw) return;`) y dejaba `consolidadoDemandas`/`usuariosG3`/
+            // etc. tal cual estaban — de la semana anterior — así que el Anexo G2
+            // terminaba mostrando esos datos viejos bajo la semana nueva, sin ningún
+            // aviso. Ahora SIEMPRE se resetea primero a vacío (como haría una semana
+            // sin nada programado todavía) y solo después se rellena con lo que de
+            // verdad exista guardado para la clave de esta semana.
+            consolidadoDemandas = [];
+            window.programacionPorToma = {};
+            window.usuariosG3 = {};
+            window.turnosDeRiego = {};
+            window._g3Programadas = {};
+            window._notaAnexoG2 = '';
             try {
                 if (!semanaPDA?.fechaInicio || !semanaPDA?.fechaFin) return;
                 const key = obtenerClaveStorageProgramacion();
