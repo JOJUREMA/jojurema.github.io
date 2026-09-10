@@ -1148,6 +1148,7 @@
 <script src="assets/core/inventarioInfraestructura.js"></script>
 <script src="assets/core/anexoE41.js"></script>
 <script src="assets/core/planoPrediosA2.js"></script>
+<script src="assets/core/huaro.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <!-- jsPDF standalone — el Plano de Predios (Formato A-2) dibuja su propio
      <canvas> a mano (grilla, predios, canales/drenes con su estilo real,
@@ -1236,6 +1237,9 @@
                     </button>
                     <button onclick="seleccionarComision('EL_ARENAL')" class="btn-comision" style="background:linear-gradient(135deg, #c47a1e 0%, #9a5a0a 100%);">
                         🏜️ Sub Sector Hidráulico El Arenal
+                    </button>
+                    <button onclick="seleccionarComision('HUARO')" class="btn-comision" style="background:linear-gradient(135deg, #6b4a2e 0%, #4a3020 100%);">
+                        🌾 Comisión de Regantes de Huaro
                     </button>
                 </div>
             </div>
@@ -1850,6 +1854,18 @@ const COMISIONES = {
         colorBtnHover: "#9a5a0a",
         colorStatCard: "linear-gradient(135deg, #e09a3e 0%, #c47a1e 100%)",
     },
+    // Comisión de Regantes de HUARO (Cusco) — modelo por topos, sin cultivo.
+    // Genera G-2/G-3/G-4 con su propio motor (assets/core/huaro.js); ver activarModoHuaro().
+    HUARO: {
+        nombre: "COMISIÓN DE REGANTES DE HUARO",
+        unidad: "Sub Sector Hidráulico Laguna Pumacocha-Huaro",
+        logo: null,
+        colorHeader: "linear-gradient(135deg, #6b4a2e 0%, #4a3020 100%)",
+        colorBg: "linear-gradient(135deg, #a5794a 0%, #6b4a2e 100%)",
+        colorBtn: "#6b4a2e",
+        colorBtnHover: "#4a3020",
+        colorStatCard: "linear-gradient(135deg, #a5794a 0%, #6b4a2e 100%)",
+    },
 };
 
 
@@ -1862,6 +1878,7 @@ const COMISIONES = {
             'MD-2025$riego':   'MARGEN_DERECHA',
             'MI-2025$riego':   'MARGEN_IZQUIERDA',
             'EA-2025$riego':   'EL_ARENAL',
+            'HU-2025$riego':   'HUARO',
             'CHIRA-admin$2025': 'ADMIN',
         };
 
@@ -2100,6 +2117,10 @@ const COMISIONES = {
             // Fase 6: latido de presencia — arranca (o reinicia) el "estoy conectado
             // en esta comisión" que ve el panel de administrador.
             iniciarLatidoPresencia(key);
+
+            // HUARO: modelo por topos, flujo propio (assets/core/huaro.js).
+            if (key === 'HUARO') activarModoHuaro();
+            else desactivarModoHuaro();
         }
 
         function iniciarLatidoPresencia(comisionKey) {
@@ -3429,9 +3450,587 @@ const COMISIONES = {
             }
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        //  COMISIÓN DE REGANTES DE HUARO — PDA por topos (assets/core/huaro.js)
+        //  Flujo propio, independiente del motor de cultivo. Solo escritorio:
+        //  cargar PADRON1_3.xlsx → caudal por bocatoma → generar G-2/G-3/G-4.
+        //  Persistencia semanal + cola de campaña en localStorage.
+        // ══════════════════════════════════════════════════════════════════
+        let _huaroPadron = {};       // { bocatoma: [usuarios] }
+        let _huaroOrden = [];        // [bocatoma...] en orden de hoja del Excel
+        let _huaroResultados = null; // { bocatoma: {programados, pendientes, agregado} }
+        let _huaroSemanaActualISO = null; // lunes de la semana elegida (se conserva al ir/volver de los anexos)
+
+        const _HUARO_OCULTAR = [
+            '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
+            '#btnGenerar', '#btnConsolidado', '#btnAvanceSiembra', '#btnSincronizarPadron',
+            '#btnAbrirPadronA1', '#btnAbrirSiembraDIS', '#btnAbrirInventario',
+            '#btnAccederConsolidado', '#btnResumenCultivos',
+        ];
+
+        function _huaroInyectarEstilo() {
+            if (document.getElementById('huaroStyle')) return;
+            const s = document.createElement('style');
+            s.id = 'huaroStyle';
+            s.textContent = [
+                '.huaro-oculto { display: none !important; }',
+                '#panelHuaro { font-family: Arial, sans-serif; color:#1a1a1a; }',
+                '#panelHuaro h2 { margin: 0 0 6px; font-size: 18px; }',
+                '#panelHuaro .huaro-card { background:#fff; border:1px solid #d9dee5; border-radius:8px; padding:14px 16px; margin-bottom:14px; }',
+                '#panelHuaro table.huaro-tabla { border-collapse:collapse; width:100%; font-size:13px; }',
+                '#panelHuaro table.huaro-tabla th, #panelHuaro table.huaro-tabla td { border:1px solid #cbd2da; padding:6px 8px; }',
+                '#panelHuaro table.huaro-tabla thead th { background:#6b4a2e; color:#fff; font-weight:600; }',
+                '#panelHuaro input.huaro-caudal { width:90px; padding:4px 6px; border:1px solid #b7bfca; border-radius:4px; text-align:right; }',
+                '#panelHuaro .huaro-btn { background:#6b4a2e; color:#fff; border:none; border-radius:5px; padding:8px 16px; font-weight:600; font-size:13px; cursor:pointer; }',
+                '#panelHuaro .huaro-btn.sec { background:#e2e8f0; color:#3b3b3b; }',
+                '#panelHuaro .huaro-btn:disabled { opacity:.5; cursor:not-allowed; }',
+                '#panelHuaro .huaro-mini { font-size:11px; color:#6b7280; }',
+            ].join('\n');
+            document.head.appendChild(s);
+        }
+
+        function activarModoHuaro() {
+            _huaroInyectarEstilo();
+            window._modoHuaro = true;
+
+            const lblFile = document.querySelector('label[for="fileUpload"]');
+            if (lblFile) lblFile.textContent = '📁 Cargar Padrón Huaro (PADRON1_3.xlsx)';
+            const lblToma = document.querySelector('label[for="tomaSelect"]');
+            if (lblToma) lblToma.textContent = '🚰 Bocatoma';
+
+            _HUARO_OCULTAR.forEach(sel => {
+                const el = document.querySelector(sel);
+                if (!el) return;
+                const cont = el.closest('.form-group') || el;
+                cont.classList.add('huaro-oculto');
+            });
+            const chkGraf = document.getElementById('incluirGraficos');
+            if (chkGraf) {
+                const grp = chkGraf.closest('.checkbox-group') || chkGraf.parentElement;
+                if (grp) grp.classList.add('huaro-oculto');
+            }
+
+            if (_huaroOrden.length) renderPanelHuaro();
+            else {
+                const ca = document.getElementById('contentArea');
+                if (ca) ca.innerHTML = '<div class="welcome-screen"><div class="welcome-icon">🌾</div>'
+                    + '<h2>Comisión de Regantes de Huaro</h2>'
+                    + '<p>Carga el padrón <strong>PADRON1_3.xlsx</strong> para programar el PDA por topos<br>'
+                    + 'y generar los Anexos G-2, G-3 y G-4.</p></div>';
+            }
+        }
+
+        function desactivarModoHuaro() {
+            if (!window._modoHuaro) return;
+            window._modoHuaro = false;
+            const lblFile = document.querySelector('label[for="fileUpload"]');
+            if (lblFile) lblFile.textContent = '📁 Cargar Archivo Excel (TOMAS.xlsx)';
+            const lblToma = document.querySelector('label[for="tomaSelect"]');
+            if (lblToma) lblToma.textContent = '🚰 Seleccionar Toma';
+            document.querySelectorAll('.huaro-oculto').forEach(el => el.classList.remove('huaro-oculto'));
+        }
+
+        function huaroProcesarWorkbook() {
+            if (!window.HuaroCore) { alert('No se pudo cargar assets/core/huaro.js — recarga la página.'); return; }
+            _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null;
+            tomaSelect.innerHTML = '<option value="">-- Selecciona una bocatoma --</option>';
+
+            (workbook.SheetNames || []).forEach(sn => {
+                const data = XLSX.utils.sheet_to_json(workbook.Sheets[sn], { header: 1 });
+                if (!data || data.length < 3) return;
+                const parsed = HuaroCore.huaroParsearPadronHoja(data, sn);
+                if (!parsed.usuarios.length) return;
+                let boc = parsed.bocatoma;
+                if (_huaroPadron[boc]) boc = boc + ' (' + sn + ')';
+                _huaroPadron[boc] = parsed.usuarios;
+                _huaroOrden.push(boc);
+                tomasData[boc] = parsed.usuarios;
+                tomaSelect.innerHTML += `<option value="${escapeHtml(boc)}">${escapeHtml(boc)}</option>`;
+            });
+            window._huaroOrdenBocatomas = _huaroOrden.slice();
+
+            btnLimpiar.disabled = false;
+            renderPanelHuaro();
+        }
+
+        // ── Persistencia ──
+        function _huaroKeyCampana(boc) { return 'cusshmi_huaro_campana__HUARO__' + boc; }
+        function _huaroKeyPda(iso) { return 'cusshmi_huaro_pda__' + iso; }
+        function _huaroLeerCampana(boc) {
+            try {
+                const o = JSON.parse(localStorage.getItem(_huaroKeyCampana(boc)));
+                if (o && typeof o === 'object') {
+                    o.servidos = o.servidos || []; o.pendientes = o.pendientes || [];
+                    o.excluidos = o.excluidos || []; o.prev = o.prev || null;
+                    return o;
+                }
+            } catch (e) { /* noop */ }
+            return { servidos: [], pendientes: [], excluidos: [], prev: null, ultimaSemana: null };
+        }
+        function _huaroGuardarCampana(boc, o) { localStorage.setItem(_huaroKeyCampana(boc), JSON.stringify(o)); }
+        function _huaroLeerPda(iso) {
+            try { const o = JSON.parse(localStorage.getItem(_huaroKeyPda(iso))); return (o && typeof o === 'object') ? o : null; }
+            catch (e) { return null; }
+        }
+        function _huaroGuardarPda(o) { localStorage.setItem(_huaroKeyPda(o.semanaInicio), JSON.stringify(o)); }
+        function _huaroUnion(a, b) { const s = new Set(a || []); (b || []).forEach(x => s.add(x)); return Array.from(s); }
+        function _huaroMesTexto(iso) {
+            try { return new Date(iso + 'T00:00:00').toLocaleString('es-PE', { month: 'long', year: 'numeric' }).toUpperCase(); }
+            catch (e) { return ''; }
+        }
+
+        // Bocatomas de _huaroResultados que sí tienen usuarios programados esta
+        // semana (una campaña ya completa produce 0 programados/0 pendientes y
+        // no debe ensuciar los anexos).
+        function _huaroBocsConDatos() {
+            if (!_huaroResultados) return [];
+            return _huaroOrden.filter(b => _huaroResultados[b] && _huaroResultados[b].programados.length > 0);
+        }
+
+        function _huaroSemanaSeleccionada() {
+            const inp = document.getElementById('huaroFechaSemana');
+            const base = (inp && inp.value) ? inp.value : (_huaroSemanaActualISO || null);
+            const iso = HuaroCore.huaroLunesDeLaSemana(base || undefined);
+            _huaroSemanaActualISO = iso;
+            return iso;
+        }
+
+        // ── Panel principal ──
+        function renderPanelHuaro() {
+            const ca = document.getElementById('contentArea');
+            if (!ca) return;
+            const semanaISO = _huaroSemanaSeleccionada();
+            const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
+            const pdaGuardado = _huaroLeerPda(semanaISO);
+
+            let filas = '';
+            _huaroOrden.forEach((boc, i) => {
+                const us = _huaroPadron[boc] || [];
+                const areaTot = us.reduce((s, u) => s + (u.areaHa || 0), 0);
+                const camp = _huaroLeerCampana(boc);
+                const total = us.length;
+                const servidos = camp.servidos.length;
+                const caudalGuardado = (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
+                    ? pdaGuardado.caudales[boc] : '';
+                filas += `
+                <tr>
+                    <td>${escapeHtml(boc)}</td>
+                    <td style="text-align:center;">${total}</td>
+                    <td style="text-align:right;">${areaTot.toFixed(2)}</td>
+                    <td style="text-align:center;">
+                        <input type="number" class="huaro-caudal" id="huaroCaudal__${i}" min="0" step="0.001"
+                            value="${caudalGuardado}" placeholder="l/s">
+                    </td>
+                    <td style="text-align:center;" class="huaro-mini">
+                        Servidos: ${servidos}/${total}${camp.pendientes.length ? ' · Pend.: ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · Excl.: ' + camp.excluidos.length : ''}
+                    </td>
+                    <td style="text-align:center;white-space:nowrap;">
+                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroGestionarCola('${boc.replace(/'/g, "\\'")}')">Cola</button>
+                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroReiniciarCampana('${boc.replace(/'/g, "\\'")}')">Reiniciar</button>
+                    </td>
+                </tr>`;
+            });
+
+            const hayResultados = !!_huaroResultados;
+            const hayAnexos = _huaroBocsConDatos().length > 0;
+            ca.innerHTML = `
+            <div id="panelHuaro">
+                <h2>🌾 PDA — Comisión de Regantes de Huaro</h2>
+                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · ventana 04:00–20:00 · ${HuaroCore.HUARO_DIAS_SEMANA} días.</p>
+
+                <div class="huaro-card">
+                    <label style="font-weight:600;font-size:13px;">Semana (Lun–Dom):
+                        <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="renderPanelHuaro()"
+                            style="margin-left:8px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
+                    </label>
+                    <span class="huaro-mini" style="margin-left:10px;">Del ${semanaISO.split('-').reverse().join('/')} al ${semanaFinISO.split('-').reverse().join('/')}</span>
+                </div>
+
+                <div class="huaro-card">
+                    <table class="huaro-tabla">
+                        <thead><tr>
+                            <th style="text-align:left;">Bocatoma</th>
+                            <th>N° usuarios</th>
+                            <th>Área total (ha)</th>
+                            <th>Caudal asignado (l/s)</th>
+                            <th>Estado de campaña</th>
+                            <th>Acciones</th>
+                        </tr></thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <button class="huaro-btn" onclick="huaroGenerarPDA()">⚙️ Generar PDA de la semana</button>
+                        <span class="huaro-mini">Ingresa el caudal (l/s) de cada bocatoma a programar. Las que dejes en blanco o en 0 no se programan.</span>
+                    </div>
+                </div>
+
+                <div class="huaro-card" id="huaroResumenResultados" ${hayResultados ? '' : 'style="display:none;"'}>
+                    <div id="huaroResumenTexto"></div>
+                    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
+                    </div>
+                </div>
+            </div>`;
+
+            if (hayResultados) _huaroPintarResumen();
+        }
+
+        function _huaroPintarResumen() {
+            const cont = document.getElementById('huaroResumenTexto');
+            if (!cont || !_huaroResultados) return;
+            const boc = _huaroOrden.filter(b => _huaroResultados[b]);
+            let tU = 0, tArea = 0, tVol = 0, tPend = 0;
+            const filas = boc.map(b => {
+                const a = _huaroResultados[b].agregado;
+                tU += a.nUsuarios; tArea += a.areaProgramadaHa; tVol += a.volumenTotalM3; tPend += a.nPendientes;
+                const colPend = a.campanaCompleta
+                    ? '<span style="color:#6b7280;">campaña completa</span>'
+                    : (a.nPendientes ? a.nPendientes + ' (' + a.areaPendienteHa.toFixed(2) + ' ha)' : '0');
+                return `<tr><td>${escapeHtml(b)}</td><td style="text-align:center;">${a.nUsuarios}</td>
+                    <td style="text-align:right;">${a.areaProgramadaHa.toFixed(2)}</td>
+                    <td style="text-align:right;">${a.volumenTotalM3.toFixed(2)}</td>
+                    <td style="text-align:center;">${a.diasUsados}</td>
+                    <td style="text-align:center;">${colPend}</td></tr>`;
+            }).join('');
+            cont.innerHTML = `
+                <strong>PDA generado para la semana del ${_huaroResultados[boc[0]].agregado.semanaInicioISO.split('-').reverse().join('/')}.</strong>
+                <table class="huaro-tabla" style="margin-top:8px;">
+                    <thead><tr><th style="text-align:left;">Bocatoma</th><th>Programados</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Días</th><th>Pendientes</th></tr></thead>
+                    <tbody>${filas}
+                        <tr style="font-weight:700;background:#f3ede6;"><td>TOTAL</td><td style="text-align:center;">${tU}</td>
+                        <td style="text-align:right;">${tArea.toFixed(2)}</td><td style="text-align:right;">${tVol.toFixed(2)}</td>
+                        <td></td><td style="text-align:center;">${tPend}</td></tr>
+                    </tbody>
+                </table>`;
+        }
+
+        function huaroGenerarPDA() {
+            if (!window.HuaroCore) return;
+            const semanaISO = _huaroSemanaSeleccionada();
+            const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
+            const resultados = {};
+            const caudales = {};
+            let algo = false;
+
+            _huaroOrden.forEach((boc, i) => {
+                const inp = document.getElementById('huaroCaudal__' + i);
+                const caudalLs = parseFloat(inp && inp.value) || 0;
+                if (caudalLs <= 0) return;
+                algo = true;
+                caudales[boc] = caudalLs;
+
+                const camp = _huaroLeerCampana(boc);
+                // Base "antes de esta semana": si ya se generó esta MISMA semana,
+                // se parte del snapshot previo para no contar dos veces.
+                const base = (camp.ultimaSemana === semanaISO && camp.prev)
+                    ? { servidos: camp.prev.servidos || [], pendientes: camp.prev.pendientes || [] }
+                    : { servidos: camp.servidos.slice(), pendientes: camp.pendientes.slice() };
+
+                const res = HuaroCore.huaroProgramarBocatoma({
+                    usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
+                    servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                });
+                res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
+                resultados[boc] = res;
+
+                const keysProg = res.programados.map(p => HuaroCore.huaroClaveUsuario(p));
+                camp.prev = { servidos: base.servidos.slice(), pendientes: base.pendientes.slice() };
+                camp.servidos = _huaroUnion(base.servidos, keysProg);
+                camp.pendientes = res.pendientes.slice();
+                camp.ultimaSemana = semanaISO;
+                _huaroGuardarCampana(boc, camp);
+            });
+
+            if (!algo) { alert('Ingresa el caudal (l/s) de al menos una bocatoma.'); return; }
+
+            _huaroResultados = resultados;
+            _huaroGuardarPda({
+                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales,
+                resultados: Object.fromEntries(Object.entries(resultados).map(([b, r]) => [b, {
+                    programados: r.programados, pendientes: r.pendientes, agregado: r.agregado,
+                }])),
+            });
+            renderPanelHuaro();
+        }
+
+        function huaroReiniciarCampana(boc) {
+            if (!confirm('¿Reiniciar la campaña de "' + boc + '"?\n\nSe olvida qué usuarios ya fueron atendidos y qué quedó pendiente. La próxima generación empieza desde el primer usuario (N° 1).')) return;
+            localStorage.removeItem(_huaroKeyCampana(boc));
+            renderPanelHuaro();
+        }
+
+        function huaroGestionarCola(boc) {
+            const camp = _huaroLeerCampana(boc);
+            const us = _huaroPadron[boc] || [];
+            const porClave = {};
+            us.forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
+            const excl = new Set(camp.excluidos);
+
+            const listaHtml = us.slice().sort((a, b) => a.nOrden - b.nOrden).map(u => {
+                const k = HuaroCore.huaroClaveUsuario(u);
+                const servido = camp.servidos.includes(k);
+                const pend = camp.pendientes.includes(k);
+                return `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;border-bottom:1px solid #eee;">
+                    <input type="checkbox" data-k="${escapeHtml(k)}" ${excl.has(k) ? 'checked' : ''}>
+                    <span style="flex:1;">N°${u.nOrden} · ${escapeHtml(u.nombre)} · ${(u.areaHa || 0).toFixed(2)} ha · ${(u.topos || 0).toFixed(1)} topos</span>
+                    <span style="font-size:10px;color:${servido ? '#2e7d32' : (pend ? '#b26a00' : '#999')};">${servido ? 'servido' : (pend ? 'pendiente' : '—')}</span>
+                </label>`;
+            }).join('');
+
+            const div = document.createElement('div');
+            div.className = 'modal-overlay active';
+            div.style.zIndex = '99999';
+            div.innerHTML = `
+                <div class="modal-container" style="max-width:640px;max-height:82vh;overflow-y:auto;">
+                    <h3>Cola de riego — ${escapeHtml(boc)}</h3>
+                    <p class="huaro-mini">Marca los usuarios que NO deben programarse (excluidos de la cola). Los "pendientes" se atienden primero la próxima semana.</p>
+                    <div style="margin:8px 0;">${listaHtml}</div>
+                    <div style="display:flex;gap:10px;margin-top:12px;">
+                        <button class="huaro-btn" id="huaroColaGuardar">Guardar</button>
+                        <button class="huaro-btn sec" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(div);
+            div.querySelector('#huaroColaGuardar').onclick = () => {
+                const nuevos = Array.from(div.querySelectorAll('input[type=checkbox]'))
+                    .filter(c => c.checked).map(c => c.getAttribute('data-k'));
+                camp.excluidos = nuevos;
+                _huaroGuardarCampana(boc, camp);
+                div.remove();
+                renderPanelHuaro();
+            };
+        }
+
+        // ── Salidas: Anexos ──
+        function _huaroPanelAnexo(titulo, fragmentoHtml, onImprimir, onExcel) {
+            const ca = document.getElementById('contentArea');
+            const wrap = document.createElement('div');
+            wrap.innerHTML = `
+            <div style="font-family:Arial,sans-serif;">
+                <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">
+                    <button class="huaro-btn sec" onclick="renderPanelHuaro()">← Volver al PDA</button>
+                    <button class="huaro-btn" id="huaroBtnImprimir">🖨️ Imprimir</button>
+                    <button class="huaro-btn" id="huaroBtnExcel">⬇️ Excel</button>
+                    <strong style="margin-left:6px;">${escapeHtml(titulo)}</strong>
+                </div>
+                <div id="huaroAnexoBody" style="background:#fff;padding:16px;border:1px solid #d9dee5;border-radius:8px;overflow-x:auto;">${fragmentoHtml}</div>
+            </div>`;
+            ca.innerHTML = '';
+            ca.appendChild(wrap);
+            _huaroInyectarEstilo();
+            document.getElementById('huaroBtnImprimir').onclick = onImprimir;
+            const be = document.getElementById('huaroBtnExcel');
+            if (onExcel) be.onclick = onExcel; else be.style.display = 'none';
+        }
+
+        function _huaroImprimir(titulo, fragmentoHtml, orientacion) {
+            const w = window.open('', '_blank');
+            if (!w) { alert('El navegador bloqueó la ventana de impresión. Permite las ventanas emergentes.'); return; }
+            w.document.write(HuaroCore.huaroDocumentoImprimible(titulo, fragmentoHtml, orientacion || 'landscape'));
+            w.document.close();
+        }
+
+        function _huaroDatosG2() {
+            const bocs = _huaroBocsConDatos();
+            const iso = _huaroResultados[bocs[0]].agregado.semanaInicioISO;
+            return {
+                semanaInicioISO: iso,
+                semanaFinISO: _huaroResultados[bocs[0]].agregado.semanaFinISO,
+                mesTexto: _huaroMesTexto(iso),
+                filas: bocs.map(b => _huaroResultados[b].agregado),
+            };
+        }
+
+        function huaroMostrarG2() {
+            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const datos = _huaroDatosG2();
+            const html = HuaroCore.huaroConstruirG2Html(datos);
+            _huaroPanelAnexo('Anexo G-2 — Huaro', html,
+                () => _huaroImprimir('Anexo G-2 — Huaro', html, 'landscape'),
+                () => _huaroExcelG2(datos));
+        }
+
+        function huaroMostrarG3() {
+            const bocs = _huaroBocsConDatos();
+            if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const sel = `<label style="font-size:13px;font-weight:600;">Bocatoma:
+                <select id="huaroSelG3" style="margin-left:8px;padding:5px 8px;">
+                    ${bocs.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                </select></label><div id="huaroG3Cont" style="margin-top:12px;"></div>`;
+            _huaroPanelAnexo('Anexo G-3 — Huaro', sel,
+                () => {
+                    const b = document.getElementById('huaroSelG3').value;
+                    _huaroImprimir('Anexo G-3 — ' + b, HuaroCore.huaroConstruirG3Html(_huaroDatosG3(b)), 'landscape');
+                },
+                () => _huaroExcelG3(document.getElementById('huaroSelG3').value));
+            const pintar = () => {
+                const b = document.getElementById('huaroSelG3').value;
+                document.getElementById('huaroG3Cont').innerHTML = HuaroCore.huaroConstruirG3Html(_huaroDatosG3(b));
+            };
+            document.getElementById('huaroSelG3').onchange = pintar;
+            pintar();
+        }
+
+        function _huaroDatosG3(boc) {
+            const r = _huaroResultados[boc];
+            const a = r.agregado;
+            const porClave = {};
+            (_huaroPadron[boc] || []).forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
+            return {
+                bocatoma: boc, semanaInicioISO: a.semanaInicioISO, semanaFinISO: a.semanaFinISO,
+                mesTexto: _huaroMesTexto(a.semanaInicioISO), caudalLs: a.caudalLs,
+                programados: r.programados,
+                pendientesUsuarios: r.pendientes.map(k => porClave[k]).filter(Boolean)
+                    .sort((x, y) => x.nOrden - y.nOrden),
+            };
+        }
+
+        function huaroMostrarG4() {
+            const bocs = _huaroBocsConDatos();
+            if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const html = `
+                <label style="font-size:13px;font-weight:600;">Bocatoma:
+                    <select id="huaroSelG4Boc" style="margin-left:8px;padding:5px 8px;">
+                        ${bocs.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                    </select></label>
+                <label style="font-size:13px;font-weight:600;margin-left:14px;">Usuario:
+                    <select id="huaroSelG4Usr" style="margin-left:8px;padding:5px 8px;min-width:260px;"></select></label>
+                <button class="huaro-btn sec" id="huaroG4Todos" style="margin-left:14px;">🖨️ Imprimir todas (bocatoma)</button>
+                <div id="huaroG4Cont" style="margin-top:12px;"></div>`;
+            _huaroPanelAnexo('Anexo G-4 — Huaro', html,
+                () => {
+                    const b = document.getElementById('huaroSelG4Boc').value;
+                    const idx = +document.getElementById('huaroSelG4Usr').value;
+                    const p = _huaroResultados[b].programados[idx];
+                    if (p) _huaroImprimir('Anexo G-4 — ' + p.nombre, HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(b)), 'portrait');
+                }, null);
+            const selBoc = document.getElementById('huaroSelG4Boc');
+            const selUsr = document.getElementById('huaroSelG4Usr');
+            const llenarUsr = () => {
+                const b = selBoc.value;
+                selUsr.innerHTML = _huaroResultados[b].programados
+                    .map((p, i) => `<option value="${i}">N°${p.ordenSuministro} · ${escapeHtml(p.nombre)}</option>`).join('');
+                pintarUno();
+            };
+            const pintarUno = () => {
+                const b = selBoc.value; const i = +selUsr.value;
+                const p = _huaroResultados[b].programados[i];
+                document.getElementById('huaroG4Cont').innerHTML = p ? HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(b)) : '';
+            };
+            selBoc.onchange = llenarUsr;
+            selUsr.onchange = pintarUno;
+            document.getElementById('huaroG4Todos').onclick = () => {
+                const b = selBoc.value;
+                const frag = _huaroResultados[b].programados
+                    .map(p => HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(b))).join('');
+                _huaroImprimir('Anexo G-4 — ' + b, frag, 'portrait');
+            };
+            llenarUsr();
+        }
+
+        function _huaroCtxG4(boc) {
+            return { bocatoma: boc, caudalLs: _huaroResultados[boc].agregado.caudalLs, fechaImpresionISO: new Date().toISOString().slice(0, 10) };
+        }
+
+        // ── Excel (ExcelJS) — tabla fiel, sin la fusión completa del oficial ──
+        function _huaroWsCabecera(ws, titulo, subtitulo, datos, numCols) {
+            const NEGRO = 'FF000000';
+            const poner = (fila, et, val) => {
+                const c1 = ws.getCell(fila, 1); c1.value = et; c1.font = { bold: true, size: 10 };
+                ws.mergeCells(fila, 2, fila, numCols);
+                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
+            };
+            ws.mergeCells(1, 1, 1, numCols);
+            const t = ws.getCell(1, 1); t.value = titulo; t.font = { bold: true, size: 13, color: { argb: NEGRO } };
+            t.alignment = { horizontal: 'center' };
+            ws.mergeCells(2, 1, 2, numCols);
+            const s = ws.getCell(2, 1); s.value = subtitulo; s.font = { size: 10 }; s.alignment = { horizontal: 'center' };
+            poner(4, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
+            poner(5, 'Sub sector hidráulico:', HuaroCore.HUARO_SUBSECTOR);
+            poner(6, 'Comisión:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(7, 'Fuente de agua:', HuaroCore.HUARO_FUENTE + ' (gravedad)');
+            poner(8, 'Mes:', datos.mesTexto || '');
+            poner(9, 'Semana:', (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/'));
+            return 11; // primera fila de tabla
+        }
+        function _huaroEstiloEnc(c) {
+            c.font = { bold: true, size: 9 };
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6E6E6' } };
+            c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        }
+        function _huaroBorde(c) { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; }
+
+        async function _huaroExcelG2(datos) {
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const heads = ['FUENTE DE AGUA', 'BOCATOMA', 'N° USUARIOS', 'ÁREA BAJO RIEGO (Ha)', 'N° TOPOS', 'VOLUMEN PROGRAMADO (m³)', 'CAUDAL ASIGNADO (l/s)', 'TIEMPO DE OPERACIÓN (HORAS)', 'PERÍODO INICIO', 'PERÍODO TÉRMINO', 'LUN (m³/s)', 'MAR (m³/s)', 'MIE (m³/s)', 'JUE (m³/s)', 'VIE (m³/s)', 'SÁB (m³/s)', 'DOM (m³/s)', 'OBSERVACIONES'];
+            ws.columns = heads.map((h, i) => ({ width: i === 1 || i === 17 ? 24 : (i === 0 ? 16 : 12) }));
+            let r = _huaroWsCabecera(ws, 'ANEXO G-2', 'Programación de la Distribución del Agua a nivel de bocatomas', datos, heads.length);
+            heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
+            r++;
+            let tU = 0, tA = 0, tT = 0, tV = 0, tH = 0;
+            datos.filas.forEach(f => {
+                tU += f.nUsuarios; tA += f.areaProgramadaHa; tT += f.toposTotal; tV += f.volumenTotalM3; tH += f.tiempoTotalH;
+                const vals = [HuaroCore.HUARO_FUENTE, f.bocatoma, f.nUsuarios, +f.areaProgramadaHa.toFixed(2), +f.toposTotal.toFixed(1),
+                    +f.volumenTotalM3.toFixed(2), +f.caudalLs.toFixed(2), +f.tiempoTotalH.toFixed(2),
+                    (f.semanaInicioISO || '').split('-').reverse().join('/'), (f.semanaFinISO || '').split('-').reverse().join('/'),
+                    ...f.caudalPorDia.map(c => c > 0 ? +(c / 1000).toFixed(4) : '-'),
+                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' / ' + f.areaPendienteHa.toFixed(2) + ' ha') : ''];
+                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); });
+                r++;
+            });
+            const tot = ['TOTAL', '', tU, +tA.toFixed(2), +tT.toFixed(1), +tV.toFixed(2), '', +tH.toFixed(2), '', '', '', '', '', '', '', '', '', ''];
+            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); });
+            await _descargarWorkbook(wb, 'Anexo_G2_Huaro_' + datos.semanaInicioISO + '.xlsx');
+        }
+
+        async function _huaroExcelG3(boc) {
+            const datos = _huaroDatosG3(boc);
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('G-3 ' + boc.substring(0, 22), { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const heads = ['N° Orden', 'Usuario', 'Área (has)', 'N° Topos', 'Volumen Programado (m³)', 'Tiempo de Uso (hr)', 'Caudal a Entregar (l/s)', 'Inicio (fecha)', 'Inicio (hora)', 'Término (fecha)', 'Término (hora)', 'Observaciones'];
+            ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 13 }));
+            let r = _huaroWsCabecera(ws, 'ANEXO G-3', 'Parte Diario de Distribución de Agua a los Usuarios', datos, heads.length);
+            const cB = ws.getCell(r, 1); cB.value = 'Bocatoma: ' + boc + '   ·   Caudal asignado: ' + datos.caudalLs.toFixed(2) + ' l/s'; cB.font = { bold: true, size: 10 };
+            r += 2;
+            heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
+            r++;
+            const prog = datos.programados.slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
+            prog.forEach((p, i) => {
+                const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.topos || 0).toFixed(1), +(p.volumenM3 || 0).toFixed(2),
+                    +(p.tiempoH || 0).toFixed(2), +datos.caudalLs.toFixed(2),
+                    (p.fechaISO || '').split('-').reverse().join('/'), p.inicioTexto,
+                    (p.fechaISO || '').split('-').reverse().join('/'), p.terminoTexto, ''];
+                vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); });
+                r++;
+            });
+            if (datos.pendientesUsuarios.length) {
+                r++;
+                const cP = ws.getCell(r, 1); cP.value = 'PENDIENTES PARA LA PRÓXIMA SEMANA'; cP.font = { bold: true }; r++;
+                ['N°', 'Usuario', 'Área (ha)', 'N° Topos'].forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
+                r++;
+                datos.pendientesUsuarios.forEach(u => {
+                    [u.nOrden, u.nombre, +(u.areaHa || 0).toFixed(2), +(u.topos || 0).toFixed(1)].forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); });
+                    r++;
+                });
+            }
+            await _descargarWorkbook(wb, 'Anexo_G3_Huaro_' + boc.replace(/[^\w]+/g, '_') + '_' + datos.semanaInicioISO + '.xlsx');
+        }
+
         // Procesar datos del workbook
         function procesarWorkbook() {
             tomasData = {};
+
+            // HUARO: modelo por topos — padrón sin cultivo/deuda, 13 bocatomas.
+            // Va por su propio parser y panel (assets/core/huaro.js); no toca
+            // consolidadoDemandas ni el motor de cultivo.
+            if ((localStorage.getItem('cusshmi_comision') || '') === 'HUARO') {
+                huaroProcesarWorkbook();
+                return;
+            }
 
             // Cargar un Excel nuevo solo llena tomasData (padrón de usuarios por
             // toma) — el Anexo G2/G3 se arma aparte, con "Avance de Siembra" ⇒
