@@ -41,6 +41,39 @@ const HUARO_MAPA_TOPOS = {
     '5 T': 5, '5 1/2 T': 5.5, '6 T': 6, '6 1/2 T': 6.5, '7 T': 7,
 };
 
+// ── Masa de agua otorgada por bloque de riego / bocatoma ──
+// De las Licencias de Uso de Agua Superficial de la Comisión de Regantes de
+// Huaro ("MASA DE AGUA.docx" — una R.D. por bloque, Art. 2°/3°). Es el
+// derecho de agua legalmente otorgado: caudal (l/s) y volumen anual (m³).
+// Se muestra como referencia en la pantalla del PDA, junto al caudal que el
+// sectorista asigna a cada bocatoma para la semana.
+// Clave = nombre de la hoja del padrón normalizado (huaroNormNombre).
+const HUARO_MASA_AGUA = {
+    'PUCRUPAMPA':            { caudalLs: 2.90,  volumenAnualM3: 68907,  bloque: 'Pucrupampa' },
+    'ACCOPATA':              { caudalLs: 5.88,  volumenAnualM3: 139704, bloque: 'Accopata' },
+    'ACHUMACHINCALLAVEI':    { caudalLs: 6.38,  volumenAnualM3: 151707, bloque: 'Achuma Chincallave 1' },
+    'TTIKAPATACARDUNCANCHA': { caudalLs: 6.30,  volumenAnualM3: 149596, bloque: 'Cardoncancha Tticapata' },
+    'MANZANAYOC':            { caudalLs: 3.06,  volumenAnualM3: 72686,  bloque: 'Manzanayoc' },
+    'AUJIRAY':               { caudalLs: 2.29,  volumenAnualM3: 54348,  bloque: 'Aujiray' },
+    'PPUMPU':                { caudalLs: 9.55,  volumenAnualM3: 226950, bloque: 'Ppumpo' },
+    'CUNYACQUENKO':          { caudalLs: 16.82, volumenAnualM3: 399551, bloque: 'Cunyac' },
+    'LLACTAYARCA':           { caudalLs: 11.96, volumenAnualM3: 284187, bloque: 'Llactayarcca' },
+    'BATAN':                 { caudalLs: 15.36, volumenAnualM3: 364987, bloque: 'Batán' },
+    'CHINCALLAVEII':         { caudalLs: 1.76,  volumenAnualM3: 41900,  bloque: 'Chincallave 2' },
+    'MAYOALCCA':             { caudalLs: 4.23,  volumenAnualM3: 100582, bloque: 'Mayuallcca' },
+    'HUAYNACOMUN':           { caudalLs: 9.64,  volumenAnualM3: 229061, bloque: 'Huayna Común', caudalEstimado: true },
+};
+
+function huaroNormNombre(s) {
+    return String(s == null ? '' : s).toUpperCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^A-Z0-9]+/g, '');
+}
+// Devuelve { caudalLs, volumenAnualM3, bloque, caudalEstimado? } o null.
+function huaroMasaDeAgua(bocatoma) {
+    return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
+}
+
 // ── Helpers puros ──
 function _huaroEsc(v) {
     return (v == null ? '' : String(v))
@@ -492,7 +525,7 @@ if (typeof window !== 'undefined') {
     window.HuaroCore = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,
@@ -502,7 +535,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,

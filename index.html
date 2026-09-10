@@ -3610,13 +3610,22 @@ const COMISIONES = {
                 const camp = _huaroLeerCampana(boc);
                 const total = us.length;
                 const servidos = camp.servidos.length;
+                const masa = HuaroCore.huaroMasaDeAgua(boc);
                 const caudalGuardado = (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
-                    ? pdaGuardado.caudales[boc] : '';
+                    ? pdaGuardado.caudales[boc]
+                    : (masa && masa.caudalLs != null ? masa.caudalLs : ''); // prefill con el caudal otorgado (masa de agua)
+                const masaCaudal = masa && masa.caudalLs != null
+                    ? masa.caudalLs.toFixed(2) + (masa.caudalEstimado ? ' *' : '')
+                    : '—';
+                const masaVol = masa && masa.volumenAnualM3 != null
+                    ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
                 filas += `
                 <tr>
                     <td>${escapeHtml(boc)}</td>
                     <td style="text-align:center;">${total}</td>
                     <td style="text-align:right;">${areaTot.toFixed(2)}</td>
+                    <td style="text-align:right;" title="${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) + ' (Licencia de Uso de Agua)' : 'Sin licencia mapeada'}">${masaCaudal}</td>
+                    <td style="text-align:right;">${masaVol}</td>
                     <td style="text-align:center;">
                         <input type="number" class="huaro-caudal" id="huaroCaudal__${i}" min="0" step="0.001"
                             value="${caudalGuardado}" placeholder="l/s">
@@ -3652,6 +3661,8 @@ const COMISIONES = {
                             <th style="text-align:left;">Bocatoma</th>
                             <th>N° usuarios</th>
                             <th>Área total (ha)</th>
+                            <th title="Caudal otorgado en la Licencia de Uso de Agua Superficial del bloque (MASA DE AGUA)">Caudal otorgado (l/s)</th>
+                            <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque (MASA DE AGUA)">Volumen anual otorgado (m³)</th>
                             <th>Caudal asignado (l/s)</th>
                             <th>Estado de campaña</th>
                             <th>Acciones</th>
@@ -3660,7 +3671,7 @@ const COMISIONES = {
                     </table>
                     <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                         <button class="huaro-btn" onclick="huaroGenerarPDA()">⚙️ Generar PDA de la semana</button>
-                        <span class="huaro-mini">Ingresa el caudal (l/s) de cada bocatoma a programar. Las que dejes en blanco o en 0 no se programan.</span>
+                        <span class="huaro-mini">"Caudal / Volumen otorgado" = la masa de agua de la Licencia de Uso de Agua de cada bloque (referencia). El "Caudal asignado" viene precargado con ese valor; ajústalo si esta semana rige otro. Las bocatomas con caudal 0 o en blanco no se programan. <span style="white-space:nowrap;">* = caudal estimado (la R.D. escaneada lo recortó — confírmalo).</span></span>
                     </div>
                 </div>
 
