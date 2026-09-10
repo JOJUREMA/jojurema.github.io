@@ -311,53 +311,59 @@ function huaroProgramarBocatoma(opts) {
     };
 }
 
-// ════════════════════════ ANEXO G-2 / G-3 (Huaro) ════════════════════════
-// Fiel a los formatos oficiales del Anexo G de la R.J. N° 0155-2022-ANA
-// (Formato G-2, pág. 95 / Formato G-3, pág. 96). AMBOS comparten exactamente
-// las mismas 19 columnas — no se agrega ninguna que no esté en el documento
-// oficial. Diferencia entre G-2 y G-3: el título y el bloque de encabezado.
-//
-// Columnas oficiales (en este orden):
-//   1 Nombre del Canal de Derivación
-//   2 Nombre de la Toma
-//   3 Nombre del Canal de Distribución
-//   4 N° de Usuarios
-//   5 Volumen de Agua Programado (m³)
-//   6 Área Bajo Riego a atender (Ha)
-//   7 Tiempo de Operación del canal (horas)
-//   8-11 Periodo: Inicio | Hora | Término | Hora
-//   12-18 Caudal programado por días (l/seg): 1..7
-//   19 Observaciones
-//   + fila TOTAL
-//
-// Mapeo Huaro → columnas oficiales:
-//   Canal de Derivación = QUEBRADA HUARO (única fuente, por gravedad)
-//   Nombre de la Toma    = bocatoma
-//   Canal de Distribución = (vacío — Huaro no tiene canal de distribución)
-//   El resto son agregados por bocatoma calculados por huaroProgramarBocatoma.
-//   El caudal asignado (l/s) de la bocatoma va en las 7 columnas de "Caudal
-//   programado por días" (l/seg) en los días que riega, tal cual el formato.
+// ════════════════════════ ANEXOS G-2 y G-3 (Huaro) ════════════════════════
+// Misma estructura visual que los Anexos G-2 y G-3 oficiales que ya emite el
+// sistema para las otras comisiones (formato de la Junta / R.J. 0155-2022-ANA):
+//   G-2: agregado por bocatoma — NOMBRE DEL CANAL DE DERIVACIÓN · NOMBRE DE LA
+//        TOMA · NOMBRE DEL CANAL DE DISTRIBUCIÓN · N° DE USUARIOS · VOLUMEN DE
+//        AGUA PROGRAMADO (m³) · ÁREA BAJO RIEGO (Ha) · TIEMPO DE OPERACIÓN DEL
+//        CANAL (HORAS) · PERÍODO (Inicio/Hora/Término/Hora) · CAUDAL PROGRAMADO
+//        POR DÍAS (m³/seg) LUN..DOM · OBSERVACIONES · fila TOTAL (con la suma
+//        del caudal por día).
+//   G-3: detalle POR USUARIO, por bocatoma — N° Orden de suministro · Usuario ·
+//        Área (has) · Volumen de Agua Programado (m³) · Programación de la
+//        Distribución del agua [Tiempo de Uso (hr) · Caudal a Entregar (m³/s) ·
+//        Inicio (Día/Hora) · Término (Día/Hora)] · Observaciones.
+// Mapeo Huaro: Canal de Derivación = QUEBRADA HUARO · Nombre de la Toma =
+// bocatoma · Canal de Distribución = bocatoma (el canal lleva el nombre del
+// bloque de riego). Identidad = Comisión de Regantes de Huaro.
 
-function _huaroTablaGOficialHtml(filas) {
-    const th = 'border:1px solid #000;padding:4px 5px;font-weight:700;';
-    const td = 'border:1px solid #000;padding:4px 5px;color:#000;';
+const HUARO_DIAS_ABREV3 = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+function _huaroDiaEtiqueta(fechaISO) {
+    if (!fechaISO) return '';
+    const dt = new Date(fechaISO + 'T00:00:00');
+    const dow = (dt.getDay() + 6) % 7; // 0 = lunes
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    return `${HUARO_DIAS_ABREV3[dow]} ${dd}/${mm}`;
+}
+
+// ── ANEXO G-2 ──
+// datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
+function huaroConstruirG2Html(datos) {
+    const th = 'border:1px solid #000;padding:5px;font-weight:700;';
+    const th2 = 'border:1px solid #000;padding:4px;font-weight:700;font-size:9px;';
+    const td = 'border:1px solid #000;padding:5px;color:#000;';
+    const semTxt = 'DEL ' + _huaroFechaCorta(datos.semanaInicioISO) + ' AL ' + _huaroFechaCorta(datos.semanaFinISO);
+
     let body = '';
-    let tU = 0, tVol = 0, tArea = 0, tTiempo = 0, tPend = 0, tAreaPend = 0;
+    let tU = 0, tVol = 0, tArea = 0, tTiempoMax = 0;
+    const tDia = new Array(HUARO_DIAS_SEMANA).fill(0);
 
-    (filas || []).forEach(f => {
+    (datos.filas || []).forEach(f => {
         tU += f.nUsuarios; tVol += f.volumenTotalM3; tArea += f.areaProgramadaHa;
-        tTiempo += f.tiempoTotalH; tPend += f.nPendientes; tAreaPend += f.areaPendienteHa;
+        tTiempoMax = Math.max(tTiempoMax, f.tiempoTotalH);
+        (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
 
         const dias = (f.caudalPorDia || []).map(c =>
-            `<td style="${td}text-align:right;">${c > 0 ? c.toFixed(2) : '-'}</td>`).join('');
+            `<td style="${td}text-align:right;">${(c / 1000).toFixed(3)}</td>`).join('');
         const obs = f.nPendientes > 0
-            ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha`
-            : '';
+            ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
         body += `
         <tr>
+            <td style="${td}font-weight:600;">${_huaroEsc(HUARO_FUENTE)}</td>
             <td style="${td}">${_huaroEsc(f.bocatoma)}</td>
             <td style="${td}">${_huaroEsc(f.bocatoma)}</td>
-            <td style="${td}"></td>
             <td style="${td}text-align:center;">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
             <td style="${td}text-align:right;">${f.volumenTotalM3.toFixed(2)}</td>
             <td style="${td}text-align:right;">${f.areaProgramadaHa.toFixed(2)}</td>
@@ -370,32 +376,47 @@ function _huaroTablaGOficialHtml(filas) {
             <td style="${td}">${_huaroEsc(obs)}</td>
         </tr>`;
     });
+    const totDias = tDia.map(c => `<td style="${td}text-align:right;font-weight:700;">${(c / 1000).toFixed(3)}</td>`).join('');
 
     return `
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:8px;">
+        ANEXO G2: Programación de Distribución del Agua a nivel de canales de distribución
+    </div>
+    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;display:flex;justify-content:space-between;gap:20px;margin:6px 0;">
+        <div style="line-height:1.6;">
+            <div><strong>AAA:</strong> ${HUARO_AAA}</div>
+            <div><strong>ALA:</strong> ${HUARO_ALA}</div>
+            <div><strong>Sector Hidráulico:</strong> ${HUARO_JUNTA}</div>
+            <div><strong>Comisión de Regantes:</strong> ${HUARO_COMISION_NOMBRE}</div>
+        </div>
+        <div style="line-height:1.6;white-space:nowrap;">
+            <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
+            <div><strong>Semana:</strong> ${semTxt}</div>
+        </div>
+    </div>
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:12px;margin:10px 0 4px;">
+        ANEXO G2 — BOCATOMAS QUE RIEGAN DE LA ${_huaroEsc(HUARO_FUENTE)}
+    </div>
     <div style="overflow-x:auto;">
     <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;min-width:1150px;width:100%;">
         <thead>
             <tr style="background:#E6E6E6;color:#000;">
-                <th rowspan="2" style="${th}">Nombre del Canal<br>de Derivación</th>
-                <th rowspan="2" style="${th}">Nombre de<br>la Toma</th>
-                <th rowspan="2" style="${th}">Nombre del Canal<br>de Distribución</th>
-                <th rowspan="2" style="${th}">N° de<br>Usuarios</th>
-                <th rowspan="2" style="${th}">Volumen de Agua<br>Programado (m³)</th>
-                <th rowspan="2" style="${th}">Área Bajo Riego<br>a atender (Ha)</th>
-                <th rowspan="2" style="${th}">Tiempo de Operación<br>del canal (horas)</th>
-                <th colspan="4" style="${th}">Periodo</th>
-                <th colspan="7" style="${th}">Caudal programado por días (l/seg)</th>
-                <th rowspan="2" style="${th}">Observaciones</th>
+                <th rowspan="2" style="${th}">NOMBRE DEL<br>CANAL DE<br>DERIVACIÓN</th>
+                <th rowspan="2" style="${th}">NOMBRE DE<br>LA TOMA</th>
+                <th rowspan="2" style="${th}">NOMBRE DEL<br>CANAL DE<br>DISTRIBUCIÓN</th>
+                <th rowspan="2" style="${th}">N° DE<br>USUARIOS</th>
+                <th rowspan="2" style="${th}">VOLUMEN<br>DE AGUA<br>PROGRAMADO<br>(m³)</th>
+                <th rowspan="2" style="${th}">ÁREA<br>BAJO<br>RIEGO<br>(Ha)</th>
+                <th rowspan="2" style="${th}">TIEMPO DE<br>OPERACIÓN<br>DEL CANAL<br>(HORAS)</th>
+                <th colspan="4" style="${th}">PERÍODO</th>
+                <th colspan="7" style="${th}">CAUDAL PROGRAMADO POR DÍAS (m³/seg)</th>
+                <th rowspan="2" style="${th}">OBSERVACIONES</th>
             </tr>
             <tr style="background:#E6E6E6;color:#000;">
-                <th style="${th}font-size:9px;">Inicio</th>
-                <th style="${th}font-size:9px;">Hora</th>
-                <th style="${th}font-size:9px;">Término</th>
-                <th style="${th}font-size:9px;">Hora</th>
-                <th style="${th}font-size:9px;">1</th><th style="${th}font-size:9px;">2</th>
-                <th style="${th}font-size:9px;">3</th><th style="${th}font-size:9px;">4</th>
-                <th style="${th}font-size:9px;">5</th><th style="${th}font-size:9px;">6</th>
-                <th style="${th}font-size:9px;">7</th>
+                <th style="${th2}">INICIO</th><th style="${th2}">HORA</th>
+                <th style="${th2}">TÉRMINO</th><th style="${th2}">HORA</th>
+                <th style="${th2}">LUN</th><th style="${th2}">MAR</th><th style="${th2}">MIE</th>
+                <th style="${th2}">JUE</th><th style="${th2}">VIE</th><th style="${th2}">SAB</th><th style="${th2}">DOM</th>
             </tr>
         </thead>
         <tbody>
@@ -405,58 +426,41 @@ function _huaroTablaGOficialHtml(filas) {
                 <td style="${td}text-align:center;">${tU}</td>
                 <td style="${td}text-align:right;">${tVol.toFixed(2)}</td>
                 <td style="${td}text-align:right;">${tArea.toFixed(2)}</td>
-                <td style="${td}text-align:center;">${tTiempo.toFixed(1)}</td>
-                <td style="${td}text-align:center;" colspan="4">-</td>
-                <td style="${td}text-align:center;" colspan="7">-</td>
-                <td style="${td}">${tPend > 0 ? 'Pendientes totales: ' + tPend + ' / ' + tAreaPend.toFixed(2) + ' ha' : ''}</td>
+                <td style="${td}text-align:center;">${tTiempoMax.toFixed(1)}</td>
+                <td style="${td}text-align:center;">-</td><td style="${td}text-align:center;">-</td>
+                <td style="${td}text-align:center;">-</td><td style="${td}text-align:center;">-</td>
+                ${totDias}
+                <td style="${td}text-align:center;">-</td>
             </tr>
         </tbody>
     </table>
     </div>`;
 }
 
-// datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
-function huaroConstruirG2Html(datos) {
-    const per = _huaroFechaCorta(datos.semanaInicioISO) + ' al ' + _huaroFechaCorta(datos.semanaFinISO);
-    return `
-    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;">
-        <div style="font-weight:800;font-size:14px;letter-spacing:.5px;">ANEXO G</div>
-        <div style="font-weight:700;font-size:11px;margin-top:2px;">Formato G-2: Programación de Distribución del Agua a Nivel de Canales de Distribución</div>
-    </div>
-    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:8px 0;line-height:1.5;">
-        <div><strong>AAA:</strong> ${HUARO_AAA}</div>
-        <div><strong>ALA:</strong> ${HUARO_ALA}</div>
-        <div><strong>Comisión de Regantes:</strong> ${HUARO_COMISION_NOMBRE}</div>
-        <div><strong>Periodo:</strong> ${per}</div>
-    </div>
-    ${_huaroTablaGOficialHtml(datos.filas)}`;
-}
-
-// ANEXO G-3 (Huaro) — Parte Diario POR USUARIO, por bocatoma.
-// A diferencia del G-2 (agregado por bocatoma), el G-3 baja al detalle: el
-// caudal a distribuir y el horario de CADA usuario, agrupados por bocatoma.
-// datos: {
-//   semanaInicioISO, semanaFinISO, mesTexto,
-//   bloques: [ { bocatoma, caudalLs, programados:[...], pendientesUsuarios:[{nOrden,nombre,areaHa,topos}] } ]
-// }
+// ── ANEXO G-3 ──
+// datos: { semanaInicioISO, semanaFinISO, mesTexto,
+//          bloques: [ { bocatoma, caudalLs, programados:[...], pendientesUsuarios:[...] } ] }
 function huaroConstruirG3Html(datos) {
-    const per = _huaroFechaCorta(datos.semanaInicioISO) + ' al ' + _huaroFechaCorta(datos.semanaFinISO);
-    const th = 'border:1px solid #000;padding:4px 5px;font-weight:700;';
+    const th = 'border:1px solid #000;padding:4px 5px;font-weight:700;text-align:center;vertical-align:middle;';
     const td = 'border:1px solid #000;padding:4px 5px;color:#000;';
+    const semTxt = 'LUNES ' + _huaroFechaCorta(datos.semanaInicioISO) + ' al DOMINGO ' + _huaroFechaCorta(datos.semanaFinISO);
+    const hoy = _huaroFechaCorta(_huaroFechaISO(new Date()));
 
     const bloquesHtml = (datos.bloques || []).map(bl => {
         const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
+        const caudalM3s = (bl.caudalLs || 0) / 1000;
+
         let filas = prog.map((p, i) => `
             <tr>
                 <td style="${td}text-align:center;">${i + 1}</td>
                 <td style="${td}">${_huaroEsc(p.nombre)}</td>
                 <td style="${td}text-align:right;">${(p.areaHa || 0).toFixed(2)}</td>
                 <td style="${td}text-align:right;">${(p.volumenM3 || 0).toFixed(2)}</td>
-                <td style="${td}text-align:center;">${_huaroHorasTexto(p.tiempoH || 0)}</td>
-                <td style="${td}text-align:right;">${(bl.caudalLs || 0).toFixed(2)}</td>
-                <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
+                <td style="${td}text-align:center;">${(p.tiempoH || 0).toFixed(2)}</td>
+                <td style="${td}text-align:right;">${caudalM3s.toFixed(4)}</td>
+                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
                 <td style="${td}text-align:center;">${p.inicioTexto}</td>
-                <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
+                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
                 <td style="${td}text-align:center;">${p.terminoTexto}</td>
                 <td style="${td}"></td>
             </tr>`).join('');
@@ -468,38 +472,46 @@ function huaroConstruirG3Html(datos) {
 
         const pend = bl.pendientesUsuarios || [];
         const pendHtml = pend.length ? `
-            <div style="font-size:9.5px;color:#000;margin:4px 0 14px;">
+            <div style="font-size:9.5px;color:#000;margin:4px 0 16px;">
                 <strong>Pendientes para la próxima semana (${pend.length} · ${pend.reduce((s, u) => s + (u.areaHa || 0), 0).toFixed(2)} ha):</strong>
                 ${pend.map(u => 'N°' + u.nOrden + ' ' + _huaroEsc(u.nombre)).join(' · ')}
-            </div>` : '<div style="margin-bottom:14px;"></div>';
+            </div>` : '<div style="margin-bottom:16px;"></div>';
 
         return `
-        <div style="font-weight:700;font-size:11px;margin:12px 0 4px;background:#E6E6E6;border:1px solid #000;padding:4px 6px;">
-            Bocatoma: ${_huaroEsc(bl.bocatoma)} &nbsp;·&nbsp; Caudal a distribuir: ${(bl.caudalLs || 0).toFixed(2)} l/seg
+        <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;">
+            <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(bl.bocatoma)}</div>
+            <div><strong>Caudal:</strong> ${caudalM3s.toFixed(4)} (m³/seg.)</div>
         </div>
         <div style="overflow-x:auto;">
         <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;width:100%;">
-            <thead><tr style="background:#E6E6E6;color:#000;">
-                <th style="${th}">N° Orden de<br>suministro</th>
-                <th style="${th}">Usuario<br>(nombres y apellidos)</th>
-                <th style="${th}">Área<br>(has)</th>
-                <th style="${th}">Volumen de Agua<br>Programado (m³)</th>
-                <th style="${th}">Tiempo de Uso<br>del Agua (hr)</th>
-                <th style="${th}">Caudal a<br>distribuir (l/seg)</th>
-                <th style="${th}">Inicio<br>(fecha)</th>
-                <th style="${th}">Inicio<br>(hora)</th>
-                <th style="${th}">Término<br>(fecha)</th>
-                <th style="${th}">Término<br>(hora)</th>
-                <th style="${th}">Observaciones</th>
-            </tr></thead>
+            <thead>
+                <tr style="background:#E6E6E6;color:#000;">
+                    <th rowspan="3" style="${th}">N° Orden<br>de suministro</th>
+                    <th rowspan="3" style="${th}">Usuario<br>(nombres y apellidos)</th>
+                    <th rowspan="3" style="${th}">Área<br>(has)</th>
+                    <th rowspan="3" style="${th}">Volumen de Agua<br>Programado (m³)</th>
+                    <th colspan="6" style="${th}">Programación de la Distribución del agua</th>
+                    <th rowspan="3" style="${th}">Observaciones</th>
+                </tr>
+                <tr style="background:#E6E6E6;color:#000;">
+                    <th rowspan="2" style="${th}">Tiempo de Uso<br>del Agua (hr)</th>
+                    <th rowspan="2" style="${th}">Caudal a<br>Entregar (m³/s)</th>
+                    <th colspan="2" style="${th}">Inicio</th>
+                    <th colspan="2" style="${th}">Término</th>
+                </tr>
+                <tr style="background:#E6E6E6;color:#000;">
+                    <th style="${th}">Día</th><th style="${th}">Hora</th>
+                    <th style="${th}">Día</th><th style="${th}">Hora</th>
+                </tr>
+            </thead>
             <tbody>
                 ${filas}
                 <tr style="background:#E6E6E6;color:#000;font-weight:bold;">
                     <td style="${td}text-align:center;" colspan="2">TOTAL</td>
                     <td style="${td}text-align:right;">${tArea.toFixed(2)}</td>
                     <td style="${td}text-align:right;">${tVol.toFixed(2)}</td>
-                    <td style="${td}text-align:center;">${_huaroHorasTexto(tTiempo)}</td>
-                    <td style="${td}text-align:center;" colspan="6">-</td>
+                    <td style="${td}text-align:center;">${tTiempo.toFixed(2)}</td>
+                    <td style="${td}text-align:center;" colspan="5">-</td>
                 </tr>
             </tbody>
         </table>
@@ -508,16 +520,15 @@ function huaroConstruirG3Html(datos) {
     }).join('');
 
     return `
-    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;">
-        <div style="font-weight:800;font-size:14px;letter-spacing:.5px;">ANEXO G</div>
-        <div style="font-weight:700;font-size:11px;margin-top:2px;">Formato G-3: Parte diario de Distribución de Agua a los Usuarios</div>
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:8px;">
+        ANEXO G-3: Parte Diario de Distribución de Agua a los Usuarios
     </div>
-    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:8px 0;line-height:1.5;">
+    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:6px 0;line-height:1.6;">
         <div><strong>Sector hidráulico:</strong> ${HUARO_JUNTA}</div>
         <div><strong>Comisión de Regantes:</strong> ${HUARO_COMISION_NOMBRE}</div>
-        <div><strong>Canal de abastecimiento de agua:</strong> ${HUARO_FUENTE}</div>
         <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
-        <div><strong>PERIODO:</strong> ${per}</div>
+        <div><strong>Semana:</strong> ${semTxt}</div>
+        <div><strong>Fecha:</strong> ${hoy}</div>
     </div>
     ${bloquesHtml}`;
 }

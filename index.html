@@ -3983,16 +3983,18 @@ const COMISIONES = {
         }
         function _huaroBorde(c) { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; }
 
-        // Excel del G-2 (agregado por bocatoma, columnas oficiales R.J. 155).
+        // Excel del G-2 (agregado por bocatoma) — misma estructura que el G-2
+        // oficial: canal de derivación / toma / canal de distribución, y el
+        // caudal por día LUN..DOM en m³/seg (con la SUMA en la fila TOTAL).
         async function _huaroExcelGOficial(datos, formato) {
-            const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
+            const semTxt = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = [
-                'Nombre del Canal de Derivación', 'Nombre de la Toma', 'Nombre del Canal de Distribución',
-                'N° de Usuarios', 'Volumen de Agua Programado (m³)', 'Área Bajo Riego a atender (Ha)',
-                'Tiempo de Operación del canal (horas)',
-                'Periodo — Inicio', 'Periodo — Hora', 'Periodo — Término', 'Periodo — Hora',
-                'Caudal día 1 (l/seg)', 'Caudal día 2 (l/seg)', 'Caudal día 3 (l/seg)', 'Caudal día 4 (l/seg)',
-                'Caudal día 5 (l/seg)', 'Caudal día 6 (l/seg)', 'Caudal día 7 (l/seg)', 'Observaciones',
+                'NOMBRE DEL CANAL DE DERIVACIÓN', 'NOMBRE DE LA TOMA', 'NOMBRE DEL CANAL DE DISTRIBUCIÓN',
+                'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO (Ha)',
+                'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
+                'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
+                'LUN (m³/seg)', 'MAR (m³/seg)', 'MIE (m³/seg)', 'JUE (m³/seg)', 'VIE (m³/seg)', 'SAB (m³/seg)', 'DOM (m³/seg)',
+                'OBSERVACIONES',
             ];
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
@@ -4004,33 +4006,40 @@ const COMISIONES = {
                 ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
             };
             ws.mergeCells(1, 1, 1, heads.length);
-            ws.getCell(1, 1).value = 'ANEXO G'; ws.getCell(1, 1).font = { bold: true, size: 13 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
-            ws.mergeCells(2, 1, 2, heads.length);
-            ws.getCell(2, 1).value = 'Formato G-2: Programación de Distribución del Agua a Nivel de Canales de Distribución';
-            ws.getCell(2, 1).font = { size: 10 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
-            poner(4, 'AAA:', HuaroCore.HUARO_AAA);
-            poner(5, 'ALA:', HuaroCore.HUARO_ALA);
+            ws.getCell(1, 1).value = 'ANEXO G2: Programación de Distribución del Agua a nivel de canales de distribución';
+            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
+            poner(3, 'AAA:', HuaroCore.HUARO_AAA);
+            poner(4, 'ALA:', HuaroCore.HUARO_ALA);
+            poner(5, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
             poner(6, 'Comisión de Regantes:', HuaroCore.HUARO_COMISION_NOMBRE);
-            poner(7, 'Periodo:', per);
-            let r = 11;
+            poner(7, 'Mes:', datos.mesTexto || '');
+            poner(8, 'Semana:', semTxt);
+            ws.mergeCells(10, 1, 10, heads.length);
+            ws.getCell(10, 1).value = 'ANEXO G2 — BOCATOMAS QUE RIEGAN DE LA ' + HuaroCore.HUARO_FUENTE;
+            ws.getCell(10, 1).font = { bold: true, size: 11 }; ws.getCell(10, 1).alignment = { horizontal: 'center' };
+            let r = 12;
             heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
             r++;
 
-            let tU = 0, tV = 0, tA = 0, tH = 0;
+            let tU = 0, tV = 0, tA = 0, tHmax = 0;
+            const tDia = new Array(7).fill(0);
             datos.filas.forEach(f => {
-                tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa; tH += f.tiempoTotalH;
+                tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa;
+                tHmax = Math.max(tHmax, f.tiempoTotalH);
+                (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
-                    f.bocatoma, f.bocatoma, '',
+                    HuaroCore.HUARO_FUENTE, f.bocatoma, f.bocatoma,
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.semanaInicioISO || '').split('-').reverse().join('/'), '04:00',
                     (f.semanaFinISO || '').split('-').reverse().join('/'), '20:00',
-                    ...f.caudalPorDia.map(c => c > 0 ? +c.toFixed(2) : '-'),
+                    ...f.caudalPorDia.map(c => +(c / 1000).toFixed(3)),
                     f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
                 ];
                 vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); });
                 r++;
             });
-            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tH.toFixed(1), '', '', '', '', '', '', '', '', '', '', '', ''];
+            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
+                ...tDia.map(c => +(c / 1000).toFixed(3)), '-'];
             tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); });
             await _descargarWorkbook(wb, 'Anexo_G-2_Huaro_' + datos.semanaInicioISO + '.xlsx');
         }
@@ -4039,8 +4048,8 @@ const COMISIONES = {
         async function _huaroExcelG3PorUsuario(datos) {
             const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = ['N° Orden de suministro', 'Usuario (nombres y apellidos)', 'Área (has)',
-                'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a distribuir (l/seg)',
-                'Inicio (fecha)', 'Inicio (hora)', 'Término (fecha)', 'Término (hora)', 'Observaciones'];
+                'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a Entregar (m³/s)',
+                'Inicio — Día', 'Inicio — Hora', 'Término — Día', 'Término — Hora', 'Observaciones'];
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 14 }));
@@ -4062,7 +4071,7 @@ const COMISIONES = {
             let r = 10;
             (datos.bloques || []).forEach(bl => {
                 const cB = ws.getCell(r, 1);
-                cB.value = 'Bocatoma: ' + bl.bocatoma + '   ·   Caudal a distribuir: ' + (bl.caudalLs || 0).toFixed(2) + ' l/seg';
+                cB.value = 'Canal de abastecimiento de agua: ' + bl.bocatoma + '   ·   Caudal: ' + ((bl.caudalLs || 0) / 1000).toFixed(4) + ' (m³/seg.)';
                 cB.font = { bold: true, size: 10 };
                 r++;
                 heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
@@ -4072,7 +4081,7 @@ const COMISIONES = {
                 prog.forEach((p, i) => {
                     tA += (p.areaHa || 0); tV += (p.volumenM3 || 0); tH += (p.tiempoH || 0);
                     const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
-                        +(p.tiempoH || 0).toFixed(2), +(bl.caudalLs || 0).toFixed(2),
+                        +(p.tiempoH || 0).toFixed(2), +((bl.caudalLs || 0) / 1000).toFixed(4),
                         (p.fechaISO || '').split('-').reverse().join('/'), p.inicioTexto,
                         (p.fechaISO || '').split('-').reverse().join('/'), p.terminoTexto, ''];
                     vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); });
