@@ -3595,6 +3595,20 @@ const COMISIONES = {
             return iso;
         }
 
+        // Volumen (m³) que movería `caudalLs` durante toda la operación de la
+        // bocatoma = caudal × (Σ topos × 1.5 h) × 3.6. Coincide con el volumen
+        // semanal programado cuando toda la bocatoma entra en la semana.
+        function _huaroVolRepresenta(toposTot, caudalLs) {
+            return (parseFloat(caudalLs) || 0) * (toposTot * HuaroCore.HUARO_H_POR_TOPO) * 3.6;
+        }
+        function huaroActualizarVolRep(i, toposTot) {
+            const inp = document.getElementById('huaroCaudal__' + i);
+            const cel = document.getElementById('huaroVolRep__' + i);
+            if (!inp || !cel) return;
+            const q = parseFloat(inp.value);
+            cel.textContent = (q > 0) ? _huaroVolRepresenta(toposTot, q).toFixed(2) : '—';
+        }
+
         // ── Panel principal ──
         function renderPanelHuaro() {
             const ca = document.getElementById('contentArea');
@@ -3611,25 +3625,30 @@ const COMISIONES = {
                 const total = us.length;
                 const servidos = camp.servidos.length;
                 const masa = HuaroCore.huaroMasaDeAgua(boc);
+                const toposTot = us.reduce((s, u) => s + (u.topos || 0), 0);
                 const caudalGuardado = (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
                     ? pdaGuardado.caudales[boc]
-                    : (masa && masa.caudalLs != null ? masa.caudalLs : ''); // prefill con el caudal otorgado (masa de agua)
+                    : (masa && masa.caudalLs != null ? masa.caudalLs : ''); // prefill con el caudal de la resolución
                 const masaCaudal = masa && masa.caudalLs != null
                     ? masa.caudalLs.toFixed(2) + (masa.caudalEstimado ? ' *' : '')
                     : '—';
                 const masaVol = masa && masa.volumenAnualM3 != null
                     ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
+                const volRepIni = (parseFloat(caudalGuardado) > 0)
+                    ? _huaroVolRepresenta(toposTot, parseFloat(caudalGuardado)).toFixed(2) : '—';
                 filas += `
                 <tr>
                     <td>${escapeHtml(boc)}</td>
                     <td style="text-align:center;">${total}</td>
                     <td style="text-align:right;">${areaTot.toFixed(2)}</td>
-                    <td style="text-align:right;" title="${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) + ' (Licencia de Uso de Agua)' : 'Sin licencia mapeada'}">${masaCaudal}</td>
-                    <td style="text-align:right;">${masaVol}</td>
+                    <td style="text-align:right;background:#f3ede6;" title="${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) + ' — Licencia de Uso de Agua Superficial' : 'Sin licencia mapeada'}">${masaCaudal}</td>
+                    <td style="text-align:right;background:#f3ede6;">${masaVol}</td>
                     <td style="text-align:center;">
                         <input type="number" class="huaro-caudal" id="huaroCaudal__${i}" min="0" step="0.001"
-                            value="${caudalGuardado}" placeholder="l/s">
+                            value="${caudalGuardado}" placeholder="l/s"
+                            oninput="huaroActualizarVolRep(${i}, ${toposTot})">
                     </td>
+                    <td style="text-align:right;" id="huaroVolRep__${i}" title="Volumen que movería el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">${volRepIni}</td>
                     <td style="text-align:center;" class="huaro-mini">
                         Servidos: ${servidos}/${total}${camp.pendientes.length ? ' · Pend.: ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · Excl.: ' + camp.excluidos.length : ''}
                     </td>
@@ -3657,21 +3676,31 @@ const COMISIONES = {
 
                 <div class="huaro-card">
                     <table class="huaro-tabla">
-                        <thead><tr>
-                            <th style="text-align:left;">Bocatoma</th>
-                            <th>N° usuarios</th>
-                            <th>Área total (ha)</th>
-                            <th title="Caudal otorgado en la Licencia de Uso de Agua Superficial del bloque (MASA DE AGUA)">Caudal otorgado (l/s)</th>
-                            <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque (MASA DE AGUA)">Volumen anual otorgado (m³)</th>
-                            <th>Caudal asignado (l/s)</th>
-                            <th>Estado de campaña</th>
-                            <th>Acciones</th>
-                        </tr></thead>
+                        <thead>
+                        <tr>
+                            <th style="text-align:left;" rowspan="2">Bocatoma</th>
+                            <th rowspan="2">N° usuarios</th>
+                            <th rowspan="2">Área total (ha)</th>
+                            <th colspan="2" style="background:#5a3f27;">Según resolución (masa de agua)</th>
+                            <th colspan="2" style="background:#5a3f27;">A programar esta semana</th>
+                            <th rowspan="2">Estado de campaña</th>
+                            <th rowspan="2">Acciones</th>
+                        </tr>
+                        <tr>
+                            <th title="Caudal otorgado en la Licencia de Uso de Agua Superficial del bloque">Caudal (l/s)</th>
+                            <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque">Volumen anual (m³)</th>
+                            <th>Caudal a programar (l/s)</th>
+                            <th title="Volumen que representa el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">Volumen que representa (m³)</th>
+                        </tr>
+                        </thead>
                         <tbody>${filas}</tbody>
                     </table>
                     <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                         <button class="huaro-btn" onclick="huaroGenerarPDA()">⚙️ Generar PDA de la semana</button>
-                        <span class="huaro-mini">"Caudal / Volumen otorgado" = la masa de agua de la Licencia de Uso de Agua de cada bloque (referencia). El "Caudal asignado" viene precargado con ese valor; ajústalo si esta semana rige otro. Las bocatomas con caudal 0 o en blanco no se programan. <span style="white-space:nowrap;">* = caudal estimado (la R.D. escaneada lo recortó — confírmalo).</span></span>
+                        <span class="huaro-mini">"Según resolución" = la masa de agua de la Licencia de Uso de Agua de cada bloque (solo lectura). El "Caudal a programar" viene precargado con ese valor; ajústalo si esta semana rige otro. Las bocatomas con caudal 0 o en blanco no se programan.</span>
+                    </div>
+                    <div class="huaro-mini" style="margin-top:8px;line-height:1.5;">
+                        <b>*</b> El caudal según resolución de <b>HUAYNA COMÚN</b> es un valor <b>calculado</b> (volumen anual ÷ 23 760, ratio constante en los demás bloques): la <b>Resolución Directoral N° 517-2016-ANA/AAA XII.UV</b> no especifica el caudal otorgado para ese bloque.
                     </div>
                 </div>
 
