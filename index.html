@@ -1858,7 +1858,7 @@ const COMISIONES = {
     // Genera G-2/G-3/G-4 con su propio motor (assets/core/huaro.js); ver activarModoHuaro().
     HUARO: {
         nombre: "COMISIÓN DE REGANTES DE HUARO",
-        unidad: "Sub Sector Hidráulico Laguna Pumacocha-Huaro",
+        unidad: "Junta de Usuarios del Sector Hidráulico Menor Medio Vilcanota Mapacho",
         logo: null,
         colorHeader: "linear-gradient(135deg, #6b4a2e 0%, #4a3020 100%)",
         colorBg: "linear-gradient(135deg, #a5794a 0%, #6b4a2e 100%)",
@@ -3892,13 +3892,37 @@ const COMISIONES = {
                 () => _huaroExcelGOficial(datos, 'G-2'));
         }
 
+        // G-3 = detalle POR USUARIO (caudal a distribuir + horario de cada
+        // usuario), agrupado por bocatoma.
+        function _huaroDatosG3() {
+            const bocs = _huaroBocsConDatos();
+            const iso = _huaroResultados[bocs[0]].agregado.semanaInicioISO;
+            return {
+                semanaInicioISO: iso,
+                semanaFinISO: _huaroResultados[bocs[0]].agregado.semanaFinISO,
+                mesTexto: _huaroMesTexto(iso),
+                bloques: bocs.map(b => {
+                    const r = _huaroResultados[b];
+                    const porClave = {};
+                    (_huaroPadron[b] || []).forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
+                    return {
+                        bocatoma: b,
+                        caudalLs: r.agregado.caudalLs,
+                        programados: r.programados,
+                        pendientesUsuarios: r.pendientes.map(k => porClave[k]).filter(Boolean)
+                            .sort((x, y) => x.nOrden - y.nOrden),
+                    };
+                }),
+            };
+        }
+
         function huaroMostrarG3() {
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
-            const datos = _huaroDatosG2(); // G-2 y G-3 comparten estructura (R.J. 155)
+            const datos = _huaroDatosG3();
             const html = HuaroCore.huaroConstruirG3Html(datos);
             _huaroPanelAnexo('Anexo G-3 — Huaro', html,
                 () => _huaroImprimir('Anexo G-3 — Huaro', html, 'landscape'),
-                () => _huaroExcelGOficial(datos, 'G-3'));
+                () => _huaroExcelG3PorUsuario(datos));
         }
 
         function huaroMostrarG4() {
@@ -3959,6 +3983,7 @@ const COMISIONES = {
         }
         function _huaroBorde(c) { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; }
 
+        // Excel del G-2 (agregado por bocatoma, columnas oficiales R.J. 155).
         async function _huaroExcelGOficial(datos, formato) {
             const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = [
@@ -3970,7 +3995,7 @@ const COMISIONES = {
                 'Caudal día 5 (l/seg)', 'Caudal día 6 (l/seg)', 'Caudal día 7 (l/seg)', 'Observaciones',
             ];
             const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet('Anexo ' + formato, { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const ws = wb.addWorksheet('Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: (i === 0 || i === 1 || i === 2 || i === 18) ? 22 : 12 }));
 
             const poner = (fila, et, val) => {
@@ -3981,23 +4006,12 @@ const COMISIONES = {
             ws.mergeCells(1, 1, 1, heads.length);
             ws.getCell(1, 1).value = 'ANEXO G'; ws.getCell(1, 1).font = { bold: true, size: 13 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
             ws.mergeCells(2, 1, 2, heads.length);
-            ws.getCell(2, 1).value = formato === 'G-2'
-                ? 'Formato G-2: Programación de Distribución del Agua a Nivel de Canales de Distribución'
-                : 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
+            ws.getCell(2, 1).value = 'Formato G-2: Programación de Distribución del Agua a Nivel de Canales de Distribución';
             ws.getCell(2, 1).font = { size: 10 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
-            if (formato === 'G-2') {
-                poner(4, 'AAA:', HuaroCore.HUARO_AAA);
-                poner(5, 'ALA:', HuaroCore.HUARO_ALA);
-                poner(6, 'Sub Sector Hidráulico:', HuaroCore.HUARO_SUBSECTOR);
-                poner(7, 'Periodo:', per);
-            } else {
-                poner(4, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-                poner(5, 'Subsector hidráulico:', HuaroCore.HUARO_SUBSECTOR);
-                poner(6, 'Canal de abastecimiento de agua:', HuaroCore.HUARO_FUENTE);
-                poner(7, 'Mes:', datos.mesTexto || '');
-                poner(8, 'PERIODO:', per);
-                poner(9, 'Caudal (l/seg.):', '');
-            }
+            poner(4, 'AAA:', HuaroCore.HUARO_AAA);
+            poner(5, 'ALA:', HuaroCore.HUARO_ALA);
+            poner(6, 'Comisión de Regantes:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(7, 'Periodo:', per);
             let r = 11;
             heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
             r++;
@@ -4006,7 +4020,7 @@ const COMISIONES = {
             datos.filas.forEach(f => {
                 tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa; tH += f.tiempoTotalH;
                 const vals = [
-                    HuaroCore.HUARO_FUENTE, f.bocatoma, '',
+                    f.bocatoma, f.bocatoma, '',
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.semanaInicioISO || '').split('-').reverse().join('/'), '04:00',
                     (f.semanaFinISO || '').split('-').reverse().join('/'), '20:00',
@@ -4018,7 +4032,65 @@ const COMISIONES = {
             });
             const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tH.toFixed(1), '', '', '', '', '', '', '', '', '', '', '', ''];
             tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); });
-            await _descargarWorkbook(wb, 'Anexo_' + formato + '_Huaro_' + datos.semanaInicioISO + '.xlsx');
+            await _descargarWorkbook(wb, 'Anexo_G-2_Huaro_' + datos.semanaInicioISO + '.xlsx');
+        }
+
+        // Excel del G-3 (detalle por usuario, por bocatoma).
+        async function _huaroExcelG3PorUsuario(datos) {
+            const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
+            const heads = ['N° Orden de suministro', 'Usuario (nombres y apellidos)', 'Área (has)',
+                'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a distribuir (l/seg)',
+                'Inicio (fecha)', 'Inicio (hora)', 'Término (fecha)', 'Término (hora)', 'Observaciones'];
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 14 }));
+            const poner = (fila, et, val) => {
+                ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
+                ws.mergeCells(fila, 2, fila, heads.length);
+                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
+            };
+            ws.mergeCells(1, 1, 1, heads.length);
+            ws.getCell(1, 1).value = 'ANEXO G'; ws.getCell(1, 1).font = { bold: true, size: 13 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
+            ws.mergeCells(2, 1, 2, heads.length);
+            ws.getCell(2, 1).value = 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
+            ws.getCell(2, 1).font = { size: 10 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
+            poner(4, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
+            poner(5, 'Comisión de Regantes:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(6, 'Canal de abastecimiento de agua:', HuaroCore.HUARO_FUENTE);
+            poner(7, 'Mes:', datos.mesTexto || '');
+            poner(8, 'PERIODO:', per);
+            let r = 10;
+            (datos.bloques || []).forEach(bl => {
+                const cB = ws.getCell(r, 1);
+                cB.value = 'Bocatoma: ' + bl.bocatoma + '   ·   Caudal a distribuir: ' + (bl.caudalLs || 0).toFixed(2) + ' l/seg';
+                cB.font = { bold: true, size: 10 };
+                r++;
+                heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
+                r++;
+                const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
+                let tA = 0, tV = 0, tH = 0;
+                prog.forEach((p, i) => {
+                    tA += (p.areaHa || 0); tV += (p.volumenM3 || 0); tH += (p.tiempoH || 0);
+                    const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
+                        +(p.tiempoH || 0).toFixed(2), +(bl.caudalLs || 0).toFixed(2),
+                        (p.fechaISO || '').split('-').reverse().join('/'), p.inicioTexto,
+                        (p.fechaISO || '').split('-').reverse().join('/'), p.terminoTexto, ''];
+                    vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); });
+                    r++;
+                });
+                ['TOTAL', '', +tA.toFixed(2), +tV.toFixed(2), +tH.toFixed(2), '', '', '', '', '', ''].forEach((v, j) => {
+                    const c = ws.getCell(r, j + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c);
+                });
+                r++;
+                if (bl.pendientesUsuarios && bl.pendientesUsuarios.length) {
+                    const cP = ws.getCell(r, 1);
+                    cP.value = 'Pendientes para la próxima semana: ' + bl.pendientesUsuarios.map(u => 'N°' + u.nOrden + ' ' + u.nombre).join(' · ');
+                    cP.font = { size: 9, italic: true };
+                    r++;
+                }
+                r++;
+            });
+            await _descargarWorkbook(wb, 'Anexo_G-3_Huaro_' + datos.semanaInicioISO + '.xlsx');
         }
 
         // Procesar datos del workbook
