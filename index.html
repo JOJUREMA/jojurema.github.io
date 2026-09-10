@@ -3636,6 +3636,11 @@ const COMISIONES = {
                     ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
                 const volRepIni = (parseFloat(caudalGuardado) > 0)
                     ? _huaroVolRepresenta(toposTot, parseFloat(caudalGuardado)).toFixed(2) : '—';
+                const inicioG = (pdaGuardado && pdaGuardado.inicios && pdaGuardado.inicios[boc]) || {};
+                const diaOffIni = Number.isFinite(+inicioG.diaOffset) ? +inicioG.diaOffset : 0;
+                const horaIni = inicioG.hora || '04:00';
+                const optsDia = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+                    .map((d, k) => `<option value="${k}" ${k === diaOffIni ? 'selected' : ''}>${d}</option>`).join('');
                 filas += `
                 <tr>
                     <td>${escapeHtml(boc)}</td>
@@ -3649,6 +3654,8 @@ const COMISIONES = {
                             oninput="huaroActualizarVolRep(${i}, ${toposTot})">
                     </td>
                     <td style="text-align:right;" id="huaroVolRep__${i}" title="Volumen que movería el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">${volRepIni}</td>
+                    <td style="text-align:center;"><select id="huaroInicioDia__${i}" style="padding:3px 5px;font-size:12px;">${optsDia}</select></td>
+                    <td style="text-align:center;"><input type="time" id="huaroInicioHora__${i}" value="${horaIni}" min="04:00" max="19:45" step="900" style="padding:3px 5px;font-size:12px;"></td>
                     <td style="text-align:center;" class="huaro-mini">
                         Servidos: ${servidos}/${total}${camp.pendientes.length ? ' · Pend.: ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · Excl.: ' + camp.excluidos.length : ''}
                     </td>
@@ -3682,7 +3689,7 @@ const COMISIONES = {
                             <th rowspan="2">N° usuarios</th>
                             <th rowspan="2">Área total (ha)</th>
                             <th colspan="2" style="background:#5a3f27;">Según resolución (masa de agua)</th>
-                            <th colspan="2" style="background:#5a3f27;">A programar esta semana</th>
+                            <th colspan="4" style="background:#5a3f27;">A programar esta semana</th>
                             <th rowspan="2">Estado de campaña</th>
                             <th rowspan="2">Acciones</th>
                         </tr>
@@ -3691,6 +3698,8 @@ const COMISIONES = {
                             <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque">Volumen anual (m³)</th>
                             <th>Caudal a programar (l/s)</th>
                             <th title="Volumen que representa el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">Volumen que representa (m³)</th>
+                            <th title="Día en que arranca esta bocatoma dentro de la semana">Día de inicio</th>
+                            <th title="Hora de inicio del primer turno de la bocatoma (04:00–19:45)">Hora de inicio</th>
                         </tr>
                         </thead>
                         <tbody>${filas}</tbody>
@@ -3752,6 +3761,7 @@ const COMISIONES = {
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
             const resultados = {};
             const caudales = {};
+            const inicios = {};
             let algo = false;
 
             _huaroOrden.forEach((boc, i) => {
@@ -3760,6 +3770,14 @@ const COMISIONES = {
                 if (caudalLs <= 0) return;
                 algo = true;
                 caudales[boc] = caudalLs;
+
+                const selDia = document.getElementById('huaroInicioDia__' + i);
+                const inpHora = document.getElementById('huaroInicioHora__' + i);
+                const inicioDiaOffset = selDia ? (parseInt(selDia.value, 10) || 0) : 0;
+                const horaTxt = (inpHora && inpHora.value) || '04:00';
+                const [hh, mm] = horaTxt.split(':').map(n => parseInt(n, 10) || 0);
+                const inicioHoraMin = hh * 60 + mm;
+                inicios[boc] = { diaOffset: inicioDiaOffset, hora: horaTxt };
 
                 const camp = _huaroLeerCampana(boc);
                 // Base "antes de esta semana": si ya se generó esta MISMA semana,
@@ -3771,6 +3789,7 @@ const COMISIONES = {
                 const res = HuaroCore.huaroProgramarBocatoma({
                     usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
                     servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                    inicioDiaOffset, inicioHoraMin,
                 });
                 res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
                 resultados[boc] = res;
@@ -3787,7 +3806,7 @@ const COMISIONES = {
 
             _huaroResultados = resultados;
             _huaroGuardarPda({
-                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales,
+                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales, inicios,
                 resultados: Object.fromEntries(Object.entries(resultados).map(([b, r]) => [b, {
                     programados: r.programados, pendientes: r.pendientes, agregado: r.agregado,
                 }])),
@@ -4049,8 +4068,8 @@ const COMISIONES = {
                 const vals = [
                     HuaroCore.HUARO_FUENTE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
-                    (f.semanaInicioISO || '').split('-').reverse().join('/'), '04:00',
-                    (f.semanaFinISO || '').split('-').reverse().join('/'), '20:00',
+                    (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
+                    (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
                     ...f.caudalPorDia.map(c => +(c / 1000).toFixed(3)),
                     f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
                 ];

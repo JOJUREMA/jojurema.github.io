@@ -251,6 +251,12 @@ function huaroProgramarBocatoma(opts) {
     const servidos = new Set(opts.servidosPrevios || []);
     const pendientesPrevios = (opts.pendientesPrevios || []).slice();
     const excluidos = new Set(opts.excluidos || []);
+    // Día (0 = lunes … 6 = domingo) y hora (minuto del día) en que ARRANCA la
+    // bocatoma esta semana. Por defecto: lunes a las 04:00.
+    let inicioDiaOffset = parseInt(opts.inicioDiaOffset, 10);
+    if (!Number.isFinite(inicioDiaOffset) || inicioDiaOffset < 0 || inicioDiaOffset > 6) inicioDiaOffset = 0;
+    let inicioHoraMin = parseInt(opts.inicioHoraMin, 10);
+    if (!Number.isFinite(inicioHoraMin) || inicioHoraMin < HUARO_MIN_INICIO_DIA || inicioHoraMin >= HUARO_MIN_FIN_DIA) inicioHoraMin = HUARO_MIN_INICIO_DIA;
 
     const porClave = {};
     usuarios.forEach(u => { porClave[huaroClaveUsuario(u)] = u; });
@@ -272,9 +278,9 @@ function huaroProgramarBocatoma(opts) {
 
     const programados = [];
     const pendientes = [];
-    let dia = 1;
-    let cursorMin = HUARO_MIN_INICIO_DIA;
-    let sobrepasoSemana = false;
+    let dia = 1 + inicioDiaOffset;              // 1..7 dentro de la semana
+    let cursorMin = inicioHoraMin;              // el primer día arranca en la hora elegida
+    let sobrepasoSemana = dia > HUARO_DIAS_SEMANA;
 
     for (let i = 0; i < cola.length; i++) {
         const u = cola[i];
@@ -321,12 +327,24 @@ function huaroProgramarBocatoma(opts) {
     const volumenTotalM3 = programados.reduce((s, p) => s + (p.volumenM3 || 0), 0);
     const areaPendienteHa = pendientes.reduce((s, k) => s + ((porClave[k] && porClave[k].areaHa) || 0), 0);
 
+    // Período REAL de operación del canal = del primer turno al último turno
+    // programado (lo que también se ve en el G-3). Si no hay nadie programado,
+    // cae al inicio elegido / fin de semana.
+    const pIni = programados[0];
+    const pFin = programados[programados.length - 1];
+    const periodoInicioISO = pIni ? pIni.fechaISO : _huaroSumarDias(semanaInicioISO, Math.min(inicioDiaOffset, HUARO_DIAS_SEMANA - 1));
+    const periodoInicioHora = pIni ? pIni.inicioTexto : _huaroHHMM(inicioHoraMin);
+    const periodoFinISO = pFin ? pFin.fechaISO : periodoInicioISO;
+    const periodoFinHora = pFin ? pFin.terminoTexto : periodoInicioHora;
+
     return {
         programados, pendientes,
         agregado: {
             bocatoma: opts.bocatoma || '',
             caudalLs, semanaInicioISO,
             semanaFinISO: _huaroSumarDias(semanaInicioISO, HUARO_DIAS_SEMANA - 1),
+            inicioDiaOffset, inicioHoraMin,
+            periodoInicioISO, periodoInicioHora, periodoFinISO, periodoFinHora,
             nUsuarios: programados.length,
             areaProgramadaHa, toposTotal, tiempoTotalH, volumenTotalM3,
             diasUsados, caudalPorDia,
@@ -392,10 +410,10 @@ function huaroConstruirG2Html(datos) {
             <td style="${td}text-align:right;">${f.volumenTotalM3.toFixed(2)}</td>
             <td style="${td}text-align:right;">${f.areaProgramadaHa.toFixed(2)}</td>
             <td style="${td}text-align:center;">${f.tiempoTotalH.toFixed(1)}</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.semanaInicioISO)}</td>
-            <td style="${td}text-align:center;">04:00</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.semanaFinISO)}</td>
-            <td style="${td}text-align:center;">20:00</td>
+            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
+            <td style="${td}text-align:center;">${f.periodoInicioHora || '04:00'}</td>
+            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
+            <td style="${td}text-align:center;">${f.periodoFinHora || '20:00'}</td>
             ${dias}
             <td style="${td}">${_huaroEsc(obs)}</td>
         </tr>`;
@@ -473,6 +491,10 @@ function huaroConstruirG3Html(datos) {
     const bloquesHtml = (datos.bloques || []).map(bl => {
         const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
         const caudalM3s = (bl.caudalLs || 0) / 1000;
+        const pIni = prog[0], pFin = prog[prog.length - 1];
+        const periodoTxt = pIni
+            ? `${_huaroDiaEtiqueta(pIni.fechaISO)} ${pIni.inicioTexto}  →  ${_huaroDiaEtiqueta(pFin.fechaISO)} ${pFin.terminoTexto}`
+            : '—';
 
         let filas = prog.map((p, i) => `
             <tr>
@@ -505,6 +527,7 @@ function huaroConstruirG3Html(datos) {
         <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;">
             <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(huaroCanalBocatoma(bl.bocatoma))}</div>
             <div><strong>Caudal:</strong> ${caudalM3s.toFixed(4)} (m³/seg.)</div>
+            <div><strong>Período de operación:</strong> ${periodoTxt} &nbsp;·&nbsp; <strong>Tiempo de operación:</strong> ${tTiempo.toFixed(1)} h</div>
         </div>
         <div style="overflow-x:auto;">
         <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;width:100%;">
