@@ -3528,6 +3528,29 @@ const COMISIONES = {
             const lblToma = document.querySelector('label[for="tomaSelect"]');
             if (lblToma) lblToma.textContent = '🚰 Seleccionar Toma';
             document.querySelectorAll('.huaro-oculto').forEach(el => el.classList.remove('huaro-oculto'));
+
+            // Al salir de HUARO hay que borrar TODO su estado y su panel — el
+            // padrón, los resultados y el cuadro que quedó en #contentArea son
+            // de Huaro y no deben verse en otra comisión. La comisión nueva
+            // exige recargar su propio Excel de todas formas.
+            _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
+            window._huaroOrdenBocatomas = [];
+            tomasData = {};
+            workbook = null;
+            if (typeof tomaSelect !== 'undefined' && tomaSelect) {
+                tomaSelect.innerHTML = '<option value="">-- Primero carga el archivo --</option>';
+            }
+            ['btnGenerar', 'btnConsolidado', 'btnAvanceSiembra', 'btnSincronizarPadron'].forEach(id => {
+                const b = document.getElementById(id); if (b) b.disabled = true;
+            });
+            const ca = document.getElementById('contentArea');
+            if (ca) ca.innerHTML = `
+                <div class="welcome-screen">
+                    <div class="welcome-icon">💧</div>
+                    <h2>Bienvenido al Sistema de Gestión de Riego</h2>
+                    <p>Carga tu archivo Excel TOMAS.xlsx para comenzar a generar reportes<br>
+                    de usuarios con derecho de uso de agua para riego.</p>
+                </div>`;
         }
 
         function huaroProcesarWorkbook() {
