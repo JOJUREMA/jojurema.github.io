@@ -3460,6 +3460,8 @@ const COMISIONES = {
         let _huaroOrden = [];        // [bocatoma...] en orden de hoja del Excel
         let _huaroResultados = null; // { bocatoma: {programados, pendientes, agregado} }
         let _huaroSemanaActualISO = null; // lunes de la semana elegida (se conserva al ir/volver de los anexos)
+        let _huaroMesSel = null;     // mes (0-11) mostrado en el selector de semana; null = derivar de la semana
+        let _huaroAnioSel = null;    // año mostrado en el selector de semana; null = derivar de la semana
         let _huaroHorarioTemp = {};  // { bocatoma: [{activo,inicioMin,finMin}×7] } — días/horas de riego editados en la sesión
 
         const _HUARO_OCULTAR = [
@@ -3535,6 +3537,7 @@ const COMISIONES = {
             // de Huaro y no deben verse en otra comisión. La comisión nueva
             // exige recargar su propio Excel de todas formas.
             _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
+            _huaroMesSel = null; _huaroAnioSel = null;
             _huaroHorarioTemp = {};
             window._huaroOrdenBocatomas = [];
             tomasData = {};
@@ -3603,6 +3606,43 @@ const COMISIONES = {
             try { return new Date(iso + 'T00:00:00').toLocaleString('es-PE', { month: 'long', year: 'numeric' }).toUpperCase(); }
             catch (e) { return ''; }
         }
+        const _HUARO_MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
+            'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+        function _huaroISOd(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        // Semanas Lun–Dom cuyo rango toca el mes/año dado. Devuelve
+        // [{ n, lunesISO, domISO }], numeradas 1..k.
+        function _huaroSemanasDelMes(anio, mes0) {
+            const ultimo = new Date(anio, mes0 + 1, 0);
+            const lun = new Date(anio, mes0, 1);
+            lun.setDate(lun.getDate() - ((lun.getDay() + 6) % 7)); // lunes en/antes del día 1
+            const out = [];
+            while (lun <= ultimo) {
+                const dom = new Date(lun); dom.setDate(dom.getDate() + 6);
+                out.push({ n: out.length + 1, lunesISO: _huaroISOd(lun), domISO: _huaroISOd(dom) });
+                lun.setDate(lun.getDate() + 7);
+            }
+            return out;
+        }
+        // Cambió el mes/año del selector: fija ese mes/año como el mostrado y
+        // reubica la semana elegida dentro de él (si la actual ya no cae ahí,
+        // va a la Semana 1) y repinta.
+        function huaroSemanaMesCambio() {
+            const mes0 = parseInt((document.getElementById('huaroMesSel') || {}).value, 10);
+            const anio = parseInt((document.getElementById('huaroAnioSel') || {}).value, 10);
+            if (!Number.isFinite(mes0) || !Number.isFinite(anio)) return;
+            _huaroMesSel = mes0; _huaroAnioSel = anio;
+            const sems = _huaroSemanasDelMes(anio, mes0);
+            const match = sems.find(w => w.lunesISO === _huaroSemanaActualISO);
+            _huaroSemanaActualISO = match ? match.lunesISO : (sems[0] ? sems[0].lunesISO : _huaroSemanaActualISO);
+            renderPanelHuaro();
+        }
+        function huaroElegirSemana() {
+            const v = (document.getElementById('huaroSemanaSel') || {}).value;
+            if (v) _huaroSemanaActualISO = v; // el mes/año mostrado no cambia
+            renderPanelHuaro();
+        }
 
         // Bocatomas de _huaroResultados que sí tienen usuarios programados esta
         // semana (una campaña ya completa produce 0 programados/0 pendientes y
@@ -3613,11 +3653,27 @@ const COMISIONES = {
         }
 
         function _huaroSemanaSeleccionada() {
-            const inp = document.getElementById('huaroFechaSemana');
-            const base = (inp && inp.value) ? inp.value : (_huaroSemanaActualISO || null);
+            // Fuente de verdad: _huaroSemanaActualISO (lo fijan los selectores de
+            // Mes/Semana y la fecha exacta). Solo se lee el input directo del DOM
+            // en el primer render, cuando aún no hay semana en memoria.
+            let base = _huaroSemanaActualISO || null;
+            if (!base) {
+                const inp = document.getElementById('huaroFechaSemana');
+                base = (inp && inp.value) ? inp.value : null;
+            }
             const iso = HuaroCore.huaroLunesDeLaSemana(base || undefined);
             _huaroSemanaActualISO = iso;
             return iso;
+        }
+        // Fecha exacta escrita a mano → se lleva al lunes de esa semana y el
+        // selector de Mes/Año sigue a esa fecha.
+        function huaroFechaExacta(v) {
+            if (v) {
+                _huaroSemanaActualISO = HuaroCore.huaroLunesDeLaSemana(v);
+                const d = new Date(_huaroSemanaActualISO + 'T00:00:00');
+                _huaroMesSel = d.getMonth(); _huaroAnioSel = d.getFullYear();
+            }
+            renderPanelHuaro();
         }
 
         // Volumen (m³) que movería `caudalLs` durante toda la operación de la
@@ -3696,17 +3752,57 @@ const COMISIONES = {
 
             const hayResultados = !!_huaroResultados;
             const hayAnexos = _huaroBocsConDatos().length > 0;
+
+            // Selector de semana: Mes + Año + Semana (Lun–Dom) del mes, más una
+            // fecha exacta como alternativa. El Mes/Año mostrado es estado propio
+            // (_huaroMesSel/_huaroAnioSel); si no se ha tocado, se deriva de la
+            // semana. La semana elegida se resalta en la lista.
+            let _mes0, _anio;
+            if (_huaroMesSel != null && _huaroAnioSel != null) {
+                _mes0 = _huaroMesSel; _anio = _huaroAnioSel;
+            } else {
+                const _wd = new Date(semanaISO + 'T00:00:00');
+                _mes0 = _wd.getMonth(); _anio = _wd.getFullYear();
+            }
+            const _sems = _huaroSemanasDelMes(_anio, _mes0);
+            const _fc = s => s.split('-').reverse().join('/');
+            let _semN = 0;
+            let _optSem = _sems.map(w => {
+                const sel = (w.lunesISO === semanaISO);
+                if (sel) _semN = w.n;
+                return `<option value="${w.lunesISO}"${sel ? ' selected' : ''}>Semana ${w.n} · ${_fc(w.lunesISO)} – ${_fc(w.domISO)}</option>`;
+            }).join('');
+            if (!_semN) {
+                _optSem += `<option value="${semanaISO}" selected>Semana del ${_fc(semanaISO)} (fuera del mes elegido)</option>`;
+            }
+            const _optMes = _HUARO_MESES.map((m, i) => `<option value="${i}"${i === _mes0 ? ' selected' : ''}>${m}</option>`).join('');
+            const _semLbl = _semN
+                ? `Semana ${_semN} de ${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
+                : `Semana del Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)} (fuera de ${_HUARO_MESES[_mes0]} ${_anio})`;
+
             ca.innerHTML = `
             <div id="panelHuaro">
                 <h2>🌾 PDA — Comisión de Regantes de Huaro</h2>
                 <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · ventana 04:00–20:00 · ${HuaroCore.HUARO_DIAS_SEMANA} días.</p>
 
                 <div class="huaro-card">
-                    <label style="font-weight:600;font-size:13px;">Semana (Lun–Dom):
-                        <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="renderPanelHuaro()"
-                            style="margin-left:8px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
-                    </label>
-                    <span class="huaro-mini" style="margin-left:10px;">Del ${semanaISO.split('-').reverse().join('/')} al ${semanaFinISO.split('-').reverse().join('/')}</span>
+                    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+                        <label style="font-weight:600;font-size:12px;">Mes<br>
+                            <select id="huaroMesSel" onchange="huaroSemanaMesCambio()" style="margin-top:3px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">${_optMes}</select>
+                        </label>
+                        <label style="font-weight:600;font-size:12px;">Año<br>
+                            <input type="number" id="huaroAnioSel" value="${_anio}" min="2020" max="2100" step="1" onchange="huaroSemanaMesCambio()"
+                                style="margin-top:3px;width:80px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
+                        </label>
+                        <label style="font-weight:600;font-size:12px;flex:1;min-width:240px;">Semana a programar (Lun–Dom)<br>
+                            <select id="huaroSemanaSel" onchange="huaroElegirSemana()" style="margin-top:3px;width:100%;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">${_optSem}</select>
+                        </label>
+                        <label style="font-weight:600;font-size:12px;">o fecha exacta<br>
+                            <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="huaroFechaExacta(this.value)"
+                                style="margin-top:3px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
+                        </label>
+                    </div>
+                    <div class="huaro-mini" style="margin-top:8px;"><b>${_semLbl}</b></div>
                 </div>
 
                 <div class="huaro-card">
@@ -3764,10 +3860,13 @@ const COMISIONES = {
                 const colPend = a.campanaCompleta
                     ? '<span style="color:#6b7280;">campaña completa</span>'
                     : (a.nPendientes ? a.nPendientes + ' (' + a.areaPendienteHa.toFixed(2) + ' ha)' : '0');
+                const dnums = [...new Set((_huaroResultados[b].programados || []).map(p => p.dia))]
+                    .sort((x, y) => x - y);
+                const colDias = dnums.length ? 'Día ' + dnums.join(', ') : '—';
                 return `<tr><td>${escapeHtml(b)}</td><td style="text-align:center;">${a.nUsuarios}</td>
                     <td style="text-align:right;">${a.areaProgramadaHa.toFixed(2)}</td>
                     <td style="text-align:right;">${a.volumenTotalM3.toFixed(2)}</td>
-                    <td style="text-align:center;">${a.diasUsados}</td>
+                    <td style="text-align:center;" title="Número del día de la semana (1 = lunes … 7 = domingo)">${colDias}</td>
                     <td style="text-align:center;">${colPend}</td></tr>`;
             }).join('');
             cont.innerHTML = `
@@ -3921,10 +4020,12 @@ const COMISIONES = {
             const base = HuaroCore.huaroNormalizarDiasRiego(
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
             const dNom = HuaroCore.HUARO_DIAS_NOMBRE;
+            const toposTot = (_huaroPadron[boc] || []).reduce((s, u) => s + (u.topos || 0), 0);
+            const tReal = toposTot * HuaroCore.HUARO_H_POR_TOPO;
 
             const filas = base.map((d, i) => `
                 <tr>
-                    <td style="text-align:left;">${dNom[i]}</td>
+                    <td style="text-align:left;white-space:nowrap;">Día ${i + 1} — ${dNom[i]}</td>
                     <td style="text-align:center;">
                         <input type="checkbox" id="huaroHR_act__${i}" ${d.activo ? 'checked' : ''}>
                     </td>
@@ -3946,6 +4047,7 @@ const COMISIONES = {
                 <div class="modal-container" style="max-width:560px;max-height:82vh;overflow-y:auto;">
                     <h3>⏱️ Días y horas de riego — ${escapeHtml(boc)}</h3>
                     <p class="huaro-mini">Marca los días en que la bocatoma reparte agua y define la ventana de horas de cada día. Los turnos de los usuarios (n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h) se encadenan dentro de esas ventanas, en orden de N° del padrón; lo que no entra en la semana pasa a la siguiente.</p>
+                    <p class="huaro-mini" style="background:#f3ede6;border-radius:5px;padding:6px 8px;">Tiempo real de riego de esta bocatoma: <b>${tReal.toFixed(1)} h</b> (Σ ${toposTot.toFixed(1)} topos × ${HuaroCore.HUARO_H_POR_TOPO} h). Solo se ocupa ese tiempo dentro de las ventanas activas — <b>no se fuerza a llenar las 16 h</b>: lo que sobra de cada ventana queda libre. La columna "Ventana (h)" es el máximo disponible del día, no el tiempo que se va a usar.</p>
                     <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
                         <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRTodos">Todos los días</button>
                         <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRLunVie">Lun–Vie</button>
@@ -3957,7 +4059,7 @@ const COMISIONES = {
                         </label>
                     </div>
                     <table class="huaro-tabla">
-                        <thead><tr><th style="text-align:left;">Día</th><th>Programar</th><th>Inicio</th><th>Fin</th><th>Horas de riego</th></tr></thead>
+                        <thead><tr><th style="text-align:left;">Día de la semana</th><th>Programar</th><th>Inicio</th><th>Fin</th><th>Ventana (h)</th></tr></thead>
                         <tbody>${filas}</tbody>
                     </table>
                     <div style="display:flex;gap:10px;margin-top:14px;">
@@ -4178,7 +4280,7 @@ const COMISIONES = {
                 'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO (Ha)',
                 'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
                 'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
-                'LUN (m³/seg)', 'MAR (m³/seg)', 'MIE (m³/seg)', 'JUE (m³/seg)', 'VIE (m³/seg)', 'SAB (m³/seg)', 'DOM (m³/seg)',
+                '1 LUN (m³/seg)', '2 MAR (m³/seg)', '3 MIE (m³/seg)', '4 JUE (m³/seg)', '5 VIE (m³/seg)', '6 SAB (m³/seg)', '7 DOM (m³/seg)',
                 'OBSERVACIONES',
             ];
             const wb = new ExcelJS.Workbook();
@@ -4212,11 +4314,15 @@ const COMISIONES = {
                 tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa;
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
+                const _ndIni = HuaroCore._huaroNumDiaSemana
+                    ? HuaroCore._huaroNumDiaSemana(f.periodoInicioISO || f.semanaInicioISO, datos.semanaInicioISO) : '';
+                const _ndFin = HuaroCore._huaroNumDiaSemana
+                    ? HuaroCore._huaroNumDiaSemana(f.periodoFinISO || f.semanaFinISO, datos.semanaInicioISO) : '';
                 const vals = [
                     HuaroCore.HUARO_FUENTE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
-                    (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
-                    (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
+                    'Día ' + _ndIni + ' — ' + (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
+                    'Día ' + _ndFin + ' — ' + (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
                     ...f.caudalPorDia.map(c => +(c / 1000).toFixed(3)),
                     f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
                 ];
@@ -4234,7 +4340,7 @@ const COMISIONES = {
             const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = ['N° Orden de suministro', 'Usuario (nombres y apellidos)', 'Área (has)',
                 'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a Entregar (m³/s)',
-                'Inicio — Día', 'Inicio — Hora', 'Término — Día', 'Término — Hora', 'Observaciones'];
+                'Inicio — Día (N° y fecha)', 'Inicio — Hora', 'Término — Día (N° y fecha)', 'Término — Hora', 'Observaciones'];
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 14 }));
@@ -4265,10 +4371,10 @@ const COMISIONES = {
                 let tA = 0, tV = 0, tH = 0;
                 prog.forEach((p, i) => {
                     tA += (p.areaHa || 0); tV += (p.volumenM3 || 0); tH += (p.tiempoH || 0);
+                    const _fd = 'Día ' + p.dia + ' — ' + (p.fechaISO || '').split('-').reverse().join('/');
                     const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
                         +(p.tiempoH || 0).toFixed(2), +((bl.caudalLs || 0) / 1000).toFixed(4),
-                        (p.fechaISO || '').split('-').reverse().join('/'), p.inicioTexto,
-                        (p.fechaISO || '').split('-').reverse().join('/'), p.terminoTexto, ''];
+                        _fd, p.inicioTexto, _fd, p.terminoTexto, ''];
                     vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); });
                     r++;
                 });

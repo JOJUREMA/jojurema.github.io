@@ -141,11 +141,12 @@ function huaroResumenDiasRiego(diasRiego) {
     const totalH = activos.reduce((s, x) => s + (x.d.finMin - x.d.inicioMin) / 60, 0);
     const mismaVentana = activos.every(x =>
         x.d.inicioMin === activos[0].d.inicioMin && x.d.finMin === activos[0].d.finMin);
-    const dias = activos.map(x => HUARO_DIAS_ABREV[x.i]).join('·');
+    // Cada día lleva su número de la semana (1 = lunes … 7 = domingo).
+    const dias = activos.map(x => `${x.i + 1} ${HUARO_DIAS_ABREV[x.i]}`).join(' · ');
     if (mismaVentana) {
         return `${dias} · ${_huaroHHMM(activos[0].d.inicioMin)}–${_huaroHHMM(activos[0].d.finMin)} (${totalH.toFixed(0)} h)`;
     }
-    return activos.map(x => `${HUARO_DIAS_ABREV[x.i]} ${_huaroHHMM(x.d.inicioMin)}–${_huaroHHMM(x.d.finMin)}`).join(' · ');
+    return activos.map(x => `Día ${x.i + 1} (${HUARO_DIAS_ABREV[x.i]}) ${_huaroHHMM(x.d.inicioMin)}–${_huaroHHMM(x.d.finMin)}`).join(' · ');
 }
 
 // ── Helpers puros ──
@@ -443,6 +444,23 @@ function _huaroDiaEtiqueta(fechaISO) {
     const mm = String(dt.getMonth() + 1).padStart(2, '0');
     return `${HUARO_DIAS_ABREV3[dow]} ${dd}/${mm}`;
 }
+// Número ordinal del día dentro de la semana de riego: 1 = lunes … 7 = domingo.
+// Si se pasa el lunes de la semana, se cuenta desde él (soporta semanas que
+// cruzan fin de mes); si no, se deriva del día de la semana de la fecha.
+function _huaroNumDiaSemana(fechaISO, semanaInicioISO) {
+    if (!fechaISO) return 0;
+    if (semanaInicioISO) {
+        const a = new Date(semanaInicioISO + 'T00:00:00');
+        const b = new Date(fechaISO + 'T00:00:00');
+        const d = Math.round((b - a) / 864e5) + 1;
+        if (d >= 1 && d <= 7) return d;
+    }
+    const dt = new Date(fechaISO + 'T00:00:00');
+    return ((dt.getDay() + 6) % 7) + 1;
+}
+function _huaroDiaEtiquetaNum(fechaISO, semanaInicioISO) {
+    return 'Día ' + _huaroNumDiaSemana(fechaISO, semanaInicioISO) + ' · ' + _huaroDiaEtiqueta(fechaISO);
+}
 
 // ── ANEXO G-2 ──
 // datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
@@ -474,9 +492,9 @@ function huaroConstruirG2Html(datos) {
             <td style="${td}text-align:right;">${f.volumenTotalM3.toFixed(2)}</td>
             <td style="${td}text-align:right;">${f.areaProgramadaHa.toFixed(2)}</td>
             <td style="${td}text-align:center;">${f.tiempoTotalH.toFixed(1)}</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
+            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}<br><span style="font-size:8px;color:#333;">Día ${_huaroNumDiaSemana(f.periodoInicioISO || f.semanaInicioISO, datos.semanaInicioISO)}</span></td>
             <td style="${td}text-align:center;">${f.periodoInicioHora || '04:00'}</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
+            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}<br><span style="font-size:8px;color:#333;">Día ${_huaroNumDiaSemana(f.periodoFinISO || f.semanaFinISO, datos.semanaInicioISO)}</span></td>
             <td style="${td}text-align:center;">${f.periodoFinHora || '20:00'}</td>
             ${dias}
             <td style="${td}">${_huaroEsc(obs)}</td>
@@ -521,8 +539,8 @@ function huaroConstruirG2Html(datos) {
             <tr style="background:#E6E6E6;color:#000;">
                 <th style="${th2}">INICIO</th><th style="${th2}">HORA</th>
                 <th style="${th2}">TÉRMINO</th><th style="${th2}">HORA</th>
-                <th style="${th2}">LUN</th><th style="${th2}">MAR</th><th style="${th2}">MIE</th>
-                <th style="${th2}">JUE</th><th style="${th2}">VIE</th><th style="${th2}">SAB</th><th style="${th2}">DOM</th>
+                <th style="${th2}">1<br>LUN</th><th style="${th2}">2<br>MAR</th><th style="${th2}">3<br>MIE</th>
+                <th style="${th2}">4<br>JUE</th><th style="${th2}">5<br>VIE</th><th style="${th2}">6<br>SAB</th><th style="${th2}">7<br>DOM</th>
             </tr>
         </thead>
         <tbody>
@@ -557,7 +575,7 @@ function huaroConstruirG3Html(datos) {
         const caudalM3s = (bl.caudalLs || 0) / 1000;
         const pIni = prog[0], pFin = prog[prog.length - 1];
         const periodoTxt = pIni
-            ? `${_huaroDiaEtiqueta(pIni.fechaISO)} ${pIni.inicioTexto}  →  ${_huaroDiaEtiqueta(pFin.fechaISO)} ${pFin.terminoTexto}`
+            ? `${_huaroDiaEtiquetaNum(pIni.fechaISO, datos.semanaInicioISO)} ${pIni.inicioTexto}  →  ${_huaroDiaEtiquetaNum(pFin.fechaISO, datos.semanaInicioISO)} ${pFin.terminoTexto}`
             : '—';
 
         let filas = prog.map((p, i) => `
@@ -568,9 +586,9 @@ function huaroConstruirG3Html(datos) {
                 <td style="${td}text-align:right;">${(p.volumenM3 || 0).toFixed(2)}</td>
                 <td style="${td}text-align:center;">${(p.tiempoH || 0).toFixed(2)}</td>
                 <td style="${td}text-align:right;">${caudalM3s.toFixed(4)}</td>
-                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}text-align:center;white-space:nowrap;">Día ${p.dia} · ${_huaroDiaEtiqueta(p.fechaISO)}</td>
                 <td style="${td}text-align:center;">${p.inicioTexto}</td>
-                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}text-align:center;white-space:nowrap;">Día ${p.dia} · ${_huaroDiaEtiqueta(p.fechaISO)}</td>
                 <td style="${td}text-align:center;">${p.terminoTexto}</td>
                 <td style="${td}"></td>
             </tr>`).join('');
@@ -670,7 +688,7 @@ function huaroConstruirG4Html(p, ctx) {
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Caudal: <span style="${line}">${caudalLs.toFixed(2)}</span> l/s.</div>
         <div style="margin:7px 0;font-size:11px;">
             <span style="${box}"></span> A partir del día:
-            <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.inicioTexto}</span>
+            <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span>${p.dia != null ? ' <span style="font-size:10px;">(Día ' + p.dia + ' de la semana)</span>' : ''} hora: <span style="${line}min-width:70px;">${p.inicioTexto}</span>
             hasta el día: <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.terminoTexto}</span>
         </div>
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Horas total del uso del agua: <span style="${line}">${(p.tiempoH || 0).toFixed(2)}</span></div>
@@ -723,6 +741,7 @@ if (typeof window !== 'undefined') {
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
+        _huaroNumDiaSemana, _huaroDiaEtiqueta,
         huaroDocumentoImprimible,
     };
 }
@@ -735,6 +754,7 @@ if (typeof module !== 'undefined' && module.exports) {
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
+        _huaroNumDiaSemana, _huaroDiaEtiqueta,
         huaroDocumentoImprimible,
     };
 }
