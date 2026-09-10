@@ -3463,6 +3463,9 @@ const COMISIONES = {
         let _huaroMesSel = null;     // mes (0-11) mostrado en el selector de semana; null = derivar de la semana
         let _huaroAnioSel = null;    // año mostrado en el selector de semana; null = derivar de la semana
         let _huaroHorarioTemp = {};  // { bocatoma: [{activo,inicioMin,finMin}×7] } — días/horas de riego editados en la sesión
+        let _huaroCaudalTemp = {};   // { bocatoma: caudal l/s escrito y aún no programado }
+        let _huaroBocSel = null;     // bocatoma que se está programando (null = solo se ve el selector)
+        let _huaroBocFlash = null;   // bocatoma recién programada (para el aviso verde)
 
         const _HUARO_OCULTAR = [
             '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
@@ -3483,11 +3486,28 @@ const COMISIONES = {
                 '#panelHuaro table.huaro-tabla { border-collapse:collapse; width:100%; font-size:13px; }',
                 '#panelHuaro table.huaro-tabla th, #panelHuaro table.huaro-tabla td { border:1px solid #cbd2da; padding:6px 8px; }',
                 '#panelHuaro table.huaro-tabla thead th { background:#6b4a2e; color:#fff; font-weight:600; }',
-                '#panelHuaro input.huaro-caudal { width:90px; padding:4px 6px; border:1px solid #b7bfca; border-radius:4px; text-align:right; }',
+                '#panelHuaro input.huaro-caudal { width:120px; padding:7px 9px; border:1px solid #b7bfca; border-radius:6px; text-align:right; font-size:15px; font-weight:700; }',
                 '#panelHuaro .huaro-btn { background:#6b4a2e; color:#fff; border:none; border-radius:5px; padding:8px 16px; font-weight:600; font-size:13px; cursor:pointer; }',
                 '#panelHuaro .huaro-btn.sec { background:#e2e8f0; color:#3b3b3b; }',
+                '#panelHuaro .huaro-btn.ok { background:#2e7d46; }',
                 '#panelHuaro .huaro-btn:disabled { opacity:.5; cursor:not-allowed; }',
                 '#panelHuaro .huaro-mini { font-size:11px; color:#6b7280; }',
+                '#panelHuaro .huaro-sel { padding:8px 10px; border:1px solid #b7bfca; border-radius:6px; font-size:14px; background:#fff; }',
+                '#panelHuaro .huaro-detalle { border:1px solid #d9dee5; border-radius:10px; overflow:hidden; margin-bottom:14px; }',
+                '#panelHuaro .huaro-detalle-head { background:linear-gradient(135deg,#6b4a2e,#4a3020); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }',
+                '#panelHuaro .huaro-detalle-head h3 { margin:0; font-size:16px; }',
+                '#panelHuaro .huaro-detalle-body { padding:16px; background:#fff; }',
+                '#panelHuaro .huaro-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:14px; }',
+                '#panelHuaro .huaro-box { border:1px solid #e2e2e2; border-radius:8px; padding:10px 12px; }',
+                '#panelHuaro .huaro-box.res { background:#f3ede6; border-color:#e0d3c2; }',
+                '#panelHuaro .huaro-box .k { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; }',
+                '#panelHuaro .huaro-box .v { font-size:18px; font-weight:700; margin-top:2px; color:#3a2a1a; }',
+                '#panelHuaro .huaro-box .v small { font-size:11px; font-weight:600; color:#6b7280; }',
+                '#panelHuaro .huaro-vol { background:#eef6f0; border-color:#c9e4d2; }',
+                '#panelHuaro .huaro-vol .v { color:#1f6b3a; font-size:22px; }',
+                '#panelHuaro .huaro-aviso-ok { background:#eaf7ef; border:1px solid #b7e0c6; color:#1f6b3a; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; }',
+                '#panelHuaro .huaro-pill { display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:#2e7d46; color:#fff; margin-left:6px; }',
+                '#panelHuaro .huaro-pill.pend { background:#b26a00; }',
             ].join('\n');
             document.head.appendChild(s);
         }
@@ -3538,7 +3558,7 @@ const COMISIONES = {
             // exige recargar su propio Excel de todas formas.
             _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
             _huaroMesSel = null; _huaroAnioSel = null;
-            _huaroHorarioTemp = {};
+            _huaroHorarioTemp = {}; _huaroCaudalTemp = {}; _huaroBocSel = null; _huaroBocFlash = null;
             window._huaroOrdenBocatomas = [];
             tomasData = {};
             workbook = null;
@@ -3636,11 +3656,13 @@ const COMISIONES = {
             const sems = _huaroSemanasDelMes(anio, mes0);
             const match = sems.find(w => w.lunesISO === _huaroSemanaActualISO);
             _huaroSemanaActualISO = match ? match.lunesISO : (sems[0] ? sems[0].lunesISO : _huaroSemanaActualISO);
+            _huaroCaudalTemp = {}; _huaroHorarioTemp = {};
             renderPanelHuaro();
         }
         function huaroElegirSemana() {
             const v = (document.getElementById('huaroSemanaSel') || {}).value;
             if (v) _huaroSemanaActualISO = v; // el mes/año mostrado no cambia
+            _huaroCaudalTemp = {}; _huaroHorarioTemp = {};
             renderPanelHuaro();
         }
 
@@ -3672,22 +3694,63 @@ const COMISIONES = {
                 _huaroSemanaActualISO = HuaroCore.huaroLunesDeLaSemana(v);
                 const d = new Date(_huaroSemanaActualISO + 'T00:00:00');
                 _huaroMesSel = d.getMonth(); _huaroAnioSel = d.getFullYear();
+                _huaroCaudalTemp = {}; _huaroHorarioTemp = {};
             }
             renderPanelHuaro();
         }
 
-        // Volumen (m³) que movería `caudalLs` durante toda la operación de la
-        // bocatoma = caudal × (Σ topos × 1.5 h) × 3.6. Coincide con el volumen
-        // semanal programado cuando toda la bocatoma entra en la semana.
-        function _huaroVolRepresenta(toposTot, caudalLs) {
-            return (parseFloat(caudalLs) || 0) * (toposTot * HuaroCore.HUARO_H_POR_TOPO) * 3.6;
+        // Base de la campaña "antes de esta semana": si ya se programó esta
+        // MISMA semana, se parte del snapshot previo para no contar doble.
+        function _huaroBaseCampana(camp, semanaISO) {
+            return (camp.ultimaSemana === semanaISO && camp.prev)
+                ? { servidos: camp.prev.servidos || [], pendientes: camp.prev.pendientes || [] }
+                : { servidos: camp.servidos.slice(), pendientes: camp.pendientes.slice() };
         }
-        function huaroActualizarVolRep(i, toposTot) {
-            const inp = document.getElementById('huaroCaudal__' + i);
-            const cel = document.getElementById('huaroVolRep__' + i);
-            if (!inp || !cel) return;
-            const q = parseFloat(inp.value);
-            cel.textContent = (q > 0) ? _huaroVolRepresenta(toposTot, q).toFixed(2) : '—';
+
+        // Corrida "en seco" del programador para una bocatoma con el caudal y los
+        // días/horas actuales — NO persiste nada. El volumen que devuelve depende
+        // de los días/horas: los usuarios que no entran en la ventana quedan
+        // pendientes y no suman volumen.
+        function _huaroPreviewBocatoma(boc, caudalLs) {
+            const q = parseFloat(caudalLs) || 0;
+            const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
+                _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
+            const semanaISO = _huaroSemanaSeleccionada();
+            const camp = _huaroLeerCampana(boc);
+            const base = _huaroBaseCampana(camp, semanaISO);
+            return HuaroCore.huaroProgramarBocatoma({
+                usuarios: _huaroPadron[boc] || [], caudalLs: q, semanaInicioISO: semanaISO, bocatoma: boc,
+                servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                diasRiego,
+            });
+        }
+
+        function huaroSeleccionarBoc(boc) {
+            _huaroBocSel = (boc && _huaroOrden.indexOf(boc) >= 0) ? boc : null;
+            _huaroBocFlash = null;
+            renderPanelHuaro();
+        }
+        function huaroNuevaBocatoma() {
+            _huaroBocSel = null; _huaroBocFlash = null;
+            renderPanelHuaro();
+        }
+
+        // Recalcula en vivo el volumen / tiempo / usuarios de la bocatoma en
+        // edición según el caudal escrito y los días/horas configurados.
+        function huaroRecalcularBoc() {
+            if (!_huaroBocSel) return;
+            const inp = document.getElementById('huaroCaudalBoc');
+            _huaroCaudalTemp[_huaroBocSel] = (inp && inp.value !== '') ? inp.value : undefined;
+            const q = parseFloat(inp && inp.value) || 0;
+            const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            if (q <= 0) {
+                setTxt('huaroVolBoc', '—'); setTxt('huaroTiempoBoc', '—'); setTxt('huaroUsuBoc', '—');
+                return;
+            }
+            const a = _huaroPreviewBocatoma(_huaroBocSel, q).agregado;
+            setTxt('huaroVolBoc', a.volumenTotalM3.toFixed(2) + ' m³');
+            setTxt('huaroTiempoBoc', a.tiempoTotalH.toFixed(1) + ' h');
+            setTxt('huaroUsuBoc', a.nUsuarios + ' programados' + (a.nPendientes ? ' · ' + a.nPendientes + ' pendientes' : ''));
         }
 
         // ── Panel principal ──
@@ -3697,66 +3760,14 @@ const COMISIONES = {
             const semanaISO = _huaroSemanaSeleccionada();
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
             const pdaGuardado = _huaroLeerPda(semanaISO);
+            // El PDA de la semana (localStorage) es la fuente de verdad del G-2:
+            // acumula todas las bocatomas programadas. Se restaura al pintar.
+            _huaroResultados = (pdaGuardado && pdaGuardado.resultados && Object.keys(pdaGuardado.resultados).length)
+                ? pdaGuardado.resultados : null;
 
-            let filas = '';
-            _huaroOrden.forEach((boc, i) => {
-                const us = _huaroPadron[boc] || [];
-                const areaTot = us.reduce((s, u) => s + (u.areaHa || 0), 0);
-                const camp = _huaroLeerCampana(boc);
-                const total = us.length;
-                const servidos = camp.servidos.length;
-                const masa = HuaroCore.huaroMasaDeAgua(boc);
-                const toposTot = us.reduce((s, u) => s + (u.topos || 0), 0);
-                const caudalGuardado = (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
-                    ? pdaGuardado.caudales[boc]
-                    : (masa && masa.caudalLs != null ? masa.caudalLs : ''); // prefill con el caudal de la resolución
-                const masaCaudal = masa && masa.caudalLs != null
-                    ? masa.caudalLs.toFixed(2) + (masa.caudalEstimado ? ' *' : '')
-                    : '—';
-                const masaVol = masa && masa.volumenAnualM3 != null
-                    ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
-                const volRepIni = (parseFloat(caudalGuardado) > 0)
-                    ? _huaroVolRepresenta(toposTot, parseFloat(caudalGuardado)).toFixed(2) : '—';
-                // Días/horas de riego: prioridad = lo editado en sesión, luego lo
-                // guardado en el PDA de la semana, luego el default (7 días 04–20).
-                const horarioBoc = _huaroHorarioTemp[boc]
-                    || (pdaGuardado && pdaGuardado.horarios && pdaGuardado.horarios[boc])
-                    || HuaroCore.huaroDiasRiegoDefault();
-                _huaroHorarioTemp[boc] = HuaroCore.huaroNormalizarDiasRiego(horarioBoc);
-                filas += `
-                <tr>
-                    <td>${escapeHtml(boc)}</td>
-                    <td style="text-align:center;">${total}</td>
-                    <td style="text-align:right;">${areaTot.toFixed(2)}</td>
-                    <td style="text-align:right;background:#f3ede6;" title="${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) + ' — Licencia de Uso de Agua Superficial' : 'Sin licencia mapeada'}">${masaCaudal}</td>
-                    <td style="text-align:right;background:#f3ede6;">${masaVol}</td>
-                    <td style="text-align:center;">
-                        <input type="number" class="huaro-caudal" id="huaroCaudal__${i}" min="0" step="0.001"
-                            value="${caudalGuardado}" placeholder="l/s"
-                            oninput="huaroActualizarVolRep(${i}, ${toposTot})">
-                    </td>
-                    <td style="text-align:right;" id="huaroVolRep__${i}" title="Volumen que movería el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">${volRepIni}</td>
-                    <td style="text-align:center;white-space:nowrap;">
-                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroHorasDeRiego('${boc.replace(/'/g, "\\'")}')">⏱️ Días/horas</button>
-                        <div class="huaro-mini" id="huaroHorarioResumen__${i}" style="margin-top:2px;">${escapeHtml(HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc], semanaISO))}</div>
-                    </td>
-                    <td style="text-align:center;" class="huaro-mini">
-                        Servidos: ${servidos}/${total}${camp.pendientes.length ? ' · Pend.: ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · Excl.: ' + camp.excluidos.length : ''}
-                    </td>
-                    <td style="text-align:center;white-space:nowrap;">
-                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroGestionarCola('${boc.replace(/'/g, "\\'")}')">Cola</button>
-                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroReiniciarCampana('${boc.replace(/'/g, "\\'")}')">Reiniciar</button>
-                    </td>
-                </tr>`;
-            });
+            const _fc = s => s.split('-').reverse().join('/');
 
-            const hayResultados = !!_huaroResultados;
-            const hayAnexos = _huaroBocsConDatos().length > 0;
-
-            // Selector de semana: Mes + Año + Semana (Lun–Dom) del mes, más una
-            // fecha exacta como alternativa. El Mes/Año mostrado es estado propio
-            // (_huaroMesSel/_huaroAnioSel); si no se ha tocado, se deriva de la
-            // semana. La semana elegida se resalta en la lista.
+            // Selector de semana: Mes + Año + Semana (Lun–Dom) del mes.
             let _mes0, _anio;
             if (_huaroMesSel != null && _huaroAnioSel != null) {
                 _mes0 = _huaroMesSel; _anio = _huaroAnioSel;
@@ -3765,7 +3776,6 @@ const COMISIONES = {
                 _mes0 = _wd.getMonth(); _anio = _wd.getFullYear();
             }
             const _sems = _huaroSemanasDelMes(_anio, _mes0);
-            const _fc = s => s.split('-').reverse().join('/');
             let _semN = 0;
             let _optSem = _sems.map(w => {
                 const sel = (w.lunesISO === semanaISO);
@@ -3780,79 +3790,166 @@ const COMISIONES = {
                 ? `Semana ${_semN} de ${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
                 : `Semana del Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)} (fuera de ${_HUARO_MESES[_mes0]} ${_anio})`;
 
+            // Selector de bocatoma — marca ✓ las ya programadas esta semana.
+            const progSet = new Set(_huaroBocsConDatos());
+            if (_huaroBocSel && _huaroOrden.indexOf(_huaroBocSel) < 0) _huaroBocSel = null;
+            const _optBoc = ['<option value="">— Selecciona una bocatoma —</option>']
+                .concat(_huaroOrden.map(b =>
+                    `<option value="${escapeHtml(b)}"${b === _huaroBocSel ? ' selected' : ''}>${progSet.has(b) ? '✓ ' : ''}${escapeHtml(b)}</option>`))
+                .join('');
+
+            // ── Tarjeta de detalle de la bocatoma en edición ──
+            let detalleHtml = '';
+            if (_huaroBocSel) {
+                const boc = _huaroBocSel;
+                const us = _huaroPadron[boc] || [];
+                const areaTot = us.reduce((s, u) => s + (u.areaHa || 0), 0);
+                const toposTot = us.reduce((s, u) => s + (u.topos || 0), 0);
+                const camp = _huaroLeerCampana(boc);
+                const masa = HuaroCore.huaroMasaDeAgua(boc);
+                const yaProg = !!(_huaroResultados && _huaroResultados[boc] && _huaroResultados[boc].programados.length);
+
+                const horarioBoc = _huaroHorarioTemp[boc]
+                    || (pdaGuardado && pdaGuardado.horarios && pdaGuardado.horarios[boc])
+                    || HuaroCore.huaroDiasRiegoDefault();
+                _huaroHorarioTemp[boc] = HuaroCore.huaroNormalizarDiasRiego(horarioBoc);
+
+                const caudalIni = (_huaroCaudalTemp[boc] != null && _huaroCaudalTemp[boc] !== '')
+                    ? _huaroCaudalTemp[boc]
+                    : (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
+                        ? pdaGuardado.caudales[boc]
+                        : (masa && masa.caudalLs != null ? masa.caudalLs : '');
+                const masaCaudal = masa && masa.caudalLs != null
+                    ? masa.caudalLs.toFixed(2) + (masa.caudalEstimado ? ' *' : '') : '—';
+                const masaVol = masa && masa.volumenAnualM3 != null
+                    ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
+
+                let volBoc = '—', tiempoBoc = '—', usuBoc = '—';
+                if (parseFloat(caudalIni) > 0) {
+                    const a = _huaroPreviewBocatoma(boc, caudalIni).agregado;
+                    volBoc = a.volumenTotalM3.toFixed(2) + ' m³';
+                    tiempoBoc = a.tiempoTotalH.toFixed(1) + ' h';
+                    usuBoc = a.nUsuarios + ' programados' + (a.nPendientes ? ' · ' + a.nPendientes + ' pendientes' : '');
+                }
+
+                const avisoOk = (_huaroBocFlash === boc)
+                    ? `<div class="huaro-aviso-ok">✅ <b>${escapeHtml(boc)}</b> quedó programada y guardada en el Anexo G-2 de la semana. Puedes ver su G-3 o programar otra bocatoma.</div>`
+                    : '';
+                _huaroBocFlash = null;
+
+                detalleHtml = `
+                <div class="huaro-detalle">
+                    <div class="huaro-detalle-head">
+                        <h3>🚰 ${escapeHtml(boc)}${yaProg ? '<span class="huaro-pill">Programada ✓</span>' : ''}</h3>
+                        <span style="font-size:12px;opacity:.9;">${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) : 'Sin licencia mapeada'}</span>
+                    </div>
+                    <div class="huaro-detalle-body">
+                        ${avisoOk}
+                        <div class="huaro-grid">
+                            <div class="huaro-box"><div class="k">N° usuarios</div><div class="v">${us.length}</div></div>
+                            <div class="huaro-box"><div class="k">Área total</div><div class="v">${areaTot.toFixed(2)} <small>ha</small></div></div>
+                            <div class="huaro-box res"><div class="k">Caudal según resolución</div><div class="v">${masaCaudal} <small>l/s</small></div></div>
+                            <div class="huaro-box res"><div class="k">Volumen anual (resolución)</div><div class="v">${masaVol} <small>m³</small></div></div>
+                        </div>
+
+                        <div class="huaro-grid" style="align-items:end;">
+                            <div class="huaro-box">
+                                <div class="k">Caudal a programar (l/s) — editable</div>
+                                <input type="number" class="huaro-caudal" id="huaroCaudalBoc" min="0" step="0.001"
+                                    value="${caudalIni}" placeholder="l/s" oninput="huaroRecalcularBoc()" style="margin-top:4px;">
+                            </div>
+                            <div class="huaro-box">
+                                <div class="k">Días y horas de riego de la semana</div>
+                                <div style="margin-top:5px;">
+                                    <button class="huaro-btn sec" style="padding:6px 12px;font-size:12px;" onclick="huaroHorasDeRiego('${boc.replace(/'/g, "\\'")}')">⏱️ Configurar días/horas</button>
+                                </div>
+                                <div class="huaro-mini" id="huaroHorarioResumenBoc" style="margin-top:5px;">${escapeHtml(HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc], semanaISO))}</div>
+                            </div>
+                            <div class="huaro-box huaro-vol">
+                                <div class="k">Volumen que representa</div>
+                                <div class="v" id="huaroVolBoc">${volBoc}</div>
+                                <div class="huaro-mini" style="margin-top:4px;">Tiempo de operación: <b id="huaroTiempoBoc">${tiempoBoc}</b><br>Usuarios: <b id="huaroUsuBoc">${usuBoc}</b></div>
+                            </div>
+                        </div>
+
+                        <div class="huaro-mini" style="margin-bottom:10px;">
+                            Estado de campaña: servidos ${camp.servidos.length}/${us.length}${camp.pendientes.length ? ' · pendientes ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · excluidos ' + camp.excluidos.length : ''}
+                            &nbsp;·&nbsp;
+                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroGestionarCola('${boc.replace(/'/g, "\\'")}')">Cola</button>
+                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroReiniciarCampana('${boc.replace(/'/g, "\\'")}')">Reiniciar campaña</button>
+                        </div>
+
+                        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                            <button class="huaro-btn ok" onclick="huaroProgramarBocatomaActual()">⚙️ Programar esta bocatoma</button>
+                            ${yaProg ? `<button class="huaro-btn" onclick="huaroMostrarG3('${boc.replace(/'/g, "\\'")}')">📄 Ver Anexo G-3</button>` : ''}
+                            <button class="huaro-btn sec" onclick="huaroNuevaBocatoma()">↩︎ Elegir otra bocatoma</button>
+                        </div>
+                        <div class="huaro-mini" style="margin-top:8px;line-height:1.5;">
+                            El "Caudal a programar" viene precargado con el de la resolución; edítalo si esta semana rige otro. El volumen se calcula solo, según el caudal y los días/horas configurados.
+                            ${masa && masa.caudalEstimado ? '<br><b>*</b> El caudal según resolución de este bloque es un valor <b>calculado</b> (la R.D. N° 517-2016-ANA/AAA XII.UV no lo especifica).' : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            // ── Tarjeta de bocatomas ya programadas en la semana ──
+            const hayAnexos = _huaroBocsConDatos().length > 0;
+            const resumenHtml = `
+                <div class="huaro-card" id="huaroResumenResultados" ${hayAnexos ? '' : 'style="display:none;"'}>
+                    <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
+                    <div id="huaroResumenTexto"></div>
+                    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2 (toda la semana)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
+                    </div>
+                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-2</b> se guarda y reúne <b>todas</b> las bocatomas programadas esta semana. El G-3 y el G-4 se eligen por bocatoma.</div>
+                </div>`;
+
             ca.innerHTML = `
             <div id="panelHuaro">
                 <h2>🌾 PDA — Comisión de Regantes de Huaro</h2>
-                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · ventana 04:00–20:00 · ${HuaroCore.HUARO_DIAS_SEMANA} días.</p>
+                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · se programa una bocatoma a la vez.</p>
 
                 <div class="huaro-card">
                     <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
                         <label style="font-weight:600;font-size:12px;">Mes<br>
-                            <select id="huaroMesSel" onchange="huaroSemanaMesCambio()" style="margin-top:3px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">${_optMes}</select>
+                            <select id="huaroMesSel" class="huaro-sel" onchange="huaroSemanaMesCambio()" style="margin-top:3px;">${_optMes}</select>
                         </label>
                         <label style="font-weight:600;font-size:12px;">Año<br>
                             <input type="number" id="huaroAnioSel" value="${_anio}" min="2020" max="2100" step="1" onchange="huaroSemanaMesCambio()"
-                                style="margin-top:3px;width:80px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
+                                class="huaro-sel" style="margin-top:3px;width:88px;">
                         </label>
                         <label style="font-weight:600;font-size:12px;flex:1;min-width:240px;">Semana a programar (Lun–Dom)<br>
-                            <select id="huaroSemanaSel" onchange="huaroElegirSemana()" style="margin-top:3px;width:100%;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">${_optSem}</select>
+                            <select id="huaroSemanaSel" class="huaro-sel" onchange="huaroElegirSemana()" style="margin-top:3px;width:100%;">${_optSem}</select>
                         </label>
                         <label style="font-weight:600;font-size:12px;">o fecha exacta<br>
-                            <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="huaroFechaExacta(this.value)"
-                                style="margin-top:3px;padding:5px 8px;border:1px solid #b7bfca;border-radius:4px;">
+                            <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="huaroFechaExacta(this.value)" class="huaro-sel" style="margin-top:3px;">
                         </label>
                     </div>
                     <div class="huaro-mini" style="margin-top:8px;"><b>${_semLbl}</b></div>
                 </div>
 
                 <div class="huaro-card">
-                    <table class="huaro-tabla">
-                        <thead>
-                        <tr>
-                            <th style="text-align:left;" rowspan="2">Bocatoma</th>
-                            <th rowspan="2">N° usuarios</th>
-                            <th rowspan="2">Área total (ha)</th>
-                            <th colspan="2" style="background:#5a3f27;">Según resolución (masa de agua)</th>
-                            <th colspan="3" style="background:#5a3f27;">A programar esta semana</th>
-                            <th rowspan="2">Estado de campaña</th>
-                            <th rowspan="2">Acciones</th>
-                        </tr>
-                        <tr>
-                            <th title="Caudal otorgado en la Licencia de Uso de Agua Superficial del bloque">Caudal (l/s)</th>
-                            <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque">Volumen anual (m³)</th>
-                            <th>Caudal a programar (l/s)</th>
-                            <th title="Volumen que representa el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">Volumen que representa (m³)</th>
-                            <th title="Días de la semana en que riega la bocatoma y la ventana de horas de cada día">Días y horas de riego</th>
-                        </tr>
-                        </thead>
-                        <tbody>${filas}</tbody>
-                    </table>
-                    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                        <button class="huaro-btn" onclick="huaroGenerarPDA()">⚙️ Generar PDA de la semana</button>
-                        <span class="huaro-mini">"Según resolución" = la masa de agua de la Licencia de Uso de Agua de cada bloque (solo lectura). El "Caudal a programar" viene precargado con ese valor; ajústalo si esta semana rige otro. Las bocatomas con caudal 0 o en blanco no se programan.</span>
-                    </div>
-                    <div class="huaro-mini" style="margin-top:8px;line-height:1.5;">
-                        <b>*</b> El caudal según resolución de <b>HUAYNA COMÚN</b> es un valor <b>calculado</b> (volumen anual ÷ 23 760, ratio constante en los demás bloques): la <b>Resolución Directoral N° 517-2016-ANA/AAA XII.UV</b> no especifica el caudal otorgado para ese bloque.
-                    </div>
+                    <label style="font-weight:600;font-size:13px;">1) Selecciona la bocatoma a programar<br>
+                        <select id="huaroBocSel" class="huaro-sel" onchange="huaroSeleccionarBoc(this.value)" style="margin-top:5px;min-width:320px;max-width:100%;">${_optBoc}</select>
+                    </label>
+                    ${_huaroBocSel ? '' : '<div class="huaro-mini" style="margin-top:8px;">Elegida la bocatoma verás su caudal y volumen según la resolución; el caudal se completa solo y podrás editarlo.</div>'}
                 </div>
 
-                <div class="huaro-card" id="huaroResumenResultados" ${hayResultados ? '' : 'style="display:none;"'}>
-                    <div id="huaroResumenTexto"></div>
-                    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
-                        <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2</button>
-                        <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
-                        <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
-                    </div>
-                </div>
+                ${detalleHtml}
+                ${resumenHtml}
             </div>`;
 
-            if (hayResultados) _huaroPintarResumen();
+            if (hayAnexos) _huaroPintarResumen();
         }
 
         function _huaroPintarResumen() {
             const cont = document.getElementById('huaroResumenTexto');
             if (!cont || !_huaroResultados) return;
-            const boc = _huaroOrden.filter(b => _huaroResultados[b]);
+            const boc = _huaroOrden.filter(b => _huaroResultados[b] && _huaroResultados[b].programados.length);
+            if (!boc.length) { cont.innerHTML = '<div class="huaro-mini">Aún no hay bocatomas programadas esta semana.</div>'; return; }
             let tU = 0, tArea = 0, tVol = 0, tPend = 0;
             const filas = boc.map(b => {
                 const a = _huaroResultados[b].agregado;
@@ -3870,8 +3967,7 @@ const COMISIONES = {
                     <td style="text-align:center;">${colPend}</td></tr>`;
             }).join('');
             cont.innerHTML = `
-                <strong>PDA generado para la semana del ${_huaroResultados[boc[0]].agregado.semanaInicioISO.split('-').reverse().join('/')}.</strong>
-                <table class="huaro-tabla" style="margin-top:8px;">
+                <table class="huaro-tabla" style="margin-top:4px;">
                     <thead><tr><th style="text-align:left;">Bocatoma</th><th>Programados</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Días</th><th>Pendientes</th></tr></thead>
                     <tbody>${filas}
                         <tr style="font-weight:700;background:#f3ede6;"><td>TOTAL</td><td style="text-align:center;">${tU}</td>
@@ -3881,58 +3977,50 @@ const COMISIONES = {
                 </table>`;
         }
 
-        function huaroGenerarPDA() {
-            if (!window.HuaroCore) return;
+        // Programa la bocatoma en edición y la acumula en el PDA de la semana
+        // (que alimenta el G-2). Persiste campaña + blob y repinta.
+        function huaroProgramarBocatomaActual() {
+            if (!window.HuaroCore || !_huaroBocSel) { alert('Primero selecciona una bocatoma.'); return; }
+            const boc = _huaroBocSel;
             const semanaISO = _huaroSemanaSeleccionada();
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
-            const resultados = {};
-            const caudales = {};
-            const horarios = {};
-            let algo = false;
+            const inp = document.getElementById('huaroCaudalBoc');
+            const caudalLs = parseFloat(inp && inp.value) || 0;
+            if (caudalLs <= 0) { alert('Ingresa el caudal (l/s) a programar para ' + boc + '.'); return; }
 
-            _huaroOrden.forEach((boc, i) => {
-                const inp = document.getElementById('huaroCaudal__' + i);
-                const caudalLs = parseFloat(inp && inp.value) || 0;
-                if (caudalLs <= 0) return;
-                algo = true;
-                caudales[boc] = caudalLs;
+            const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
+                _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
 
-                const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
-                    _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
-                horarios[boc] = diasRiego;
-
-                const camp = _huaroLeerCampana(boc);
-                // Base "antes de esta semana": si ya se generó esta MISMA semana,
-                // se parte del snapshot previo para no contar dos veces.
-                const base = (camp.ultimaSemana === semanaISO && camp.prev)
-                    ? { servidos: camp.prev.servidos || [], pendientes: camp.prev.pendientes || [] }
-                    : { servidos: camp.servidos.slice(), pendientes: camp.pendientes.slice() };
-
-                const res = HuaroCore.huaroProgramarBocatoma({
-                    usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
-                    servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
-                    diasRiego,
-                });
-                res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
-                resultados[boc] = res;
-
-                const keysProg = res.programados.map(p => HuaroCore.huaroClaveUsuario(p));
-                camp.prev = { servidos: base.servidos.slice(), pendientes: base.pendientes.slice() };
-                camp.servidos = _huaroUnion(base.servidos, keysProg);
-                camp.pendientes = res.pendientes.slice();
-                camp.ultimaSemana = semanaISO;
-                _huaroGuardarCampana(boc, camp);
+            const camp = _huaroLeerCampana(boc);
+            const base = _huaroBaseCampana(camp, semanaISO);
+            const res = HuaroCore.huaroProgramarBocatoma({
+                usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
+                servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                diasRiego,
             });
+            res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
 
-            if (!algo) { alert('Ingresa el caudal (l/s) de al menos una bocatoma.'); return; }
+            const keysProg = res.programados.map(p => HuaroCore.huaroClaveUsuario(p));
+            camp.prev = { servidos: base.servidos.slice(), pendientes: base.pendientes.slice() };
+            camp.servidos = _huaroUnion(base.servidos, keysProg);
+            camp.pendientes = res.pendientes.slice();
+            camp.ultimaSemana = semanaISO;
+            _huaroGuardarCampana(boc, camp);
 
-            _huaroResultados = resultados;
-            _huaroGuardarPda({
-                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales, horarios,
-                resultados: Object.fromEntries(Object.entries(resultados).map(([b, r]) => [b, {
-                    programados: r.programados, pendientes: r.pendientes, agregado: r.agregado,
-                }])),
-            });
+            const pda = _huaroLeerPda(semanaISO) || {};
+            pda.semanaInicio = semanaISO; pda.semanaFin = semanaFinISO;
+            pda.caudales = pda.caudales || {}; pda.horarios = pda.horarios || {}; pda.resultados = pda.resultados || {};
+            pda.caudales[boc] = caudalLs;
+            pda.horarios[boc] = diasRiego;
+            pda.resultados[boc] = { programados: res.programados, pendientes: res.pendientes, agregado: res.agregado };
+            _huaroGuardarPda(pda);
+            delete _huaroCaudalTemp[boc];
+
+            _huaroResultados = pda.resultados;
+            _huaroBocFlash = boc;
+            if (!res.programados.length) {
+                alert('La campaña de "' + boc + '" no tiene usuarios por atender esta semana (campaña completa o todos excluidos).');
+            }
             renderPanelHuaro();
         }
 
@@ -4106,9 +4194,7 @@ const COMISIONES = {
                 if (!nuevo.some(d => d.activo)) { alert('Marca al menos un día de riego.'); return; }
                 _huaroHorarioTemp[boc] = HuaroCore.huaroNormalizarDiasRiego(nuevo);
                 div.remove();
-                const cel = document.getElementById('huaroHorarioResumen__' + idxBoc);
-                if (cel) cel.textContent = HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc], lunISO);
-                else renderPanelHuaro();
+                renderPanelHuaro();
             };
         }
 
@@ -4192,12 +4278,12 @@ const COMISIONES = {
             return { ...all, bloques: all.bloques.filter(b => b.bocatoma === boc) };
         }
 
-        function huaroMostrarG3() {
+        function huaroMostrarG3(bocInicial) {
             const bocs = _huaroBocsConDatos();
             if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const sel = `<label style="font-size:13px;font-weight:600;">Bocatoma:
                 <select id="huaroSelG3" style="margin-left:8px;padding:5px 8px;min-width:220px;">
-                    ${bocs.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                    ${bocs.map(b => `<option value="${escapeHtml(b)}"${b === bocInicial ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}
                 </select></label><div id="huaroG3Cont" style="margin-top:12px;"></div>`;
             _huaroPanelAnexo('Anexo G-3 — Huaro', sel,
                 () => {
