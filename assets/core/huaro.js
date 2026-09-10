@@ -308,9 +308,11 @@ function huaroProgramarBocatoma(opts) {
 
     // Días y horas de riego de la bocatoma esta semana: 7 entradas (0 = lunes …
     // 6 = domingo), cada una { activo, inicioMin, finMin } (minuto del día). El
-    // motor coloca los turnos SOLO en los días activos, dentro de su ventana
-    // [inicioMin, finMin], en secuencia. Sin `diasRiego` → los 7 días 04:00–20:00
-    // (o, por compatibilidad, arranca en inicioDiaOffset/inicioHoraMin).
+    // riego ARRANCA en el primer día activo y encadena turnos dentro de su
+    // ventana [inicioMin, finMin]. Si no alcanzan las horas de los días activos,
+    // NO se difiere a la otra semana: continúa el/los días siguientes desde las
+    // 04:00 (ventana de desborde 04:00–20:00) hasta cumplir las horas. Sin
+    // `diasRiego` → los 7 días 04:00–20:00.
     const diasRiego = huaroNormalizarDiasRiego(opts.diasRiego, opts.inicioDiaOffset, opts.inicioHoraMin);
 
     const porClave = {};
@@ -334,29 +336,40 @@ function huaroProgramarBocatoma(opts) {
     const programados = [];
     const pendientes = [];
 
-    // Puntero a la ventana (día) actual: primer día activo.
-    let vIdx = 0;
-    while (vIdx < 7 && !diasRiego[vIdx].activo) vIdx++;
-    let cursorMin = vIdx < 7 ? diasRiego[vIdx].inicioMin : Infinity;
+    // Ventana efectiva de cada día:
+    //  · días anteriores al primer día activo → no se usan (riego aún no empieza)
+    //  · días activos → su ventana [inicioMin, finMin] configurada
+    //  · días posteriores al primer activo que estén inactivos → DESBORDE:
+    //    04:00–20:00, para terminar los turnos que no cupieron en los días
+    //    activos (no se difieren a la otra semana).
+    const _primerActivoIdx = diasRiego.findIndex(d => d.activo);
+    const ventanaDia = (i) => {
+        if (_primerActivoIdx < 0 || i < _primerActivoIdx) return null;
+        const d = diasRiego[i];
+        return d.activo
+            ? { ini: d.inicioMin, fin: d.finMin }
+            : { ini: HUARO_MIN_INICIO_DIA, fin: HUARO_MIN_FIN_DIA };
+    };
+
+    // Puntero al día actual: primer día activo.
+    let vIdx = _primerActivoIdx < 0 ? 7 : _primerActivoIdx;
+    let cursorMin = vIdx < 7 ? ventanaDia(vIdx).ini : Infinity;
 
     for (let i = 0; i < cola.length; i++) {
         const u = cola[i];
         const bloqueMin = u.topos * HUARO_H_POR_TOPO * 60;
 
-        // Avanzar a la primera ventana activa donde el turno completo entre.
+        // Avanzar al primer día (activo o de desborde) donde el turno entero quepa.
         while (vIdx < 7) {
-            if (!diasRiego[vIdx].activo) {
-                vIdx++;
-                if (vIdx < 7 && diasRiego[vIdx].activo) cursorMin = diasRiego[vIdx].inicioMin;
-                continue;
-            }
-            if (cursorMin + bloqueMin <= diasRiego[vIdx].finMin) break; // cabe aquí
+            const w = ventanaDia(vIdx);
+            if (!w) { vIdx++; if (vIdx < 7) { const nw = ventanaDia(vIdx); if (nw) cursorMin = nw.ini; } continue; }
+            if (cursorMin + bloqueMin <= w.fin) break; // cabe aquí
             vIdx++;
-            while (vIdx < 7 && !diasRiego[vIdx].activo) vIdx++;
-            if (vIdx < 7) cursorMin = diasRiego[vIdx].inicioMin;
+            const nw = vIdx < 7 ? ventanaDia(vIdx) : null;
+            cursorMin = nw ? nw.ini : Infinity;
         }
 
-        if (vIdx >= 7) { // no hay más ventanas esta semana
+        if (vIdx >= 7) { // se pasó del domingo: recién ahí queda pendiente
             pendientes.push(huaroClaveUsuario(u));
             continue;
         }

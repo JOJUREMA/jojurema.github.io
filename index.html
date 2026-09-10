@@ -3468,7 +3468,7 @@ const COMISIONES = {
         let _huaroBocFlash = null;   // bocatoma recién programada (para el aviso verde)
 
         const _HUARO_OCULTAR = [
-            '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
+            '#tomaSelect', '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
             '#btnGenerar', '#btnConsolidado', '#btnAvanceSiembra', '#btnSincronizarPadron',
             '#btnAbrirPadronA1', '#btnAbrirSiembraDIS', '#btnAbrirInventario',
             '#btnAccederConsolidado', '#btnResumenCultivos',
@@ -3880,8 +3880,9 @@ const COMISIONES = {
                         </div>
 
                         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                            <button class="huaro-btn ok" onclick="huaroProgramarBocatomaActual()">⚙️ Programar esta bocatoma</button>
+                            <button class="huaro-btn ok" onclick="huaroProgramarBocatomaActual()">⚙️ ${yaProg ? 'Reprogramar' : 'Programar'} esta bocatoma</button>
                             ${yaProg ? `<button class="huaro-btn" onclick="huaroMostrarG3('${boc.replace(/'/g, "\\'")}')">📄 Ver Anexo G-3</button>` : ''}
+                            ${yaProg ? `<button class="huaro-btn sec" onclick="huaroEliminarBocatomaProgramada('${boc.replace(/'/g, "\\'")}')">🗑 Quitar de la programación</button>` : ''}
                             <button class="huaro-btn sec" onclick="huaroNuevaBocatoma()">↩︎ Elegir otra bocatoma</button>
                         </div>
                         <div class="huaro-mini" style="margin-top:8px;line-height:1.5;">
@@ -3903,8 +3904,9 @@ const COMISIONES = {
                         <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2 (toda la semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
+                        <button class="huaro-btn sec" onclick="huaroBorrarTodasProgramadas()" ${hayAnexos ? '' : 'disabled'} style="margin-left:auto;">🗑 Borrar todas</button>
                     </div>
-                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-2</b> se guarda y reúne <b>todas</b> las bocatomas programadas esta semana. El G-3 y el G-4 se eligen por bocatoma.</div>
+                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-2</b> se guarda y reúne <b>todas</b> las bocatomas programadas esta semana. El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
                 </div>`;
 
             ca.innerHTML = `
@@ -3964,17 +3966,62 @@ const COMISIONES = {
                     <td style="text-align:right;">${a.areaProgramadaHa.toFixed(2)}</td>
                     <td style="text-align:right;">${a.volumenTotalM3.toFixed(2)}</td>
                     <td style="text-align:center;" title="Fecha del mes de los días en que se programó riego">${colDias}</td>
-                    <td style="text-align:center;">${colPend}</td></tr>`;
+                    <td style="text-align:center;">${colPend}</td>
+                    <td style="text-align:center;"><button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" title="Quitar esta bocatoma de la programación de la semana" onclick="huaroEliminarBocatomaProgramada('${b.replace(/'/g, "\\'")}')">🗑 Quitar</button></td></tr>`;
             }).join('');
             cont.innerHTML = `
                 <table class="huaro-tabla" style="margin-top:4px;">
-                    <thead><tr><th style="text-align:left;">Bocatoma</th><th>Programados</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Días</th><th>Pendientes</th></tr></thead>
+                    <thead><tr><th style="text-align:left;">Bocatoma</th><th>Programados</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Días</th><th>Pendientes</th><th>Acción</th></tr></thead>
                     <tbody>${filas}
                         <tr style="font-weight:700;background:#f3ede6;"><td>TOTAL</td><td style="text-align:center;">${tU}</td>
                         <td style="text-align:right;">${tArea.toFixed(2)}</td><td style="text-align:right;">${tVol.toFixed(2)}</td>
-                        <td></td><td style="text-align:center;">${tPend}</td></tr>
+                        <td></td><td style="text-align:center;">${tPend}</td><td></td></tr>
                     </tbody>
                 </table>`;
+        }
+
+        // Quita una bocatoma de la programación de la semana: borra su entrada
+        // del PDA guardado y revierte lo que sumó a su campaña (para que sus
+        // usuarios vuelvan a estar disponibles).
+        function _huaroRevertirCampana(boc, semanaISO) {
+            const camp = _huaroLeerCampana(boc);
+            if (camp.ultimaSemana === semanaISO && camp.prev) {
+                camp.servidos = (camp.prev.servidos || []).slice();
+                camp.pendientes = (camp.prev.pendientes || []).slice();
+                camp.prev = null;
+                camp.ultimaSemana = null;
+                _huaroGuardarCampana(boc, camp);
+            }
+        }
+        function huaroEliminarBocatomaProgramada(boc) {
+            const semanaISO = _huaroSemanaSeleccionada();
+            if (!confirm('¿Quitar "' + boc + '" de la programación de esta semana?\n\nSe borra su parte del Anexo G-2 y sus usuarios vuelven a quedar disponibles.')) return;
+            const pda = _huaroLeerPda(semanaISO);
+            if (pda && pda.resultados) {
+                delete pda.resultados[boc];
+                if (pda.caudales) delete pda.caudales[boc];
+                if (pda.horarios) delete pda.horarios[boc];
+                if (Object.keys(pda.resultados).length) _huaroGuardarPda(pda);
+                else localStorage.removeItem(_huaroKeyPda(semanaISO));
+            }
+            _huaroRevertirCampana(boc, semanaISO);
+            delete _huaroCaudalTemp[boc];
+            _huaroResultados = null;
+            if (_huaroBocFlash === boc) _huaroBocFlash = null;
+            renderPanelHuaro();
+        }
+        function huaroBorrarTodasProgramadas() {
+            const semanaISO = _huaroSemanaSeleccionada();
+            const pda = _huaroLeerPda(semanaISO);
+            const bocs = (pda && pda.resultados) ? Object.keys(pda.resultados) : [];
+            if (!bocs.length) { alert('No hay bocatomas programadas en esta semana.'); return; }
+            if (!confirm('¿Borrar TODA la programación de esta semana (' + bocs.length + ' bocatoma(s))?\n\nSe borra el Anexo G-2 de la semana y todos sus usuarios vuelven a quedar disponibles.')) return;
+            bocs.forEach(b => _huaroRevertirCampana(b, semanaISO));
+            localStorage.removeItem(_huaroKeyPda(semanaISO));
+            _huaroCaudalTemp = {};
+            _huaroResultados = null;
+            _huaroBocFlash = null;
+            renderPanelHuaro();
         }
 
         // Programa la bocatoma en edición y la acumula en el PDA de la semana
