@@ -74,6 +74,30 @@ function huaroMasaDeAgua(bocatoma) {
     return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
 }
 
+// ── Canal de conducción / derivación por bocatoma ──
+// Nombres tal cual el inventario GIS de la comisión (COMISIÓN DE REGANTES
+// HUARO.kmz — capas <LineString>). Es el canal que conduce el agua desde la
+// captación en la Quebrada Huaro hasta el bloque de riego. Clave = nombre de
+// la hoja del padrón normalizado (huaroNormNombre).
+const HUARO_CANAL_BOCATOMA = {
+    'PUCRUPAMPA':            'CANAL PUCRUPAMPA',
+    'ACCOPATA':              'CANAL DE CONDUCCIÓN ACCOPATA',
+    'ACHUMACHINCALLAVEI':    'CANAL DE CONDUCCIÓN ACHUMA',
+    'TTIKAPATACARDUNCANCHA': 'CANAL DE CONDUCCIÓN CARDONCANCHA TTICAPATA',
+    'MANZANAYOC':            'CANAL DE CONDUCCIÓN MANZANAYOC',
+    'AUJIRAY':               'CANAL DE CONDUCCIÓN AUJIRAY 1 Y 3',
+    'PPUMPU':                'CANAL DE CONDUCCIÓN DE PPUMPO',
+    'CUNYACQUENKO':          'CANAL DERIVADOR CUNYAC',
+    'LLACTAYARCA':           'CANAL DE LLACTAYARCCA',
+    'BATAN':                 'CANAL DE CONDUCCIÓN BATAN',
+    'CHINCALLAVEII':         'CANAL DE CONDUCCIÓN CHINCALLAVE 2',
+    'MAYOALCCA':             'CANAL DE CONDUCCIÓN MAYUALLCCA',
+    'HUAYNACOMUN':           'CANAL DE CONDUCCIÓN HUAYNA COMUN',
+};
+function huaroCanalBocatoma(bocatoma) {
+    return HUARO_CANAL_BOCATOMA[huaroNormNombre(bocatoma)] || String(bocatoma || '');
+}
+
 // ── Helpers puros ──
 function _huaroEsc(v) {
     return (v == null ? '' : String(v))
@@ -363,7 +387,7 @@ function huaroConstruirG2Html(datos) {
         <tr>
             <td style="${td}font-weight:600;">${_huaroEsc(HUARO_FUENTE)}</td>
             <td style="${td}">${_huaroEsc(f.bocatoma)}</td>
-            <td style="${td}">${_huaroEsc(f.bocatoma)}</td>
+            <td style="${td}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}text-align:center;">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
             <td style="${td}text-align:right;">${f.volumenTotalM3.toFixed(2)}</td>
             <td style="${td}text-align:right;">${f.areaProgramadaHa.toFixed(2)}</td>
@@ -387,7 +411,7 @@ function huaroConstruirG2Html(datos) {
             <div><strong>AAA:</strong> ${HUARO_AAA}</div>
             <div><strong>ALA:</strong> ${HUARO_ALA}</div>
             <div><strong>Sector Hidráulico:</strong> ${HUARO_JUNTA}</div>
-            <div><strong>Comisión de Regantes:</strong> ${HUARO_COMISION_NOMBRE}</div>
+            <div><strong>Subsector Hidráulico:</strong> ${HUARO_COMISION_NOMBRE}</div>
         </div>
         <div style="line-height:1.6;white-space:nowrap;">
             <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
@@ -479,7 +503,7 @@ function huaroConstruirG3Html(datos) {
 
         return `
         <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;">
-            <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(bl.bocatoma)}</div>
+            <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(huaroCanalBocatoma(bl.bocatoma))}</div>
             <div><strong>Caudal:</strong> ${caudalM3s.toFixed(4)} (m³/seg.)</div>
         </div>
         <div style="overflow-x:auto;">
@@ -525,7 +549,7 @@ function huaroConstruirG3Html(datos) {
     </div>
     <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:6px 0;line-height:1.6;">
         <div><strong>Sector hidráulico:</strong> ${HUARO_JUNTA}</div>
-        <div><strong>Comisión de Regantes:</strong> ${HUARO_COMISION_NOMBRE}</div>
+        <div><strong>Subsector hidráulico:</strong> ${HUARO_COMISION_NOMBRE}</div>
         <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
         <div><strong>Semana:</strong> ${semTxt}</div>
         <div><strong>Fecha:</strong> ${hoy}</div>
@@ -607,7 +631,7 @@ if (typeof window !== 'undefined') {
     window.HuaroCore = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,
@@ -617,7 +641,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,

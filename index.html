@@ -3916,13 +3916,32 @@ const COMISIONES = {
             };
         }
 
+        // El G-3 NO es consolidado: se elige una bocatoma en el desplegable y
+        // se muestra/imprime/exporta solo ese G-3.
+        function _huaroDatosG3De(boc) {
+            const all = _huaroDatosG3();
+            return { ...all, bloques: all.bloques.filter(b => b.bocatoma === boc) };
+        }
+
         function huaroMostrarG3() {
-            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
-            const datos = _huaroDatosG3();
-            const html = HuaroCore.huaroConstruirG3Html(datos);
-            _huaroPanelAnexo('Anexo G-3 — Huaro', html,
-                () => _huaroImprimir('Anexo G-3 — Huaro', html, 'landscape'),
-                () => _huaroExcelG3PorUsuario(datos));
+            const bocs = _huaroBocsConDatos();
+            if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const sel = `<label style="font-size:13px;font-weight:600;">Bocatoma:
+                <select id="huaroSelG3" style="margin-left:8px;padding:5px 8px;min-width:220px;">
+                    ${bocs.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}
+                </select></label><div id="huaroG3Cont" style="margin-top:12px;"></div>`;
+            _huaroPanelAnexo('Anexo G-3 — Huaro', sel,
+                () => {
+                    const b = document.getElementById('huaroSelG3').value;
+                    _huaroImprimir('Anexo G-3 — ' + b, HuaroCore.huaroConstruirG3Html(_huaroDatosG3De(b)), 'landscape');
+                },
+                () => _huaroExcelG3PorUsuario(_huaroDatosG3De(document.getElementById('huaroSelG3').value)));
+            const pintar = () => {
+                const b = document.getElementById('huaroSelG3').value;
+                document.getElementById('huaroG3Cont').innerHTML = HuaroCore.huaroConstruirG3Html(_huaroDatosG3De(b));
+            };
+            document.getElementById('huaroSelG3').onchange = pintar;
+            pintar();
         }
 
         function huaroMostrarG4() {
@@ -4011,7 +4030,7 @@ const COMISIONES = {
             poner(3, 'AAA:', HuaroCore.HUARO_AAA);
             poner(4, 'ALA:', HuaroCore.HUARO_ALA);
             poner(5, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(6, 'Comisión de Regantes:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(6, 'Subsector Hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
             poner(7, 'Mes:', datos.mesTexto || '');
             poner(8, 'Semana:', semTxt);
             ws.mergeCells(10, 1, 10, heads.length);
@@ -4028,7 +4047,7 @@ const COMISIONES = {
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
-                    HuaroCore.HUARO_FUENTE, f.bocatoma, f.bocatoma,
+                    HuaroCore.HUARO_FUENTE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.semanaInicioISO || '').split('-').reverse().join('/'), '04:00',
                     (f.semanaFinISO || '').split('-').reverse().join('/'), '20:00',
@@ -4064,14 +4083,14 @@ const COMISIONES = {
             ws.getCell(2, 1).value = 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
             ws.getCell(2, 1).font = { size: 10 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
             poner(4, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(5, 'Comisión de Regantes:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(5, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
             poner(6, 'Canal de abastecimiento de agua:', HuaroCore.HUARO_FUENTE);
             poner(7, 'Mes:', datos.mesTexto || '');
             poner(8, 'PERIODO:', per);
             let r = 10;
             (datos.bloques || []).forEach(bl => {
                 const cB = ws.getCell(r, 1);
-                cB.value = 'Canal de abastecimiento de agua: ' + bl.bocatoma + '   ·   Caudal: ' + ((bl.caudalLs || 0) / 1000).toFixed(4) + ' (m³/seg.)';
+                cB.value = 'Canal de abastecimiento de agua: ' + HuaroCore.huaroCanalBocatoma(bl.bocatoma) + '   ·   Caudal: ' + ((bl.caudalLs || 0) / 1000).toFixed(4) + ' (m³/seg.)';
                 cB.font = { bold: true, size: 10 };
                 r++;
                 heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
