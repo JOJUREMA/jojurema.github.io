@@ -3460,6 +3460,7 @@ const COMISIONES = {
         let _huaroOrden = [];        // [bocatoma...] en orden de hoja del Excel
         let _huaroResultados = null; // { bocatoma: {programados, pendientes, agregado} }
         let _huaroSemanaActualISO = null; // lunes de la semana elegida (se conserva al ir/volver de los anexos)
+        let _huaroHorarioTemp = {};  // { bocatoma: [{activo,inicioMin,finMin}×7] } — días/horas de riego editados en la sesión
 
         const _HUARO_OCULTAR = [
             '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
@@ -3534,6 +3535,7 @@ const COMISIONES = {
             // de Huaro y no deben verse en otra comisión. La comisión nueva
             // exige recargar su propio Excel de todas formas.
             _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
+            _huaroHorarioTemp = {};
             window._huaroOrdenBocatomas = [];
             tomasData = {};
             workbook = null;
@@ -3659,11 +3661,12 @@ const COMISIONES = {
                     ? masa.volumenAnualM3.toLocaleString('es-PE') : '—';
                 const volRepIni = (parseFloat(caudalGuardado) > 0)
                     ? _huaroVolRepresenta(toposTot, parseFloat(caudalGuardado)).toFixed(2) : '—';
-                const inicioG = (pdaGuardado && pdaGuardado.inicios && pdaGuardado.inicios[boc]) || {};
-                const diaOffIni = Number.isFinite(+inicioG.diaOffset) ? +inicioG.diaOffset : 0;
-                const horaIni = inicioG.hora || '04:00';
-                const optsDia = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-                    .map((d, k) => `<option value="${k}" ${k === diaOffIni ? 'selected' : ''}>${d}</option>`).join('');
+                // Días/horas de riego: prioridad = lo editado en sesión, luego lo
+                // guardado en el PDA de la semana, luego el default (7 días 04–20).
+                const horarioBoc = _huaroHorarioTemp[boc]
+                    || (pdaGuardado && pdaGuardado.horarios && pdaGuardado.horarios[boc])
+                    || HuaroCore.huaroDiasRiegoDefault();
+                _huaroHorarioTemp[boc] = HuaroCore.huaroNormalizarDiasRiego(horarioBoc);
                 filas += `
                 <tr>
                     <td>${escapeHtml(boc)}</td>
@@ -3677,8 +3680,10 @@ const COMISIONES = {
                             oninput="huaroActualizarVolRep(${i}, ${toposTot})">
                     </td>
                     <td style="text-align:right;" id="huaroVolRep__${i}" title="Volumen que movería el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">${volRepIni}</td>
-                    <td style="text-align:center;"><select id="huaroInicioDia__${i}" style="padding:3px 5px;font-size:12px;">${optsDia}</select></td>
-                    <td style="text-align:center;"><input type="time" id="huaroInicioHora__${i}" value="${horaIni}" min="04:00" max="19:45" step="900" style="padding:3px 5px;font-size:12px;"></td>
+                    <td style="text-align:center;white-space:nowrap;">
+                        <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" onclick="huaroHorasDeRiego('${boc.replace(/'/g, "\\'")}')">⏱️ Días/horas</button>
+                        <div class="huaro-mini" id="huaroHorarioResumen__${i}" style="margin-top:2px;">${escapeHtml(HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc]))}</div>
+                    </td>
                     <td style="text-align:center;" class="huaro-mini">
                         Servidos: ${servidos}/${total}${camp.pendientes.length ? ' · Pend.: ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · Excl.: ' + camp.excluidos.length : ''}
                     </td>
@@ -3712,7 +3717,7 @@ const COMISIONES = {
                             <th rowspan="2">N° usuarios</th>
                             <th rowspan="2">Área total (ha)</th>
                             <th colspan="2" style="background:#5a3f27;">Según resolución (masa de agua)</th>
-                            <th colspan="4" style="background:#5a3f27;">A programar esta semana</th>
+                            <th colspan="3" style="background:#5a3f27;">A programar esta semana</th>
                             <th rowspan="2">Estado de campaña</th>
                             <th rowspan="2">Acciones</th>
                         </tr>
@@ -3721,8 +3726,7 @@ const COMISIONES = {
                             <th title="Volumen anual otorgado en la Licencia de Uso de Agua Superficial del bloque">Volumen anual (m³)</th>
                             <th>Caudal a programar (l/s)</th>
                             <th title="Volumen que representa el caudal a programar durante toda la operación de la bocatoma (Σ topos × 1.5 h)">Volumen que representa (m³)</th>
-                            <th title="Día en que arranca esta bocatoma dentro de la semana">Día de inicio</th>
-                            <th title="Hora de inicio del primer turno de la bocatoma (04:00–19:45)">Hora de inicio</th>
+                            <th title="Días de la semana en que riega la bocatoma y la ventana de horas de cada día">Días y horas de riego</th>
                         </tr>
                         </thead>
                         <tbody>${filas}</tbody>
@@ -3784,7 +3788,7 @@ const COMISIONES = {
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
             const resultados = {};
             const caudales = {};
-            const inicios = {};
+            const horarios = {};
             let algo = false;
 
             _huaroOrden.forEach((boc, i) => {
@@ -3794,13 +3798,9 @@ const COMISIONES = {
                 algo = true;
                 caudales[boc] = caudalLs;
 
-                const selDia = document.getElementById('huaroInicioDia__' + i);
-                const inpHora = document.getElementById('huaroInicioHora__' + i);
-                const inicioDiaOffset = selDia ? (parseInt(selDia.value, 10) || 0) : 0;
-                const horaTxt = (inpHora && inpHora.value) || '04:00';
-                const [hh, mm] = horaTxt.split(':').map(n => parseInt(n, 10) || 0);
-                const inicioHoraMin = hh * 60 + mm;
-                inicios[boc] = { diaOffset: inicioDiaOffset, hora: horaTxt };
+                const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
+                    _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
+                horarios[boc] = diasRiego;
 
                 const camp = _huaroLeerCampana(boc);
                 // Base "antes de esta semana": si ya se generó esta MISMA semana,
@@ -3812,7 +3812,7 @@ const COMISIONES = {
                 const res = HuaroCore.huaroProgramarBocatoma({
                     usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
                     servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
-                    inicioDiaOffset, inicioHoraMin,
+                    diasRiego,
                 });
                 res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
                 resultados[boc] = res;
@@ -3829,7 +3829,7 @@ const COMISIONES = {
 
             _huaroResultados = resultados;
             _huaroGuardarPda({
-                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales, inicios,
+                semanaInicio: semanaISO, semanaFin: semanaFinISO, caudales, horarios,
                 resultados: Object.fromEntries(Object.entries(resultados).map(([b, r]) => [b, {
                     programados: r.programados, pendientes: r.pendientes, agregado: r.agregado,
                 }])),
@@ -3882,6 +3882,130 @@ const COMISIONES = {
                 _huaroGuardarCampana(boc, camp);
                 div.remove();
                 renderPanelHuaro();
+            };
+        }
+
+        // ── Días y horas de riego por bocatoma ──
+        // Igual que "HORAS DE RIEGO POR DÍA" de la Margen Izquierda pero SIN
+        // cultivo: por bocatoma se elige qué días de la semana riega y la
+        // ventana de horas (inicio–fin) de cada día. Se guarda en
+        // _huaroHorarioTemp[boc] y alimenta al scheduler (opts.diasRiego).
+        function _huaroMinDesdeHHMM(v) {
+            const m = /^(\d{1,2}):(\d{2})$/.exec(String(v || '').trim());
+            if (!m) return null;
+            const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+            if (!Number.isFinite(h) || !Number.isFinite(mi) || h > 23 || mi > 59) return null;
+            return h * 60 + mi;
+        }
+        function _huaroHHMMDesdeMin(min) {
+            const m = Math.max(0, Math.min(parseInt(min, 10) || 0, 24 * 60));
+            return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+        }
+        function _huaroRecalcFilaHorario(div, idx) {
+            const chk = div.querySelector('#huaroHR_act__' + idx);
+            const ini = div.querySelector('#huaroHR_ini__' + idx);
+            const fin = div.querySelector('#huaroHR_fin__' + idx);
+            const cel = div.querySelector('#huaroHR_hrs__' + idx);
+            const activo = chk && chk.checked;
+            if (ini) ini.disabled = !activo;
+            if (fin) fin.disabled = !activo;
+            let iMin = _huaroMinDesdeHHMM(ini && ini.value);
+            let fMin = _huaroMinDesdeHHMM(fin && fin.value);
+            if (iMin == null) iMin = HuaroCore.HUARO_MIN_INICIO_DIA;
+            if (fMin == null || fMin <= iMin) fMin = Math.max(iMin + 15, HuaroCore.HUARO_MIN_FIN_DIA);
+            if (cel) cel.textContent = activo ? ((fMin - iMin) / 60).toFixed(1) + ' h' : '—';
+        }
+        function huaroHorasDeRiego(boc) {
+            if (!window.HuaroCore) return;
+            const idxBoc = _huaroOrden.indexOf(boc);
+            const base = HuaroCore.huaroNormalizarDiasRiego(
+                _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
+            const dNom = HuaroCore.HUARO_DIAS_NOMBRE;
+
+            const filas = base.map((d, i) => `
+                <tr>
+                    <td style="text-align:left;">${dNom[i]}</td>
+                    <td style="text-align:center;">
+                        <input type="checkbox" id="huaroHR_act__${i}" ${d.activo ? 'checked' : ''}>
+                    </td>
+                    <td style="text-align:center;">
+                        <input type="time" id="huaroHR_ini__${i}" value="${_huaroHHMMDesdeMin(d.inicioMin)}" step="300"
+                            ${d.activo ? '' : 'disabled'} style="padding:3px 5px;border:1px solid #b7bfca;border-radius:4px;">
+                    </td>
+                    <td style="text-align:center;">
+                        <input type="time" id="huaroHR_fin__${i}" value="${_huaroHHMMDesdeMin(d.finMin)}" step="300"
+                            ${d.activo ? '' : 'disabled'} style="padding:3px 5px;border:1px solid #b7bfca;border-radius:4px;">
+                    </td>
+                    <td style="text-align:center;" id="huaroHR_hrs__${i}" class="huaro-mini"></td>
+                </tr>`).join('');
+
+            const div = document.createElement('div');
+            div.className = 'modal-overlay active';
+            div.style.zIndex = '99999';
+            div.innerHTML = `
+                <div class="modal-container" style="max-width:560px;max-height:82vh;overflow-y:auto;">
+                    <h3>⏱️ Días y horas de riego — ${escapeHtml(boc)}</h3>
+                    <p class="huaro-mini">Marca los días en que la bocatoma reparte agua y define la ventana de horas de cada día. Los turnos de los usuarios (n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h) se encadenan dentro de esas ventanas, en orden de N° del padrón; lo que no entra en la semana pasa a la siguiente.</p>
+                    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
+                        <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRTodos">Todos los días</button>
+                        <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRLunVie">Lun–Vie</button>
+                        <label class="huaro-mini" style="display:flex;gap:5px;align-items:center;">Aplicar ventana a los días activos:
+                            <input type="time" id="huaroHRVentIni" value="${_huaroHHMMDesdeMin(base[0].inicioMin)}" step="300" style="padding:3px 5px;border:1px solid #b7bfca;border-radius:4px;">
+                            <span>–</span>
+                            <input type="time" id="huaroHRVentFin" value="${_huaroHHMMDesdeMin(base[0].finMin)}" step="300" style="padding:3px 5px;border:1px solid #b7bfca;border-radius:4px;">
+                            <button class="huaro-btn sec" style="padding:4px 8px;font-size:11px;" id="huaroHRVentAplicar">Aplicar</button>
+                        </label>
+                    </div>
+                    <table class="huaro-tabla">
+                        <thead><tr><th style="text-align:left;">Día</th><th>Programar</th><th>Inicio</th><th>Fin</th><th>Horas de riego</th></tr></thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                    <div style="display:flex;gap:10px;margin-top:14px;">
+                        <button class="huaro-btn" id="huaroHRGuardar">Guardar</button>
+                        <button class="huaro-btn sec" onclick="this.closest('.modal-overlay').remove()">Cancelar</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(div);
+
+            for (let i = 0; i < 7; i++) {
+                _huaroRecalcFilaHorario(div, i);
+                ['huaroHR_act__', 'huaroHR_ini__', 'huaroHR_fin__'].forEach(pfx => {
+                    const el = div.querySelector('#' + pfx + i);
+                    if (el) el.addEventListener('input', () => _huaroRecalcFilaHorario(div, i));
+                });
+            }
+            div.querySelector('#huaroHRTodos').onclick = () => {
+                for (let i = 0; i < 7; i++) { div.querySelector('#huaroHR_act__' + i).checked = true; _huaroRecalcFilaHorario(div, i); }
+            };
+            div.querySelector('#huaroHRLunVie').onclick = () => {
+                for (let i = 0; i < 7; i++) { div.querySelector('#huaroHR_act__' + i).checked = (i < 5); _huaroRecalcFilaHorario(div, i); }
+            };
+            div.querySelector('#huaroHRVentAplicar').onclick = () => {
+                const vi = div.querySelector('#huaroHRVentIni').value;
+                const vf = div.querySelector('#huaroHRVentFin').value;
+                for (let i = 0; i < 7; i++) {
+                    if (!div.querySelector('#huaroHR_act__' + i).checked) continue;
+                    div.querySelector('#huaroHR_ini__' + i).value = vi;
+                    div.querySelector('#huaroHR_fin__' + i).value = vf;
+                    _huaroRecalcFilaHorario(div, i);
+                }
+            };
+            div.querySelector('#huaroHRGuardar').onclick = () => {
+                const nuevo = [];
+                for (let i = 0; i < 7; i++) {
+                    const activo = div.querySelector('#huaroHR_act__' + i).checked;
+                    let iMin = _huaroMinDesdeHHMM(div.querySelector('#huaroHR_ini__' + i).value);
+                    let fMin = _huaroMinDesdeHHMM(div.querySelector('#huaroHR_fin__' + i).value);
+                    if (iMin == null) iMin = HuaroCore.HUARO_MIN_INICIO_DIA;
+                    if (fMin == null || fMin <= iMin) fMin = Math.max(iMin + 15, HuaroCore.HUARO_MIN_FIN_DIA);
+                    nuevo.push({ activo: activo, inicioMin: iMin, finMin: fMin });
+                }
+                if (!nuevo.some(d => d.activo)) { alert('Marca al menos un día de riego.'); return; }
+                _huaroHorarioTemp[boc] = HuaroCore.huaroNormalizarDiasRiego(nuevo);
+                div.remove();
+                const cel = document.getElementById('huaroHorarioResumen__' + idxBoc);
+                if (cel) cel.textContent = HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc]);
+                else renderPanelHuaro();
             };
         }
 

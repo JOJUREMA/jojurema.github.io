@@ -98,6 +98,56 @@ function huaroCanalBocatoma(bocatoma) {
     return HUARO_CANAL_BOCATOMA[huaroNormNombre(bocatoma)] || String(bocatoma || '');
 }
 
+// ── Días y horas de riego por bocatoma ──
+// 7 entradas (0 = lunes … 6 = domingo): { activo, inicioMin, finMin }.
+function huaroDiasRiegoDefault() {
+    return HUARO_DIAS_NOMBRE.map(() => ({ activo: true, inicioMin: HUARO_MIN_INICIO_DIA, finMin: HUARO_MIN_FIN_DIA }));
+}
+// Normaliza lo que venga (array parcial, o los antiguos inicioDiaOffset/
+// inicioHoraMin) a 7 entradas válidas y coherentes.
+function huaroNormalizarDiasRiego(diasRiego, inicioDiaOffsetLegacy, inicioHoraMinLegacy) {
+    const out = huaroDiasRiegoDefault();
+    if (Array.isArray(diasRiego) && diasRiego.length) {
+        for (let i = 0; i < 7; i++) {
+            const d = diasRiego[i] || {};
+            let ini = parseInt(d.inicioMin, 10);
+            let fin = parseInt(d.finMin, 10);
+            if (!Number.isFinite(ini)) ini = HUARO_MIN_INICIO_DIA;
+            if (!Number.isFinite(fin)) fin = HUARO_MIN_FIN_DIA;
+            ini = Math.max(0, Math.min(ini, 24 * 60 - 15));
+            fin = Math.max(ini + 15, Math.min(fin, 24 * 60));
+            out[i] = { activo: !!d.activo, inicioMin: ini, finMin: fin };
+        }
+        return out;
+    }
+    // Compatibilidad: si vienen los parámetros viejos, arma "desde ese día/hora
+    // hasta el domingo, ventana 04:00–20:00".
+    let off = parseInt(inicioDiaOffsetLegacy, 10);
+    if (Number.isFinite(off) && off >= 0 && off <= 6) {
+        let h = parseInt(inicioHoraMinLegacy, 10);
+        if (!Number.isFinite(h) || h < HUARO_MIN_INICIO_DIA || h >= HUARO_MIN_FIN_DIA) h = HUARO_MIN_INICIO_DIA;
+        for (let i = 0; i < 7; i++) {
+            out[i].activo = i >= off;
+            out[i].inicioMin = (i === off) ? h : HUARO_MIN_INICIO_DIA;
+        }
+    }
+    return out;
+}
+// Texto compacto de un horario para mostrar en la tabla del PDA.
+function huaroResumenDiasRiego(diasRiego) {
+    const dr = huaroNormalizarDiasRiego(diasRiego);
+    const activos = dr.map((d, i) => ({ d, i })).filter(x => x.d.activo);
+    if (!activos.length) return 'sin días';
+    const totalH = activos.reduce((s, x) => s + (x.d.finMin - x.d.inicioMin) / 60, 0);
+    const mismaVentana = activos.every(x =>
+        x.d.inicioMin === activos[0].d.inicioMin && x.d.finMin === activos[0].d.finMin);
+    const dias = activos.map(x => HUARO_DIAS_ABREV[x.i]).join('·');
+    if (mismaVentana) {
+        return `${dias} · ${_huaroHHMM(activos[0].d.inicioMin)}–${_huaroHHMM(activos[0].d.finMin)} (${totalH.toFixed(0)} h)`;
+    }
+    return activos.map(x => `${HUARO_DIAS_ABREV[x.i]} ${_huaroHHMM(x.d.inicioMin)}–${_huaroHHMM(x.d.finMin)}`).join(' · ');
+}
+
 // ── Helpers puros ──
 function _huaroEsc(v) {
     return (v == null ? '' : String(v))
@@ -251,12 +301,13 @@ function huaroProgramarBocatoma(opts) {
     const servidos = new Set(opts.servidosPrevios || []);
     const pendientesPrevios = (opts.pendientesPrevios || []).slice();
     const excluidos = new Set(opts.excluidos || []);
-    // Día (0 = lunes … 6 = domingo) y hora (minuto del día) en que ARRANCA la
-    // bocatoma esta semana. Por defecto: lunes a las 04:00.
-    let inicioDiaOffset = parseInt(opts.inicioDiaOffset, 10);
-    if (!Number.isFinite(inicioDiaOffset) || inicioDiaOffset < 0 || inicioDiaOffset > 6) inicioDiaOffset = 0;
-    let inicioHoraMin = parseInt(opts.inicioHoraMin, 10);
-    if (!Number.isFinite(inicioHoraMin) || inicioHoraMin < HUARO_MIN_INICIO_DIA || inicioHoraMin >= HUARO_MIN_FIN_DIA) inicioHoraMin = HUARO_MIN_INICIO_DIA;
+
+    // Días y horas de riego de la bocatoma esta semana: 7 entradas (0 = lunes …
+    // 6 = domingo), cada una { activo, inicioMin, finMin } (minuto del día). El
+    // motor coloca los turnos SOLO en los días activos, dentro de su ventana
+    // [inicioMin, finMin], en secuencia. Sin `diasRiego` → los 7 días 04:00–20:00
+    // (o, por compatibilidad, arranca en inicioDiaOffset/inicioHoraMin).
+    const diasRiego = huaroNormalizarDiasRiego(opts.diasRiego, opts.inicioDiaOffset, opts.inicioHoraMin);
 
     const porClave = {};
     usuarios.forEach(u => { porClave[huaroClaveUsuario(u)] = u; });
@@ -278,25 +329,35 @@ function huaroProgramarBocatoma(opts) {
 
     const programados = [];
     const pendientes = [];
-    let dia = 1 + inicioDiaOffset;              // 1..7 dentro de la semana
-    let cursorMin = inicioHoraMin;              // el primer día arranca en la hora elegida
-    let sobrepasoSemana = dia > HUARO_DIAS_SEMANA;
+
+    // Puntero a la ventana (día) actual: primer día activo.
+    let vIdx = 0;
+    while (vIdx < 7 && !diasRiego[vIdx].activo) vIdx++;
+    let cursorMin = vIdx < 7 ? diasRiego[vIdx].inicioMin : Infinity;
 
     for (let i = 0; i < cola.length; i++) {
         const u = cola[i];
         const bloqueMin = u.topos * HUARO_H_POR_TOPO * 60;
 
-        if (!sobrepasoSemana && cursorMin + bloqueMin > HUARO_MIN_FIN_DIA) {
-            dia++;
-            cursorMin = HUARO_MIN_INICIO_DIA;
+        // Avanzar a la primera ventana activa donde el turno completo entre.
+        while (vIdx < 7) {
+            if (!diasRiego[vIdx].activo) {
+                vIdx++;
+                if (vIdx < 7 && diasRiego[vIdx].activo) cursorMin = diasRiego[vIdx].inicioMin;
+                continue;
+            }
+            if (cursorMin + bloqueMin <= diasRiego[vIdx].finMin) break; // cabe aquí
+            vIdx++;
+            while (vIdx < 7 && !diasRiego[vIdx].activo) vIdx++;
+            if (vIdx < 7) cursorMin = diasRiego[vIdx].inicioMin;
         }
-        if (sobrepasoSemana || dia > HUARO_DIAS_SEMANA || bloqueMin > (HUARO_MIN_FIN_DIA - HUARO_MIN_INICIO_DIA)) {
-            // no cabe esta semana (o un bloque imposible de encajar en un día)
-            sobrepasoSemana = sobrepasoSemana || dia > HUARO_DIAS_SEMANA;
+
+        if (vIdx >= 7) { // no hay más ventanas esta semana
             pendientes.push(huaroClaveUsuario(u));
             continue;
         }
 
+        const dia = vIdx + 1;
         const inicioMin = cursorMin;
         const terminoMin = cursorMin + bloqueMin;
         cursorMin = terminoMin;
@@ -329,11 +390,14 @@ function huaroProgramarBocatoma(opts) {
 
     // Período REAL de operación del canal = del primer turno al último turno
     // programado (lo que también se ve en el G-3). Si no hay nadie programado,
-    // cae al inicio elegido / fin de semana.
+    // cae al primer día/hora activo de diasRiego.
+    const primerActivo = diasRiego.findIndex(d => d.activo);
     const pIni = programados[0];
     const pFin = programados[programados.length - 1];
-    const periodoInicioISO = pIni ? pIni.fechaISO : _huaroSumarDias(semanaInicioISO, Math.min(inicioDiaOffset, HUARO_DIAS_SEMANA - 1));
-    const periodoInicioHora = pIni ? pIni.inicioTexto : _huaroHHMM(inicioHoraMin);
+    const periodoInicioISO = pIni ? pIni.fechaISO
+        : _huaroSumarDias(semanaInicioISO, primerActivo >= 0 ? primerActivo : 0);
+    const periodoInicioHora = pIni ? pIni.inicioTexto
+        : _huaroHHMM(primerActivo >= 0 ? diasRiego[primerActivo].inicioMin : HUARO_MIN_INICIO_DIA);
     const periodoFinISO = pFin ? pFin.fechaISO : periodoInicioISO;
     const periodoFinHora = pFin ? pFin.terminoTexto : periodoInicioHora;
 
@@ -343,7 +407,7 @@ function huaroProgramarBocatoma(opts) {
             bocatoma: opts.bocatoma || '',
             caudalLs, semanaInicioISO,
             semanaFinISO: _huaroSumarDias(semanaInicioISO, HUARO_DIAS_SEMANA - 1),
-            inicioDiaOffset, inicioHoraMin,
+            diasRiego,
             periodoInicioISO, periodoInicioHora, periodoFinISO, periodoFinHora,
             nUsuarios: programados.length,
             areaProgramadaHa, toposTotal, tiempoTotalH, volumenTotalM3,
@@ -655,6 +719,8 @@ if (typeof window !== 'undefined') {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
         huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
+        HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,
@@ -665,6 +731,8 @@ if (typeof module !== 'undefined' && module.exports) {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
         huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
+        HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         huaroDocumentoImprimible,
