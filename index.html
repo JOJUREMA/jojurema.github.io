@@ -3483,6 +3483,7 @@ const COMISIONES = {
         let _huaroCaudalTemp = {};   // { bocatoma: caudal l/s escrito y aún no programado }
         let _huaroBocSel = null;     // bocatoma que se está programando (null = solo se ve el selector)
         let _huaroBocFlash = null;   // bocatoma recién programada (para el aviso verde)
+        let _huaroBocFlashSemanas = null; // semanas futuras generadas en cascada junto con _huaroBocFlash (o null)
 
         const _HUARO_OCULTAR = [
             '#tomaSelect', '#tipoReporte', '#cultivoFiltro', '#deudaMinima',
@@ -3575,7 +3576,7 @@ const COMISIONES = {
             // exige recargar su propio Excel de todas formas.
             _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
             _huaroMesSel = null; _huaroAnioSel = null;
-            _huaroHorarioTemp = {}; _huaroCaudalTemp = {}; _huaroBocSel = null; _huaroBocFlash = null;
+            _huaroHorarioTemp = {}; _huaroCaudalTemp = {}; _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             window._huaroOrdenBocatomas = [];
             tomasData = {};
             workbook = null;
@@ -3745,11 +3746,11 @@ const COMISIONES = {
 
         function huaroSeleccionarBoc(boc) {
             _huaroBocSel = (boc && _huaroOrden.indexOf(boc) >= 0) ? boc : null;
-            _huaroBocFlash = null;
+            _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             renderPanelHuaro();
         }
         function huaroNuevaBocatoma() {
-            _huaroBocSel = null; _huaroBocFlash = null;
+            _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             renderPanelHuaro();
         }
 
@@ -3851,9 +3852,14 @@ const COMISIONES = {
                 }
 
                 const avisoOk = (_huaroBocFlash === boc)
-                    ? `<div class="huaro-aviso-ok">✅ <b>${escapeHtml(boc)}</b> quedó programada y guardada en el Anexo G-2 de la semana. Puedes ver su G-3 o programar otra bocatoma.</div>`
+                    ? `<div class="huaro-aviso-ok">✅ <b>${escapeHtml(boc)}</b> quedó programada y guardada en el Anexo G-2 de la semana. Puedes ver su G-3 o programar otra bocatoma.` +
+                      (_huaroBocFlashSemanas && _huaroBocFlashSemanas.length
+                          ? `<br>↪️ Quedaron usuarios pendientes que no entraron en esta semana — se generó automáticamente su programación para ` +
+                            _huaroBocFlashSemanas.map(iso => 'la semana del ' + iso.split('-').reverse().join('/')).join(', ') + '.'
+                          : '') +
+                      `</div>`
                     : '';
-                _huaroBocFlash = null;
+                _huaroBocFlash = null; _huaroBocFlashSemanas = null;
 
                 detalleHtml = `
                 <div class="huaro-detalle">
@@ -4023,7 +4029,7 @@ const COMISIONES = {
             _huaroRevertirCampana(boc, semanaISO);
             delete _huaroCaudalTemp[boc];
             _huaroResultados = null;
-            if (_huaroBocFlash === boc) _huaroBocFlash = null;
+            if (_huaroBocFlash === boc) { _huaroBocFlash = null; _huaroBocFlashSemanas = null; }
             renderPanelHuaro();
         }
         function huaroBorrarTodasProgramadas() {
@@ -4036,24 +4042,16 @@ const COMISIONES = {
             localStorage.removeItem(_huaroKeyPda(semanaISO));
             _huaroCaudalTemp = {};
             _huaroResultados = null;
-            _huaroBocFlash = null;
+            _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             renderPanelHuaro();
         }
 
-        // Programa la bocatoma en edición y la acumula en el PDA de la semana
-        // (que alimenta el G-2). Persiste campaña + blob y repinta.
-        function huaroProgramarBocatomaActual() {
-            if (!window.HuaroCore || !_huaroBocSel) { alert('Primero selecciona una bocatoma.'); return; }
-            const boc = _huaroBocSel;
-            const semanaISO = _huaroSemanaSeleccionada();
+        // Corre el motor para UNA bocatoma en UNA semana puntual, persiste su
+        // campaña (pendientes que arrastra) y su PDA — sin tocar _huaroResultados
+        // ni la UI. Lo usan tanto huaroProgramarBocatomaActual (semana en
+        // pantalla) como la cascada automática de semanas siguientes.
+        function _huaroProgramarBocatomaSemana(boc, semanaISO, caudalLs, diasRiego) {
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
-            const inp = document.getElementById('huaroCaudalBoc');
-            const caudalLs = parseFloat(inp && inp.value) || 0;
-            if (caudalLs <= 0) { alert('Ingresa el caudal (l/s) a programar para ' + boc + '.'); return; }
-
-            const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
-                _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
-
             const camp = _huaroLeerCampana(boc);
             const pendPrev = _huaroPendientesPrevios(camp, semanaISO);
             const res = HuaroCore.huaroProgramarBocatoma({
@@ -4075,13 +4073,50 @@ const COMISIONES = {
             pda.horarios[boc] = diasRiego;
             pda.resultados[boc] = { programados: res.programados, pendientes: res.pendientes, agregado: res.agregado };
             _huaroGuardarPda(pda);
-            delete _huaroCaudalTemp[boc];
+            return { res, pda };
+        }
 
+        // Programa la bocatoma en edición y la acumula en el PDA de la semana
+        // (que alimenta el G-2). Persiste campaña + blob y repinta. Si quedan
+        // usuarios pendientes (no entraron en los 7 días de esta semana), genera
+        // de una vez también la PRÓXIMA semana (mismo caudal y horario) con esos
+        // usuarios primero en la cola, para no tener que ir a mano a la semana
+        // siguiente a reprogramarlos. Si esa próxima semana aún deja pendientes
+        // (bocatoma con más demanda de la que el caudal actual puede cubrir en
+        // una semana), queda para la próxima vez que se programe — así no se
+        // reescriben en cadena semanas y semanas hacia el futuro sin que nadie
+        // lo pida.
+        function huaroProgramarBocatomaActual() {
+            if (!window.HuaroCore || !_huaroBocSel) { alert('Primero selecciona una bocatoma.'); return; }
+            const boc = _huaroBocSel;
+            const semanaISO = _huaroSemanaSeleccionada();
+            const inp = document.getElementById('huaroCaudalBoc');
+            const caudalLs = parseFloat(inp && inp.value) || 0;
+            if (caudalLs <= 0) { alert('Ingresa el caudal (l/s) a programar para ' + boc + '.'); return; }
+
+            const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
+                _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
+
+            const { res, pda } = _huaroProgramarBocatomaSemana(boc, semanaISO, caudalLs, diasRiego);
+            delete _huaroCaudalTemp[boc];
             _huaroResultados = pda.resultados;
             _huaroBocFlash = boc;
+
             if (!res.programados.length) {
+                _huaroBocFlashSemanas = null;
                 alert('"' + boc + '" no tiene usuarios para programar: revisa que no estén todos excluidos en la Cola (o que la bocatoma tenga padrón).');
+                renderPanelHuaro();
+                return;
             }
+
+            if (res.pendientes.length > 0) {
+                const isoSiguiente = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 7 * 864e5).toISOString().slice(0, 10);
+                _huaroProgramarBocatomaSemana(boc, isoSiguiente, caudalLs, diasRiego);
+                _huaroBocFlashSemanas = [isoSiguiente];
+            } else {
+                _huaroBocFlashSemanas = null;
+            }
+
             renderPanelHuaro();
         }
 
