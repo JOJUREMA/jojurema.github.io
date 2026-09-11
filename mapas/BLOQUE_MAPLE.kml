@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>BLOQUE MAPLE</name>
+	<Schema name="S_BLOQUE_MAPLE" id="S_BLOQUE_MAPLE">
+		<SimpleField type="double" name="AREA_HA"><displayName>&lt;b&gt;AREA_HA&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_LOC"><displayName>&lt;b&gt;NOM_LOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_PRE"><displayName>&lt;b&gt;NOM_PRE&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_BLO"><displayName>&lt;b&gt;NOM_BLO&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="CODCAT"><displayName>&lt;b&gt;CODCAT&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="USUARIO"><displayName>&lt;b&gt;USUARIO&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="AP_PAT_USU"><displayName>&lt;b&gt;AP_PAT_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="AP_MAT_USU"><displayName>&lt;b&gt;AP_MAT_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_USU"><displayName>&lt;b&gt;NOM_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="TIPODOC"><displayName>&lt;b&gt;TIPODOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NUM_DOC"><displayName>&lt;b&gt;NUM_DOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="DESC_LIC"><displayName>&lt;b&gt;DESC_LIC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="double" name="PAR_AR_BR"><displayName>&lt;b&gt;PAR_AR_BR&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="RES_ADM"><displayName>&lt;b&gt;RES_ADM&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="TOMA"><displayName>&lt;b&gt;TOMA&lt;/b&gt;</displayName></SimpleField>
+	</Schema>
+	<Folder>
+		<name>MAPLE</name>
+		<Placemark>
+			<name>04127074</name>
+			<visibility>0</visibility>
+			<ExtendedData>
+				<SchemaData schemaUrl="#S_BLOQUE_MAPLE">
+					<SimpleData name="AREA_HA">154.62</SimpleData>
+					<SimpleData name="NOM_LOC"></SimpleData>
+					<SimpleData name="NOM_PRE">SECTOR 2: LOTE CHIRA 2B-1</SimpleData>
+					<SimpleData name="NOM_BLO">MAPLE</SimpleData>
+					<SimpleData name="CODCAT">04127074</SimpleData>
+					<SimpleData name="USUARIO">MAPLE ETANOL S.R.L.</SimpleData>
+					<SimpleData name="AP_PAT_USU"></SimpleData>
+					<SimpleData name="AP_MAT_USU"></SimpleData>
+					<SimpleData name="NOM_USU"></SimpleData>
+					<SimpleData name="TIPODOC">RUC</SimpleData>
+					<SimpleData name="NUM_DOC"></SimpleData>
+					<SimpleData name="DESC_LIC">ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="PAR_AR_BR">154.62</SimpleData>
+					<SimpleData name="RES_ADM">030-2009-ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="TOMA">AGROAURORA</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Polygon>
+				<outerBoundaryIs>
+					<LinearRing>
+						<coordinates>
+							-80.84833725647549,-4.936835257955183,0 -80.84833643813845,-4.940526274996451,0 -80.84807210623035,-4.941165908261944,0 -80.84743423531246,-4.941430734300023,0 -80.84143676475922,-4.941447454811079,0 -80.84134656456975,-4.941447433738295,0 -80.83574343242833,-4.94144610066934,0 -80.83411957126596,-4.940601114328322,0 -80.83287294448692,-4.939345094170882,0 -80.83299809537039,-4.938363089648384,0 -80.83402120035905,-4.937109100072945,0 -80.83403832807478,-4.936831916215079,0 -80.83404391717562,-4.936741451508593,0 -80.83410265248244,-4.935987340669438,0 -80.83164919499626,-4.936122435762731,0 -80.83154609480204,-4.93357183251786,0 -80.83293065751067,-4.93354446929729,0 -80.83427470507003,-4.933210074034411,0 -80.83382606618925,-4.932218094310628,0 -80.84631386726379,-4.932221030988668,0 -80.84671377086819,-4.932965765141915,0 -80.84726403831856,-4.932921774829142,0 -80.84834902757474,-4.933968690774117,0 -80.84833725647549,-4.936835257955183,0
+						</coordinates>
+					</LinearRing>
+				</outerBoundaryIs>
+			</Polygon>
+		</Placemark>
+		<Placemark>
+			<name>11530415/041270</name>
+			<visibility>0</visibility>
+			<ExtendedData>
+				<SchemaData schemaUrl="#S_BLOQUE_MAPLE">
+					<SimpleData name="AREA_HA">220.14</SimpleData>
+					<SimpleData name="NOM_LOC"></SimpleData>
+					<SimpleData name="NOM_PRE">SECTOR 3: LOTE CHIRA 2B-3 LOTE CHIRA 2B</SimpleData>
+					<SimpleData name="NOM_BLO">MAPLE</SimpleData>
+					<SimpleData name="CODCAT">11530415/041270</SimpleData>
+					<SimpleData name="USUARIO">MAPLE ETANOL S.R.L.</SimpleData>
+					<SimpleData name="AP_PAT_USU"></SimpleData>
+					<SimpleData name="AP_MAT_USU"></SimpleData>
+					<SimpleData name="NOM_USU"></SimpleData>
+					<SimpleData name="TIPODOC">RUC</SimpleData>
+					<SimpleData name="NUM_DOC"></SimpleData>
+					<SimpleData name="DESC_LIC">ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="PAR_AR_BR">220.14</SimpleData>
+					<SimpleData name="RES_ADM">030-2009-ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="TOMA">AGROAURORA</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Polygon>
+				<outerBoundaryIs>
+					<LinearRing>
+						<coordinates>
+							-80.89520618542188,-4.933601403196207,0 -80.89509794622784,-4.933601386710913,0 -80.88878399392503,-4.933600394544564,0 -80.88866883105571,-4.933600375890686,0 -80.88551877913335,-4.933599857908229,0 -80.88541053997554,-4.933599839844338,0 -80.87623918785067,-4.933598245183735,0 -80.87593963387911,-4.933495290127214,0 -80.87594068119256,-4.927678309917298,0 -80.87639227696103,-4.927678391503516,0 -80.87646441442629,-4.927606031493273,0 -80.87645354920204,-4.925520843509792,0 -80.87805634816864,-4.925772183291139,0 -80.88140688326507,-4.925019596923155,0 -80.88188546504033,-4.92526516058544,0 -80.88222482274138,-4.926012819637329,0 -80.88225458700953,-4.927607049741258,0 -80.88541152196733,-4.927679956715196,0 -80.88551976016676,-4.927679974756185,0 -80.88551977215256,-4.927607601719862,0 -80.88552007948542,-4.925751465782591,0 -80.88586371698467,-4.925739117275134,0 -80.88616696232678,-4.925751573192791,0 -80.88722208716356,-4.925750424421493,0 -80.88811164048148,-4.925738350402669,0 -80.88866927367113,-4.925740527011701,0 -80.88893836120597,-4.925740561447636,0 -80.88966281518054,-4.92573710093496,0 -80.89041332294167,-4.925744976496482,0 -80.89081959185002,-4.925752461087209,0 -80.89133613788559,-4.925761116285068,0 -80.89149789505922,-4.925743066617447,0 -80.89192006636374,-4.925747878856974,0 -80.89202440919087,-4.925738393543179,0 -80.89240386801798,-4.925743208730409,0 -80.89280705227324,-4.925738515763354,0 -80.8940693489313,-4.925750954660826,0 -80.8949111486214,-4.925745095527967,0 -80.89511413080425,-4.925745126434045,0 -80.8958307769891,-4.925768019001646,0 -80.89635955115767,-4.925174087639115,0 -80.89707790683843,-4.925191720299987,0 -80.89704407165411,-4.924973002020659,0 -80.89702487689688,-4.923718015687504,0 -80.89825162454203,-4.923682702176189,0 -80.8993728506187,-4.923695486474149,0 -80.89985279441258,-4.923644029281402,0 -80.89990414226868,-4.924039101467268,0 -80.89988697093037,-4.924348291252843,0 -80.89992115245259,-4.925018194090884,0 -80.90002393865102,-4.925344568132037,0 -80.90007091159431,-4.925787072971268,0 -80.89982579359732,-4.926979363980911,0 -80.90000055409203,-4.928382126017318,0 -80.90000043289453,-4.92922376872003,0 -80.9006651825664,-4.929960301389404,0 -80.90283472780578,-4.929855404911101,0 -80.90346450897215,-4.930451656431279,0 -80.90356932157928,-4.931643996642263,0 -80.90443342167188,-4.933605484831995,0 -80.89520618542188,-4.933601403196207,0
+						</coordinates>
+					</LinearRing>
+				</outerBoundaryIs>
+			</Polygon>
+		</Placemark>
+		<Placemark>
+			<name>11530415</name>
+			<visibility>0</visibility>
+			<ExtendedData>
+				<SchemaData schemaUrl="#S_BLOQUE_MAPLE">
+					<SimpleData name="AREA_HA">25.24</SimpleData>
+					<SimpleData name="NOM_LOC"></SimpleData>
+					<SimpleData name="NOM_PRE">SECTOR 1: LOTE CHIRA 2B-3</SimpleData>
+					<SimpleData name="NOM_BLO">MAPLE</SimpleData>
+					<SimpleData name="CODCAT">11530415</SimpleData>
+					<SimpleData name="USUARIO">MAPLE ETANOL S.R.L.</SimpleData>
+					<SimpleData name="AP_PAT_USU"></SimpleData>
+					<SimpleData name="AP_MAT_USU"></SimpleData>
+					<SimpleData name="NOM_USU"></SimpleData>
+					<SimpleData name="TIPODOC">RUC</SimpleData>
+					<SimpleData name="NUM_DOC"></SimpleData>
+					<SimpleData name="DESC_LIC">ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="PAR_AR_BR">25.24</SimpleData>
+					<SimpleData name="RES_ADM">030-2009-ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="TOMA">AGROAURORA</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Polygon>
+				<outerBoundaryIs>
+					<LinearRing>
+						<coordinates>
+							-80.85634154268367,-4.924982378073932,0 -80.8558182782803,-4.925534111602696,0 -80.85584184444454,-4.92644891075011,0 -80.85405927305359,-4.926203187634295,0 -80.85342796495688,-4.925832140973818,0 -80.85385207911338,-4.924972803127636,0 -80.85117532899299,-4.92380888577272,0 -80.85084881945279,-4.923434228300215,0 -80.85056933032324,-4.922864230215803,0 -80.85058741711327,-4.922647115335868,0 -80.85081294279175,-4.922502418768979,0 -80.85173965986165,-4.922322283553235,0 -80.85183496126902,-4.922232928293604,0 -80.85193914695174,-4.922153655841761,0 -80.8519001135376,-4.921896759382896,0 -80.84910021619406,-4.921244028243137,0 -80.8494008909953,-4.920448721010667,0 -80.8496843845685,-4.920321485032392,0 -80.85013252696271,-4.920584613978045,0 -80.85163882966272,-4.920557803026327,0 -80.85223954601069,-4.920347312805353,0 -80.85309126565463,-4.920211171883457,0 -80.85417917162073,-4.919916515564613,0 -80.85451398170785,-4.919916586921573,0 -80.85459410895891,-4.920513701728133,0 -80.85470065587673,-4.920796095146162,0 -80.85533195060246,-4.921680884243591,0 -80.85514142031462,-4.922705761820576,0 -80.85534501876202,-4.923007489225237,0 -80.85663040100859,-4.923905890957165,0 -80.85634154268367,-4.924982378073932,0
+						</coordinates>
+					</LinearRing>
+				</outerBoundaryIs>
+			</Polygon>
+		</Placemark>
+	</Folder>
+</Document>
+</kml>

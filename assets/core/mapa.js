@@ -32,6 +32,19 @@ const KML_POR_TOMA = {
     'SD14.1': ['BLOQUE_DE_RIEGO_PUCUSULA.kml'],
     SD13: ['BLOQUE_DE_RIEGO_PUCUSULA.kml'],
     'SD12.1': ['BLOQUE_DE_RIEGO_PUCUSULA.kml'],
+    // Bloques que faltaban en la red (confirmado contra PARCELAS.shp.kmz —
+    // el shapefile oficial de predios de Margen Izquierda: 9 bloques reales,
+    // solo 3 estaban cargados). JIBITO, LAS CAPILLAS y SOJO Y LAS MARIPOSAS
+    // son zonas de riego por bomba (no tienen código SI/SD de canal por
+    // gravedad) — se usa el nombre del bloque como código de toma. LA HUACA,
+    // MAPLE y CAÑA BRAVA II sí tienen código de toma (confirmado con el
+    // usuario): SI6, AGROAURORA y EL LOBO respectivamente.
+    JIBITO: ['BLOQUE_JIBITO.kml'],
+    'LAS CAPILLAS': ['BLOQUE_LAS_CAPILLAS.kml'],
+    'SOJO Y LAS MARIPOSAS': ['BLOQUE_SOJO_Y_LAS_MARIPOSAS.kml'],
+    SI6: ['BLOQUE_LA_HUACA.kml'],
+    AGROAURORA: ['BLOQUE_MAPLE.kml'],
+    'EL LOBO': ['BLOQUE_CANA_BRAVA_II.kml'],
 };
 
 // "SD 8.1" / "sd8.1" / " SD6 " -> "SD8.1" / "SD6" — para que el nombre de

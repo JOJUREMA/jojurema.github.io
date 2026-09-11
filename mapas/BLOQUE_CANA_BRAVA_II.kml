@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>BLOQUE CAÑA BRAVA II</name>
+	<Schema name="S_BLOQUE_CANA_BRAVA_II" id="S_BLOQUE_CANA_BRAVA_II">
+		<SimpleField type="double" name="AREA_HA"><displayName>&lt;b&gt;AREA_HA&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_LOC"><displayName>&lt;b&gt;NOM_LOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_PRE"><displayName>&lt;b&gt;NOM_PRE&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_BLO"><displayName>&lt;b&gt;NOM_BLO&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="CODCAT"><displayName>&lt;b&gt;CODCAT&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="USUARIO"><displayName>&lt;b&gt;USUARIO&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="AP_PAT_USU"><displayName>&lt;b&gt;AP_PAT_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="AP_MAT_USU"><displayName>&lt;b&gt;AP_MAT_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NOM_USU"><displayName>&lt;b&gt;NOM_USU&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="TIPODOC"><displayName>&lt;b&gt;TIPODOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="NUM_DOC"><displayName>&lt;b&gt;NUM_DOC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="DESC_LIC"><displayName>&lt;b&gt;DESC_LIC&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="double" name="PAR_AR_BR"><displayName>&lt;b&gt;PAR_AR_BR&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="RES_ADM"><displayName>&lt;b&gt;RES_ADM&lt;/b&gt;</displayName></SimpleField>
+		<SimpleField type="string" name="TOMA"><displayName>&lt;b&gt;TOMA&lt;/b&gt;</displayName></SimpleField>
+	</Schema>
+	<Folder>
+		<name>CAÑA BRAVA II</name>
+		<Placemark>
+			<name>067029</name>
+			<visibility>0</visibility>
+			<ExtendedData>
+				<SchemaData schemaUrl="#S_BLOQUE_CANA_BRAVA_II">
+					<SimpleData name="AREA_HA">1825</SimpleData>
+					<SimpleData name="NOM_LOC"></SimpleData>
+					<SimpleData name="NOM_PRE">LOTE CONCEPCION NOMARA</SimpleData>
+					<SimpleData name="NOM_BLO">CAÑA BRAVA II</SimpleData>
+					<SimpleData name="CODCAT">067029</SimpleData>
+					<SimpleData name="USUARIO">AGRICOLA DEL CHIRA S.A.</SimpleData>
+					<SimpleData name="AP_PAT_USU"></SimpleData>
+					<SimpleData name="AP_MAT_USU"></SimpleData>
+					<SimpleData name="NOM_USU"></SimpleData>
+					<SimpleData name="TIPODOC">RUC</SimpleData>
+					<SimpleData name="NUM_DOC">20525413447</SimpleData>
+					<SimpleData name="DESC_LIC">ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="PAR_AR_BR">1825</SimpleData>
+					<SimpleData name="RES_ADM">080-2009-ANA-ALA CHIRA</SimpleData>
+					<SimpleData name="TOMA">EL LOBO</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Polygon>
+				<outerBoundaryIs>
+					<LinearRing>
+						<coordinates>
+							-80.88979115510398,-4.996481094705009,0 -80.88979864965076,-4.949867092200268,0 -80.90341908098705,-4.949869143841346,0 -80.90341997653468,-4.943446036737034,0 -80.88979967647941,-4.943443987924074,0 -80.88980119242319,-4.933945028624798,0 -80.93003013102432,-4.933950258558324,0 -80.93002742117945,-4.961180635576823,0 -80.98339329165849,-4.961143774816399,0 -80.96989996594326,-4.981034579507075,0 -80.94524045580911,-4.985790526984976,0 -80.92690213409512,-4.989326694922265,0 -80.91208978025489,-4.99218254975808,0 -80.91208978025486,-4.9921825497581,0 -80.90395431148816,-4.993750932984891,0 -80.88979115510398,-4.996481094705009,0
+						</coordinates>
+					</LinearRing>
+				</outerBoundaryIs>
+			</Polygon>
+		</Placemark>
+	</Folder>
+</Document>
+</kml>
