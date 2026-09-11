@@ -4378,7 +4378,8 @@ const COMISIONES = {
                     const idx = +document.getElementById('huaroSelG4Usr').value;
                     const p = _huaroResultados[b].programados[idx];
                     if (p) _huaroImprimir('Anexo G4 ' + p.nombre, HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(b)), 'portrait');
-                }, null);
+                },
+                () => _huaroExcelG4(document.getElementById('huaroSelG4Boc').value));
             const selBoc = document.getElementById('huaroSelG4Boc');
             const selUsr = document.getElementById('huaroSelG4Usr');
             const llenarUsr = () => {
@@ -4404,7 +4405,10 @@ const COMISIONES = {
         }
 
         function _huaroCtxG4(boc) {
-            return { bocatoma: boc, caudalLs: _huaroResultados[boc].agregado.caudalLs, fechaImpresionISO: new Date().toISOString().slice(0, 10) };
+            // La fecha del G-4 es el lunes de la semana programada (no la fecha en
+            // que se imprime/exporta) — así lo pidió el usuario: semana del 7 al 13
+            // de setiembre => el G-4 dice "7 de setiembre del 2026".
+            return { bocatoma: boc, caudalLs: _huaroResultados[boc].agregado.caudalLs, fechaInicioSemanaISO: _huaroSemanaSeleccionada() };
         }
 
         // ── Excel (ExcelJS) — G-2 y G-3 con las MISMAS 19 columnas del formato
@@ -4546,6 +4550,52 @@ const COMISIONES = {
             });
             const _bocG3 = (datos.bloques && datos.bloques[0]) ? datos.bloques[0].bocatoma : '';
             await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + '.xlsx');
+        }
+
+        // Excel del G-4 — una fila por usuario (todos los programados de la
+        // bocatoma elegida, igual alcance que "Imprimir todas (bocatoma)"), con
+        // los mismos campos del formato individual (orden, canal, caudal,
+        // período, volumen) más columnas en blanco para firmas/observaciones.
+        async function _huaroExcelG4(boc) {
+            const r = _huaroResultados[boc];
+            if (!r || !r.programados.length) { alert('No hay usuarios programados en esta bocatoma.'); return; }
+            const semanaInicioISO = r.agregado.semanaInicioISO;
+            const fechaTexto = (semanaInicioISO || '').split('-').reverse().join('/');
+            const heads = ['N° Orden de Suministro', 'El Usuario Sr.(a)', 'Nombre del Canal', 'Caudal (l/s)',
+                'A partir del día', 'Hora inicio', 'Hasta el día', 'Hora término',
+                'Horas total del uso del agua', 'Volumen de agua a entregar (m³)', 'Fecha',
+                'Entregué conforme — Tomero (firma)', 'Recibí conforme — Usuario (firma)', 'Observaciones'];
+            const alinear = (c, i) => { c.alignment = { horizontal: i === 1 ? 'left' : 'center', vertical: 'middle' }; };
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Anexo G-4', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            ws.columns = heads.map((h, i) => ({ width: i === 1 ? 32 : (i === 11 || i === 12 ? 26 : (i === 13 ? 24 : 14)) }));
+            const poner = (fila, et, val) => {
+                ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
+                ws.mergeCells(fila, 2, fila, heads.length);
+                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
+            };
+            ws.mergeCells(1, 1, 1, heads.length);
+            ws.getCell(1, 1).value = 'Formato G-4: Orden de Suministro de Agua';
+            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
+            poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
+            poner(4, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(5, 'Canal de abastecimiento de agua:', HuaroCore.huaroCanalBocatoma(boc));
+            poner(6, 'Caudal:', (r.agregado.caudalLs || 0).toFixed(2) + ' (l/s)');
+            poner(7, 'Fecha:', fechaTexto);
+            let fila = 9;
+            heads.forEach((h, i) => { const c = ws.getCell(fila, i + 1); c.value = h; _huaroEstiloEnc(c); });
+            fila++;
+            r.programados.forEach(p => {
+                const _fd = (p.fechaISO || '').split('-').reverse().join('/');
+                const vals = [p.ordenSuministro != null ? p.ordenSuministro : '', p.nombre, HuaroCore.huaroCanalBocatoma(boc),
+                    +(r.agregado.caudalLs || 0).toFixed(2),
+                    _fd, p.inicioTexto, _fd, p.terminoTexto,
+                    +(p.tiempoH || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2), fechaTexto,
+                    '', '', ''];
+                vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
+                fila++;
+            });
+            await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + '.xlsx');
         }
 
         // Procesar datos del workbook

@@ -672,7 +672,9 @@ function huaroConstruirG3Html(datos) {
 // N° · "El Usuario Sr.(a)..." · Nombre del canal · Caudal (l/s) · A partir del
 // día/hora hasta el día/hora · Horas total del uso del agua · Volumen de agua a
 // entregar (m³) · fecha · firmas (Tomero / Usuario) · Observaciones.
-// p: usuario programado (de huaroProgramarBocatoma); ctx: { bocatoma, caudalLs, fechaImpresionISO }
+// p: usuario programado (de huaroProgramarBocatoma); ctx: { bocatoma, caudalLs,
+// fechaInicioSemanaISO } — la fecha es el lunes de la semana programada, no la
+// fecha en que se imprime/exporta.
 function huaroConstruirG4Html(p, ctx) {
     const caudalLs = parseFloat(ctx.caudalLs) || 0;
     const line = 'border-bottom:1.6px solid #111;display:inline-block;min-width:150px;padding:0 6px;';
@@ -699,7 +701,10 @@ function huaroConstruirG4Html(p, ctx) {
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Horas total del uso del agua: <span style="${line}">${(p.tiempoH || 0).toFixed(2)}</span></div>
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Volumen de agua a entregar (m³): <span style="${line}">${(p.volumenM3 || 0).toFixed(2)}</span></div>
         <div style="text-align:right;margin-top:24px;font-size:11px;">
-            <span style="${line}min-width:220px;">${_huaroFechaLargaEs(ctx.fechaImpresionISO ? new Date(ctx.fechaImpresionISO + 'T00:00:00') : new Date())}</span>
+            ${_huaroFechaLargaEs(ctx.fechaInicioSemanaISO ? new Date(ctx.fechaInicioSemanaISO + 'T00:00:00') : new Date())}
+        </div>
+        <div style="text-align:center;margin-top:26px;font-size:11px;">
+            <div style="border-bottom:1.6px solid #111;width:260px;margin:0 auto;height:22px;"></div>
             <div style="margin-top:6px;">Jefe de Subsector Hidráulico</div>
         </div>
         <table style="width:100%;border-collapse:collapse;margin-top:30px;font-size:11px;"><tr>
@@ -712,9 +717,9 @@ function huaroConstruirG4Html(p, ctx) {
                 <div style="margin-top:8px;font-size:10px;">Recibí conforme — Usuario (firma)</div>
             </td>
         </tr></table>
-        <div style="margin-top:16px;font-size:11px;"><strong>Observaciones:</strong>
-            <span style="border-bottom:1.6px solid #111;display:inline-block;min-width:280px;"></span>
-            <div style="font-size:9px;color:#444;margin-top:2px;">(Anotar cuando el tiempo y caudal asignados fueron diferentes a lo autorizado, así como el cambio de cultivo)</div>
+        <div style="margin-top:20px;font-size:11px;">
+            <strong>Observaciones:</strong>
+            <div style="border-bottom:1.6px solid #111;height:20px;margin-top:4px;"></div>
         </div>
     </div>`;
 }
