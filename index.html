@@ -7617,7 +7617,7 @@ const COMISIONES = {
                             <span><i style="display:inline-block;width:14px;height:3px;background:#4ce600;vertical-align:middle;"></i> L3</span>
                             <span><i style="display:inline-block;width:14px;height:3px;background:#ffff00;vertical-align:middle;"></i> L4</span>
                             <span><i style="display:inline-block;width:14px;height:3px;background:#000;vertical-align:middle;"></i> L5</span>
-                            <span style="color:#9ad8ff;">▭ predios</span>
+                            <span style="color:#9ad8ff;">▭ predios (toca uno para usar su polígono en este registro)</span>
                         </div>
                         <div id="controlesModoPuntoLevantamientoA2Esc" style="display:flex;gap:8px;">
                             <button id="btnMedirAreaLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">📐 Medir área (opcional)</button>
@@ -7738,6 +7738,39 @@ const COMISIONES = {
             const canales = _canalesInventarioGisTodosA2Esc.filter((f) => f.toma === tomaNombre);
             _canalesBloqueRiegoCacheLevantamientoA2Esc[tomaNombre] = canales;
             return canales;
+        }
+
+        // Clic sobre un predio del bloque de riego (KML oficial) mientras se
+        // está editando la ubicación/área de un registro observado del
+        // Formato A-2: si ESE predio ya mapeado es en realidad el mismo que
+        // el usuario observado, se adopta su polígono tal cual como el área
+        // del registro — evita volver a medirlo a mano cuando ya existe en
+        // la base gráfica. Mismo formato de vertices_utm y misma función de
+        // guardado (_guardarCampoLevantamientoA2Esc) que "Cerrar polígono"
+        // (modo área) e Importar Polígonos (KML/KMZ), origen:'bloque_riego'
+        // para distinguirlo de 'manual'/'kml_importado' en el dato guardado.
+        function _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc(p) {
+            const r = _levantamientoA2Estado.registroActual;
+            if (!r) return;
+            const nombrePredio = p.usuario || '(sin nombre)';
+            const yaTenia = Array.isArray(r.verticesUtm) && r.verticesUtm.length >= 3;
+            const mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
+                ' del bloque de riego como el área de este registro observado?' +
+                (yaTenia ? '\n\n⚠️ Este registro ya tiene un polígono guardado — se reemplazará por el del predio elegido.' : '');
+            if (!confirm(mensaje)) return;
+
+            const verticesParaGuardar = p.coordenadas.map((par, idx) => {
+                const utm = latLonAUtm17S(par[1], par[0]); // p.coordenadas viene [lon,lat] (parsearKmlATomas)
+                return { orden: idx + 1, easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0], origen: 'bloque_riego' };
+            });
+            r.verticesUtm = verticesParaGuardar;
+            _verticesUtmExistentesLevantamientoA2Esc = verticesParaGuardar.slice();
+            _guardarCampoLevantamientoA2Esc({ id: r.id, verticesUtm: verticesParaGuardar });
+            // Refresca de inmediato la capa de referencia (polígono ya
+            // guardado) en modo punto para que se vea el cambio sin cerrar
+            // el editor.
+            if (_modoEditorLevantamientoA2Esc === 'punto') _redibujarPuntoEditorLevantamientoA2Esc();
+            alert('✅ Polígono de "' + nombrePredio + '" guardado como el área de este registro.');
         }
 
         // Recalcula, para cada etiqueta activa, el tamaño de fuente que cabe
@@ -7863,7 +7896,25 @@ const COMISIONES = {
                     : null;
                 const colorRellenoBloqueEsc = clasifBloqueEsc ? clasifBloqueEsc.colorInfo.fill : '#00bcd4';
                 const colorBordeBloqueEsc = clasifBloqueEsc ? clasifBloqueEsc.colorInfo.stroke : '#00bcd4';
-                const poligono = L.polygon(latlngs, { color: colorBordeBloqueEsc, weight: 1.5, fillColor: colorRellenoBloqueEsc, fillOpacity: 0.3, interactive: false });
+                // interactive:true (antes false) — permite hacer clic en el
+                // predio del bloque de riego para adoptar SU polígono ya
+                // mapeado como el área del registro observado en edición, en
+                // vez de tener que volver a medirlo a mano (ver
+                // _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc). En
+                // modo "área" (dibujo manual en curso) el clic igual agrega
+                // un vértice ahí, como si hubiera caído en el mapa — no
+                // interrumpe el trazado manual.
+                const poligono = L.polygon(latlngs, { color: colorBordeBloqueEsc, weight: 1.5, fillColor: colorRellenoBloqueEsc, fillOpacity: 0.3, interactive: true });
+                poligono.on('click', (evClicBloqueEsc) => {
+                    if (_modoEditorLevantamientoA2Esc === 'area') {
+                        _verticesAreaTempLevantamientoA2Esc.push(_construirVerticeAreaLevantamientoA2Esc(evClicBloqueEsc.latlng.lat, evClicBloqueEsc.latlng.lng));
+                        _redibujarAreaEditorLevantamientoA2Esc();
+                        return;
+                    }
+                    _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc(p);
+                });
+                poligono.on('mouseover', () => poligono.setStyle({ weight: 3.5 }));
+                poligono.on('mouseout', () => poligono.setStyle({ weight: 1.5 }));
                 // Ángulo Y longitud reales (metros) del lado más largo del predio
                 // (assets/core/mapa.js) — el ángulo orienta la etiqueta paralela a
                 // ese lado; la longitud decide, en cada zoom, qué tamaño de fuente
