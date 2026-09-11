@@ -680,13 +680,13 @@ function huaroConstruirG4Html(p, ctx) {
     const line = 'border-bottom:1.6px solid #111;display:inline-block;min-width:150px;padding:0 6px;';
     const box = 'display:inline-block;width:11px;height:11px;border:1.5px solid #111;margin-right:8px;vertical-align:middle;';
     return `
-    <div style="font-family:Arial,sans-serif;border:2px solid #111;padding:12px 14px;background:#fff;color:#111;page-break-after:always;">
-        <div style="text-align:center;">
-            <div style="font-weight:800;font-size:13px;letter-spacing:.6px;">ANEXO G</div>
-            <div style="font-weight:800;font-size:12px;margin-top:2px;">Formato G-4. Orden de Suministro de Agua</div>
-            <div style="font-size:10px;margin-top:2px;">${HUARO_JUNTA} — ${HUARO_COMISION_NOMBRE}</div>
+    <div style="font-family:Arial,sans-serif;color:#111;page-break-after:always;">
+        <div style="border:1.8px solid #111;padding:8px 14px;text-align:center;margin-bottom:10px;">
+            <div style="font-weight:800;font-size:13px;">Formato G-4.</div>
+            <div style="font-weight:800;font-size:13px;margin-top:2px;">Orden de Suministro de Agua</div>
         </div>
-        <div style="margin:12px 0 6px;font-size:11px;">N° <span style="${line}min-width:120px;">${p.ordenSuministro != null ? p.ordenSuministro : ''}</span></div>
+        <div style="border:2px solid #111;padding:12px 14px;background:#fff;">
+        <div style="margin:0 0 6px;font-size:11px;">N° <span style="${line}min-width:120px;">${p.ordenSuministro != null ? p.ordenSuministro : ''}</span></div>
         <div style="margin:8px 0;font-size:11px;line-height:1.4;">
             El Usuario Sr.(a): <span style="${line}min-width:260px;">${_huaroEsc(p.nombre)}</span>,
             según el Plan de Aprovechamiento de la Disponibilidad Hídrica aprobado, utilizará el agua según el detalle siguiente:
@@ -720,6 +720,7 @@ function huaroConstruirG4Html(p, ctx) {
         <div style="margin-top:20px;font-size:11px;">
             <strong>Observaciones:</strong>
             <div style="border-bottom:1.6px solid #111;height:20px;margin-top:4px;"></div>
+        </div>
         </div>
     </div>`;
 }
