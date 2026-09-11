@@ -3605,15 +3605,18 @@ const COMISIONES = {
         function _huaroKeyCampana(boc) { return 'cusshmi_huaro_campana__HUARO__' + boc; }
         function _huaroKeyPda(iso) { return 'cusshmi_huaro_pda__' + iso; }
         function _huaroLeerCampana(boc) {
+            // El PDA es semanal: la "campaña" solo guarda los excluidos de la Cola
+            // y, en el caso extremo, los pendientes que arrastran a la semana
+            // siguiente. (Ya no hay "servidos": cada semana se reprograma todo.)
             try {
                 const o = JSON.parse(localStorage.getItem(_huaroKeyCampana(boc)));
                 if (o && typeof o === 'object') {
-                    o.servidos = o.servidos || []; o.pendientes = o.pendientes || [];
+                    o.pendientes = o.pendientes || [];
                     o.excluidos = o.excluidos || []; o.prev = o.prev || null;
                     return o;
                 }
             } catch (e) { /* noop */ }
-            return { servidos: [], pendientes: [], excluidos: [], prev: null, ultimaSemana: null };
+            return { pendientes: [], excluidos: [], prev: null, ultimaSemana: null };
         }
         function _huaroGuardarCampana(boc, o) { localStorage.setItem(_huaroKeyCampana(boc), JSON.stringify(o)); }
         function _huaroLeerPda(iso) {
@@ -3699,28 +3702,26 @@ const COMISIONES = {
             renderPanelHuaro();
         }
 
-        // Base de la campaña "antes de esta semana": si ya se programó esta
-        // MISMA semana, se parte del snapshot previo para no contar doble.
-        function _huaroBaseCampana(camp, semanaISO) {
+        // Pendientes que arrastran de la semana anterior. Si ya se programó ESTA
+        // misma semana, se toma el snapshot previo para no arrastrarse a sí mismo.
+        function _huaroPendientesPrevios(camp, semanaISO) {
             return (camp.ultimaSemana === semanaISO && camp.prev)
-                ? { servidos: camp.prev.servidos || [], pendientes: camp.prev.pendientes || [] }
-                : { servidos: camp.servidos.slice(), pendientes: camp.pendientes.slice() };
+                ? (camp.prev.pendientes || []).slice()
+                : (camp.pendientes || []).slice();
         }
 
         // Corrida "en seco" del programador para una bocatoma con el caudal y los
-        // días/horas actuales — NO persiste nada. El volumen que devuelve depende
-        // de los días/horas: los usuarios que no entran en la ventana quedan
-        // pendientes y no suman volumen.
+        // días/horas actuales — NO persiste nada. Se programan TODOS los usuarios
+        // (menos los excluidos); el volumen depende del caudal y los días/horas.
         function _huaroPreviewBocatoma(boc, caudalLs) {
             const q = parseFloat(caudalLs) || 0;
             const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
             const semanaISO = _huaroSemanaSeleccionada();
             const camp = _huaroLeerCampana(boc);
-            const base = _huaroBaseCampana(camp, semanaISO);
             return HuaroCore.huaroProgramarBocatoma({
                 usuarios: _huaroPadron[boc] || [], caudalLs: q, semanaInicioISO: semanaISO, bocatoma: boc,
-                servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                pendientesPrevios: _huaroPendientesPrevios(camp, semanaISO), excluidos: camp.excluidos,
                 diasRiego,
             });
         }
@@ -3873,10 +3874,10 @@ const COMISIONES = {
                         </div>
 
                         <div class="huaro-mini" style="margin-bottom:10px;">
-                            Estado de campaña: servidos ${camp.servidos.length}/${us.length}${camp.pendientes.length ? ' · pendientes ' + camp.pendientes.length : ''}${camp.excluidos.length ? ' · excluidos ' + camp.excluidos.length : ''}
+                            Se programan los ${us.length} usuarios del padrón${camp.excluidos.length ? ' · <b>' + camp.excluidos.length + ' excluido(s)</b> en la Cola' : ''}${camp.pendientes.length ? ' · ' + camp.pendientes.length + ' vienen de la semana anterior' : ''}
                             &nbsp;·&nbsp;
-                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroGestionarCola('${boc.replace(/'/g, "\\'")}')">Cola</button>
-                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroReiniciarCampana('${boc.replace(/'/g, "\\'")}')">Reiniciar campaña</button>
+                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroGestionarCola('${boc.replace(/'/g, "\\'")}')">Cola (excluir usuarios)</button>
+                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroReiniciarCampana('${boc.replace(/'/g, "\\'")}')">Reiniciar</button>
                         </div>
 
                         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
@@ -3956,8 +3957,8 @@ const COMISIONES = {
             const filas = boc.map(b => {
                 const a = _huaroResultados[b].agregado;
                 tU += a.nUsuarios; tArea += a.areaProgramadaHa; tVol += a.volumenTotalM3; tPend += a.nPendientes;
-                const colPend = a.campanaCompleta
-                    ? '<span style="color:#6b7280;">campaña completa</span>'
+                const colPend = a.sinUsuarios
+                    ? '<span style="color:#6b7280;">sin usuarios</span>'
                     : (a.nPendientes ? a.nPendientes + ' (' + a.areaPendienteHa.toFixed(2) + ' ha)' : '0');
                 const dfechas = [...new Set((_huaroResultados[b].programados || []).map(p => p.fechaISO))]
                     .sort().map(iso => parseInt(String(iso).slice(8, 10), 10));
@@ -3981,13 +3982,11 @@ const COMISIONES = {
         }
 
         // Quita una bocatoma de la programación de la semana: borra su entrada
-        // del PDA guardado y revierte lo que sumó a su campaña (para que sus
-        // usuarios vuelvan a estar disponibles).
+        // del PDA guardado y deshace el arrastre de pendientes que dejó.
         function _huaroRevertirCampana(boc, semanaISO) {
             const camp = _huaroLeerCampana(boc);
-            if (camp.ultimaSemana === semanaISO && camp.prev) {
-                camp.servidos = (camp.prev.servidos || []).slice();
-                camp.pendientes = (camp.prev.pendientes || []).slice();
+            if (camp.ultimaSemana === semanaISO) {
+                camp.pendientes = camp.prev ? (camp.prev.pendientes || []).slice() : [];
                 camp.prev = null;
                 camp.ultimaSemana = null;
                 _huaroGuardarCampana(boc, camp);
@@ -4039,17 +4038,15 @@ const COMISIONES = {
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
 
             const camp = _huaroLeerCampana(boc);
-            const base = _huaroBaseCampana(camp, semanaISO);
+            const pendPrev = _huaroPendientesPrevios(camp, semanaISO);
             const res = HuaroCore.huaroProgramarBocatoma({
                 usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
-                servidosPrevios: base.servidos, pendientesPrevios: base.pendientes, excluidos: camp.excluidos,
+                pendientesPrevios: pendPrev, excluidos: camp.excluidos,
                 diasRiego,
             });
-            res.agregado.campanaCompleta = (res.programados.length === 0 && res.pendientes.length === 0);
+            res.agregado.sinUsuarios = (res.programados.length === 0);
 
-            const keysProg = res.programados.map(p => HuaroCore.huaroClaveUsuario(p));
-            camp.prev = { servidos: base.servidos.slice(), pendientes: base.pendientes.slice() };
-            camp.servidos = _huaroUnion(base.servidos, keysProg);
+            camp.prev = { pendientes: pendPrev.slice() };
             camp.pendientes = res.pendientes.slice();
             camp.ultimaSemana = semanaISO;
             _huaroGuardarCampana(boc, camp);
@@ -4066,7 +4063,7 @@ const COMISIONES = {
             _huaroResultados = pda.resultados;
             _huaroBocFlash = boc;
             if (!res.programados.length) {
-                alert('La campaña de "' + boc + '" no tiene usuarios por atender esta semana (campaña completa o todos excluidos).');
+                alert('"' + boc + '" no tiene usuarios para programar: revisa que no estén todos excluidos en la Cola (o que la bocatoma tenga padrón).');
             }
             renderPanelHuaro();
         }
@@ -4084,14 +4081,14 @@ const COMISIONES = {
             us.forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
             const excl = new Set(camp.excluidos);
 
+            const pendSet = new Set(camp.pendientes || []);
             const listaHtml = us.slice().sort((a, b) => a.nOrden - b.nOrden).map(u => {
                 const k = HuaroCore.huaroClaveUsuario(u);
-                const servido = camp.servidos.includes(k);
-                const pend = camp.pendientes.includes(k);
+                const pend = pendSet.has(k);
                 return `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;border-bottom:1px solid #eee;">
                     <input type="checkbox" data-k="${escapeHtml(k)}" ${excl.has(k) ? 'checked' : ''}>
                     <span style="flex:1;">N°${u.nOrden} · ${escapeHtml(u.nombre)} · ${(u.areaHa || 0).toFixed(2)} ha · ${(u.topos || 0).toFixed(1)} topos</span>
-                    <span style="font-size:10px;color:${servido ? '#2e7d32' : (pend ? '#b26a00' : '#999')};">${servido ? 'servido' : (pend ? 'pendiente' : '—')}</span>
+                    <span style="font-size:10px;color:${excl.has(k) ? '#b00' : (pend ? '#b26a00' : '#999')};">${excl.has(k) ? 'excluido' : (pend ? 'viene de antes' : '—')}</span>
                 </label>`;
             }).join('');
 

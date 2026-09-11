@@ -296,13 +296,17 @@ function huaroClaveUsuario(u) {
 
 // ── Programación de una bocatoma para una semana ──
 // opts: { usuarios:[...], caudalLs:Number, semanaInicioISO:'YYYY-MM-DD',
-//         servidosPrevios:[key], pendientesPrevios:[key], excluidos:[key] }
+//         pendientesPrevios:[key], excluidos:[key] }
+// El PDA es SEMANAL: cada semana se programan TODOS los usuarios del padrón
+// (menos los excluidos en la Cola). No hay "servidos" que se arrastren de una
+// semana a otra; `pendientesPrevios` solo son los que —en el caso extremo de
+// que ni con el desborde diario entren en los 7 días— quedaron para encabezar
+// la semana siguiente.
 // Devuelve { programados:[...], pendientes:[...], agregado:{...} }
 function huaroProgramarBocatoma(opts) {
     const usuarios = Array.isArray(opts.usuarios) ? opts.usuarios.slice() : [];
     const caudalLs = parseFloat(opts.caudalLs) || 0;
     const semanaInicioISO = opts.semanaInicioISO || huaroLunesDeLaSemana();
-    const servidos = new Set(opts.servidosPrevios || []);
     const pendientesPrevios = (opts.pendientesPrevios || []).slice();
     const excluidos = new Set(opts.excluidos || []);
 
@@ -318,8 +322,8 @@ function huaroProgramarBocatoma(opts) {
     const porClave = {};
     usuarios.forEach(u => { porClave[huaroClaveUsuario(u)] = u; });
 
-    // Cola: pendientes de la semana anterior primero (en su orden), luego el
-    // resto en orden de N°, sin repetir y saltando servidos/excluidos.
+    // Cola: pendientes de la semana anterior primero (en su orden), luego
+    // TODOS los usuarios en orden de N°, sin repetir y saltando los excluidos.
     const vistos = new Set();
     const cola = [];
     pendientesPrevios.forEach(k => {
@@ -329,7 +333,7 @@ function huaroProgramarBocatoma(opts) {
     });
     usuarios.slice().sort((a, b) => a.nOrden - b.nOrden).forEach(u => {
         const k = huaroClaveUsuario(u);
-        if (vistos.has(k) || servidos.has(k) || excluidos.has(k)) return;
+        if (vistos.has(k) || excluidos.has(k)) return;
         cola.push(u); vistos.add(k);
     });
 
