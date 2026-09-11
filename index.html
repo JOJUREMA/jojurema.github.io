@@ -4193,6 +4193,18 @@ const COMISIONES = {
         // NO se tocan; solo se reinicia el rastro de rotación para
         // reconstruirlo desde el principio con la lógica actual.
         function huaroRepararRotacionTodasLasBocatomas() {
+            // Requiere el padrón (Excel) cargado EN ESTA SESIÓN — _huaroPadron es
+            // memoria del navegador, no algo que quede guardado entre refrescos de
+            // página, a diferencia del PDA/campaña (que sí viven en localStorage y
+            // por eso la tabla de "Bocatomas programadas" se ve normal aunque el
+            // padrón esté vacío). Sin el padrón cargado, esta función no tiene con
+            // qué recalcular y se saltaría TODAS las bocatomas en silencio — se
+            // corta acá con un aviso claro en vez de eso.
+            if (!_huaroPadron || !Object.keys(_huaroPadron).some((b) => _huaroPadron[b] && _huaroPadron[b].length)) {
+                alert('Antes de reparar, vuelve a cargar el archivo del padrón de Huaro (el mismo Excel, "📁 Cargar Padrón Huaro" en la barra lateral) en esta sesión — recién cargado, vuelve a apretar este botón.\n\nSi acabas de refrescar la página, es justo por eso: el padrón se pierde al refrescar y hay que volver a cargarlo (el PDA y las semanas programadas SÍ quedan guardados, por eso se siguen viendo).');
+                return;
+            }
+
             if (!confirm('Esto recalcula TODAS las semanas ya generadas de TODAS las bocatomas (mismo caudal y horario que cada una ya tiene guardado) para corregir el arrastre de usuarios entre semanas en bocatomas generadas antes de esta corrección.\n\nNo se pierde ningún caudal/horario ya ingresado, ni las exclusiones manuales de la Cola — solo se recalculan los usuarios programados/pendientes de cada semana.\n\n¿Continuar?')) return;
 
             const semanasPorBoc = {};
