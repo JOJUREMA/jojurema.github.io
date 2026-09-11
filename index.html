@@ -4867,6 +4867,18 @@ const COMISIONES = {
         // problema (a diferencia del Formato A-1 crudo de ANA, que sí
         // necesita SheetJS — ver comentario en importarPadronOficialA1).
         const TOMAS_FORMATO_A2_LEVANTAMIENTO = ['SD3', 'SD4', 'SD5', 'SD6', 'SD7', 'SD8', 'SD8.1', 'SD9', 'SD10', 'SD12', 'SI4', 'SD11', 'SD14', 'SI5', 'SI7'];
+        // Tomas con predios mapeados (KML_POR_TOMA, assets/core/mapa.js) que
+        // NO forman parte del Oficio Múltiple N°101-2026-JUSHMCH (sin hoja
+        // propia en el Excel de Levantamiento ni avance en Supabase) —
+        // JIBITO/LAS CAPILLAS/SOJO Y LAS MARIPOSAS/SI6 (La Huaca)/AGROAURORA
+        // (Maple)/EL LOBO (Caña Brava II). Se agregan SOLO al selector de
+        // "Generar Plano de Predios A2" (el usuario lo pidió así) — no a
+        // TOMAS_FORMATO_A2_LEVANTAMIENTO, para no mezclarlas con el
+        // import/export del Excel ni con el panel de avance de Levantamiento,
+        // que sí están atados a ese oficio.
+        const TOMAS_PLANO_PREDIOS_A2 = TOMAS_FORMATO_A2_LEVANTAMIENTO.concat([
+            'JIBITO', 'LAS CAPILLAS', 'SOJO Y LAS MARIPOSAS', 'SI6', 'AGROAURORA', 'EL LOBO',
+        ]);
         const COLORES_FORMATO_A2_LEVANTAMIENTO = { FFD9EAD3: 'verde', FFFCE5CD: 'naranja', FFFFF2CC: 'amarillo' };
 
         // Mapeo columna Excel (1-47) <-> campo — usado por el importador (lectura)
@@ -5456,7 +5468,7 @@ const COMISIONES = {
             if (select && !select.dataset.poblado) {
                 select.dataset.poblado = '1';
                 select.innerHTML = '';
-                TOMAS_FORMATO_A2_LEVANTAMIENTO.forEach((t) => {
+                TOMAS_PLANO_PREDIOS_A2.forEach((t) => {
                     const opt = document.createElement('option');
                     opt.value = t; opt.textContent = t;
                     select.appendChild(opt);
