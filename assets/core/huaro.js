@@ -445,11 +445,11 @@ function huaroProgramarBocatoma(opts) {
 //        TOMA · NOMBRE DEL CANAL DE DISTRIBUCIÓN · N° DE USUARIOS · VOLUMEN DE
 //        AGUA PROGRAMADO (m³) · ÁREA BAJO RIEGO (Ha) · TIEMPO DE OPERACIÓN DEL
 //        CANAL (HORAS) · PERÍODO (Inicio/Hora/Término/Hora) · CAUDAL PROGRAMADO
-//        POR DÍAS (m³/seg) LUN..DOM · OBSERVACIONES · fila TOTAL (con la suma
-//        del caudal por día).
+//        POR DÍAS (l/s, 2 decimales) LUN..DOM · OBSERVACIONES · fila TOTAL (con
+//        la suma del caudal por día).
 //   G-3: detalle POR USUARIO, por bocatoma — N° Orden de suministro · Usuario ·
 //        Área (has) · Volumen de Agua Programado (m³) · Programación de la
-//        Distribución del agua [Tiempo de Uso (hr) · Caudal a Entregar (m³/s) ·
+//        Distribución del agua [Tiempo de Uso (hr) · Caudal a Entregar (l/s) ·
 //        Inicio (Día/Hora) · Término (Día/Hora)] · Observaciones.
 // Mapeo Huaro: Canal de Derivación = QUEBRADA HUARO · Nombre de la Toma =
 // bocatoma · Canal de Distribución = bocatoma (el canal lleva el nombre del
@@ -479,7 +479,8 @@ function _huaroDiaDelMes(semanaInicioISO, idx) {
 function huaroConstruirG2Html(datos) {
     const th = 'border:1px solid #000;padding:5px;font-weight:700;';
     const th2 = 'border:1px solid #000;padding:4px;font-weight:700;font-size:9px;';
-    const td = 'border:1px solid #000;padding:5px;color:#000;';
+    const td = 'border:1px solid #000;padding:5px;color:#000;text-align:center;';
+    const tdL = 'border:1px solid #000;padding:5px;color:#000;text-align:left;';
     const semTxt = 'DEL ' + _huaroFechaCorta(datos.semanaInicioISO) + ' AL ' + _huaroFechaCorta(datos.semanaFinISO);
 
     let body = '';
@@ -492,27 +493,27 @@ function huaroConstruirG2Html(datos) {
         (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
 
         const dias = (f.caudalPorDia || []).map(c =>
-            `<td style="${td}text-align:right;">${(c / 1000).toFixed(3)}</td>`).join('');
+            `<td style="${td}">${(c || 0).toFixed(2)}</td>`).join('');
         const obs = f.nPendientes > 0
             ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
         body += `
         <tr>
-            <td style="${td}font-weight:600;">${_huaroEsc(HUARO_FUENTE)}</td>
-            <td style="${td}">${_huaroEsc(f.bocatoma)}</td>
-            <td style="${td}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
-            <td style="${td}text-align:center;">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
-            <td style="${td}text-align:right;">${f.volumenTotalM3.toFixed(2)}</td>
-            <td style="${td}text-align:right;">${f.areaProgramadaHa.toFixed(2)}</td>
-            <td style="${td}text-align:center;">${f.tiempoTotalH.toFixed(1)}</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
-            <td style="${td}text-align:center;">${f.periodoInicioHora || '04:00'}</td>
-            <td style="${td}text-align:center;font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
-            <td style="${td}text-align:center;">${f.periodoFinHora || '20:00'}</td>
+            <td style="${tdL}font-weight:600;">${_huaroEsc(HUARO_FUENTE)}</td>
+            <td style="${tdL}">${_huaroEsc(f.bocatoma)}</td>
+            <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
+            <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
+            <td style="${td}">${f.volumenTotalM3.toFixed(2)}</td>
+            <td style="${td}">${f.areaProgramadaHa.toFixed(2)}</td>
+            <td style="${td}">${f.tiempoTotalH.toFixed(1)}</td>
+            <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
+            <td style="${td}">${f.periodoInicioHora || '04:00'}</td>
+            <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
+            <td style="${td}">${f.periodoFinHora || '20:00'}</td>
             ${dias}
-            <td style="${td}">${_huaroEsc(obs)}</td>
+            <td style="${tdL}">${_huaroEsc(obs)}</td>
         </tr>`;
     });
-    const totDias = tDia.map(c => `<td style="${td}text-align:right;font-weight:700;">${(c / 1000).toFixed(3)}</td>`).join('');
+    const totDias = tDia.map(c => `<td style="${td}font-weight:700;">${(c || 0).toFixed(2)}</td>`).join('');
 
     return `
     <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:8px;">
@@ -530,10 +531,7 @@ function huaroConstruirG2Html(datos) {
             <div><strong>Semana:</strong> ${semTxt}</div>
         </div>
     </div>
-    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:12px;margin:10px 0 4px;">
-        ANEXO G2 — BOCATOMAS QUE RIEGAN DE LA ${_huaroEsc(HUARO_FUENTE)}
-    </div>
-    <div style="overflow-x:auto;">
+    <div style="overflow-x:auto;margin-top:10px;">
     <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;min-width:1150px;width:100%;">
         <thead>
             <tr style="background:#E6E6E6;color:#000;">
@@ -545,7 +543,7 @@ function huaroConstruirG2Html(datos) {
                 <th rowspan="2" style="${th}">ÁREA<br>BAJO<br>RIEGO<br>(Ha)</th>
                 <th rowspan="2" style="${th}">TIEMPO DE<br>OPERACIÓN<br>DEL CANAL<br>(HORAS)</th>
                 <th colspan="4" style="${th}">PERÍODO</th>
-                <th colspan="7" style="${th}">CAUDAL PROGRAMADO POR DÍAS (m³/seg)</th>
+                <th colspan="7" style="${th}">CAUDAL PROGRAMADO POR DÍAS (l/s)</th>
                 <th rowspan="2" style="${th}">OBSERVACIONES</th>
             </tr>
             <tr style="background:#E6E6E6;color:#000;">
@@ -557,15 +555,15 @@ function huaroConstruirG2Html(datos) {
         <tbody>
             ${body}
             <tr style="background:#E6E6E6;color:#000;font-weight:bold;">
-                <td style="${td}text-align:center;" colspan="3">TOTAL</td>
-                <td style="${td}text-align:center;">${tU}</td>
-                <td style="${td}text-align:right;">${tVol.toFixed(2)}</td>
-                <td style="${td}text-align:right;">${tArea.toFixed(2)}</td>
-                <td style="${td}text-align:center;">${tTiempoMax.toFixed(1)}</td>
-                <td style="${td}text-align:center;">-</td><td style="${td}text-align:center;">-</td>
-                <td style="${td}text-align:center;">-</td><td style="${td}text-align:center;">-</td>
+                <td style="${td}" colspan="3">TOTAL</td>
+                <td style="${td}">${tU}</td>
+                <td style="${td}">${tVol.toFixed(2)}</td>
+                <td style="${td}">${tArea.toFixed(2)}</td>
+                <td style="${td}">${tTiempoMax.toFixed(1)}</td>
+                <td style="${td}">-</td><td style="${td}">-</td>
+                <td style="${td}">-</td><td style="${td}">-</td>
                 ${totDias}
-                <td style="${td}text-align:center;">-</td>
+                <td style="${td}">-</td>
             </tr>
         </tbody>
     </table>
@@ -577,13 +575,14 @@ function huaroConstruirG2Html(datos) {
 //          bloques: [ { bocatoma, caudalLs, programados:[...], pendientesUsuarios:[...] } ] }
 function huaroConstruirG3Html(datos) {
     const th = 'border:1px solid #000;padding:4px 5px;font-weight:700;text-align:center;vertical-align:middle;';
-    const td = 'border:1px solid #000;padding:4px 5px;color:#000;';
+    const td = 'border:1px solid #000;padding:4px 5px;color:#000;text-align:center;';
+    const tdL = 'border:1px solid #000;padding:4px 5px;color:#000;text-align:left;';
     const semTxt = 'LUNES ' + _huaroFechaCorta(datos.semanaInicioISO) + ' al DOMINGO ' + _huaroFechaCorta(datos.semanaFinISO);
     const hoy = _huaroFechaCorta(_huaroFechaISO(new Date()));
 
     const bloquesHtml = (datos.bloques || []).map(bl => {
         const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
-        const caudalM3s = (bl.caudalLs || 0) / 1000;
+        const caudalLs = (bl.caudalLs || 0);
         const pIni = prog[0], pFin = prog[prog.length - 1];
         const periodoTxt = pIni
             ? `${_huaroDiaEtiqueta(pIni.fechaISO)} ${pIni.inicioTexto}  →  ${_huaroDiaEtiqueta(pFin.fechaISO)} ${pFin.terminoTexto}`
@@ -591,19 +590,19 @@ function huaroConstruirG3Html(datos) {
 
         let filas = prog.map((p, i) => `
             <tr>
-                <td style="${td}text-align:center;">${i + 1}</td>
-                <td style="${td}">${_huaroEsc(p.nombre)}</td>
-                <td style="${td}text-align:right;">${(p.areaHa || 0).toFixed(2)}</td>
-                <td style="${td}text-align:right;">${(p.volumenM3 || 0).toFixed(2)}</td>
-                <td style="${td}text-align:center;">${(p.tiempoH || 0).toFixed(2)}</td>
-                <td style="${td}text-align:right;">${caudalM3s.toFixed(4)}</td>
-                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
-                <td style="${td}text-align:center;">${p.inicioTexto}</td>
-                <td style="${td}text-align:center;white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
-                <td style="${td}text-align:center;">${p.terminoTexto}</td>
+                <td style="${td}">${i + 1}</td>
+                <td style="${tdL}">${_huaroEsc(p.nombre)}</td>
+                <td style="${td}">${(p.areaHa || 0).toFixed(2)}</td>
+                <td style="${td}">${(p.volumenM3 || 0).toFixed(2)}</td>
+                <td style="${td}">${(p.tiempoH || 0).toFixed(2)}</td>
+                <td style="${td}">${caudalLs.toFixed(2)}</td>
+                <td style="${td}white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}">${p.inicioTexto}</td>
+                <td style="${td}white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}">${p.terminoTexto}</td>
                 <td style="${td}"></td>
             </tr>`).join('');
-        if (!filas) filas = `<tr><td style="${td}text-align:center;" colspan="11">Sin usuarios programados.</td></tr>`;
+        if (!filas) filas = `<tr><td style="${td}" colspan="11">Sin usuarios programados.</td></tr>`;
 
         const tArea = prog.reduce((s, p) => s + (p.areaHa || 0), 0);
         const tVol = prog.reduce((s, p) => s + (p.volumenM3 || 0), 0);
@@ -619,7 +618,7 @@ function huaroConstruirG3Html(datos) {
         return `
         <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;">
             <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(huaroCanalBocatoma(bl.bocatoma))}</div>
-            <div><strong>Caudal:</strong> ${caudalM3s.toFixed(4)} (m³/seg.)</div>
+            <div><strong>Caudal:</strong> ${caudalLs.toFixed(2)} (l/s)</div>
             <div><strong>Período de operación:</strong> ${periodoTxt} &nbsp;·&nbsp; <strong>Tiempo de operación:</strong> ${tTiempo.toFixed(1)} h</div>
         </div>
         <div style="overflow-x:auto;">
@@ -635,7 +634,7 @@ function huaroConstruirG3Html(datos) {
                 </tr>
                 <tr style="background:#E6E6E6;color:#000;">
                     <th rowspan="2" style="${th}">Tiempo de Uso<br>del Agua (hr)</th>
-                    <th rowspan="2" style="${th}">Caudal a<br>Entregar (m³/s)</th>
+                    <th rowspan="2" style="${th}">Caudal a<br>Entregar (l/s)</th>
                     <th colspan="2" style="${th}">Inicio</th>
                     <th colspan="2" style="${th}">Término</th>
                 </tr>
@@ -647,11 +646,11 @@ function huaroConstruirG3Html(datos) {
             <tbody>
                 ${filas}
                 <tr style="background:#E6E6E6;color:#000;font-weight:bold;">
-                    <td style="${td}text-align:center;" colspan="2">TOTAL</td>
-                    <td style="${td}text-align:right;">${tArea.toFixed(2)}</td>
-                    <td style="${td}text-align:right;">${tVol.toFixed(2)}</td>
-                    <td style="${td}text-align:center;">${tTiempo.toFixed(2)}</td>
-                    <td style="${td}text-align:center;" colspan="5">-</td>
+                    <td style="${td}" colspan="2">TOTAL</td>
+                    <td style="${td}">${tArea.toFixed(2)}</td>
+                    <td style="${td}">${tVol.toFixed(2)}</td>
+                    <td style="${td}">${tTiempo.toFixed(2)}</td>
+                    <td style="${td}" colspan="5">-</td>
                 </tr>
             </tbody>
         </table>
