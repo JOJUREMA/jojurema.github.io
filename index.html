@@ -3939,10 +3939,6 @@ const COMISIONES = {
                         <button class="huaro-btn sec" onclick="huaroBorrarTodasProgramadas()" ${hayAnexos ? '' : 'disabled'} style="margin-left:auto;">🗑 Borrar todas</button>
                     </div>
                     <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-2</b> se guarda y reúne <b>todas</b> las bocatomas programadas esta semana. El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
-                    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #cbb994;">
-                        <button class="huaro-btn sec" onclick="huaroRepararRotacionTodasLasBocatomas()">🔧 Reparar rotación entre semanas (todas las bocatomas)</button>
-                        <div class="huaro-mini" style="margin-top:5px;">Usa esto una sola vez si alguna bocatoma con más de una semana programada muestra en "Programados" más usuarios de los que realmente faltaban esa semana (arrastre de una versión anterior). Recalcula todas las semanas ya generadas de todas las bocatomas con su mismo caudal y horario — no borra nada, solo corrige el conteo.</div>
-                    </div>
                 </div>`;
 
             ca.innerHTML = `
@@ -4179,76 +4175,6 @@ const COMISIONES = {
             if (!confirm('¿Reiniciar la campaña de "' + boc + '"?\n\nSe olvida qué usuarios ya fueron atendidos y qué quedó pendiente. La próxima generación empieza desde el primer usuario (N° 1).')) return;
             localStorage.removeItem(_huaroKeyCampana(boc));
             renderPanelHuaro();
-        }
-
-        // Migración de una sola vez: recalcula TODAS las semanas ya generadas de
-        // TODAS las bocatomas, en orden cronológico y con el mismo caudal/horario
-        // que cada una ya tiene guardado, para reconstruir correctamente
-        // servidosCiclo (rotación entre semanas) — necesario para las semanas
-        // que se generaron ANTES de que existiera ese seguimiento (o antes de
-        // corregirlo), que quedaron con el arrastre de usuarios ya regados
-        // mezclado con los pendientes reales (ver caso reportado: una bocatoma
-        // con más de una semana programada terminaba sumando el padrón completo
-        // en vez de solo los que faltaban). Los excluidos manuales de la Cola
-        // NO se tocan; solo se reinicia el rastro de rotación para
-        // reconstruirlo desde el principio con la lógica actual.
-        function huaroRepararRotacionTodasLasBocatomas() {
-            // Requiere el padrón (Excel) cargado EN ESTA SESIÓN — _huaroPadron es
-            // memoria del navegador, no algo que quede guardado entre refrescos de
-            // página, a diferencia del PDA/campaña (que sí viven en localStorage y
-            // por eso la tabla de "Bocatomas programadas" se ve normal aunque el
-            // padrón esté vacío). Sin el padrón cargado, esta función no tiene con
-            // qué recalcular y se saltaría TODAS las bocatomas en silencio — se
-            // corta acá con un aviso claro en vez de eso.
-            if (!_huaroPadron || !Object.keys(_huaroPadron).some((b) => _huaroPadron[b] && _huaroPadron[b].length)) {
-                alert('Antes de reparar, vuelve a cargar el archivo del padrón de Huaro (el mismo Excel, "📁 Cargar Padrón Huaro" en la barra lateral) en esta sesión — recién cargado, vuelve a apretar este botón.\n\nSi acabas de refrescar la página, es justo por eso: el padrón se pierde al refrescar y hay que volver a cargarlo (el PDA y las semanas programadas SÍ quedan guardados, por eso se siguen viendo).');
-                return;
-            }
-
-            if (!confirm('Esto recalcula TODAS las semanas ya generadas de TODAS las bocatomas (mismo caudal y horario que cada una ya tiene guardado) para corregir el arrastre de usuarios entre semanas en bocatomas generadas antes de esta corrección.\n\nNo se pierde ningún caudal/horario ya ingresado, ni las exclusiones manuales de la Cola — solo se recalculan los usuarios programados/pendientes de cada semana.\n\n¿Continuar?')) return;
-
-            const semanasPorBoc = {};
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (!key || key.indexOf('cusshmi_huaro_pda__') !== 0) continue;
-                const iso = key.slice('cusshmi_huaro_pda__'.length);
-                const pda = _huaroLeerPda(iso);
-                if (!pda || !pda.resultados) continue;
-                Object.keys(pda.resultados).forEach((boc) => {
-                    (semanasPorBoc[boc] || (semanasPorBoc[boc] = [])).push(iso);
-                });
-            }
-
-            let nBocatomas = 0, nSemanas = 0, saltadas = [];
-            Object.keys(semanasPorBoc).forEach((boc) => {
-                const semanas = semanasPorBoc[boc].slice().sort(); // ISO ordena bien como texto
-                if (!_huaroPadron[boc] || !_huaroPadron[boc].length) { saltadas.push(boc); return; }
-
-                // Reinicia el rastro de rotación (no los excluidos manuales) para
-                // reconstruirlo desde cero, en orden, con la lógica actual.
-                const campExistente = _huaroLeerCampana(boc);
-                _huaroGuardarCampana(boc, {
-                    pendientes: [], excluidos: campExistente.excluidos || [], prev: null,
-                    ultimaSemana: null, servidosCiclo: [],
-                });
-
-                semanas.forEach((iso) => {
-                    const pda = _huaroLeerPda(iso);
-                    const r = pda.resultados[boc];
-                    const caudalLs = (pda.caudales && pda.caudales[boc]) || 0;
-                    const diasRiego = (pda.horarios && pda.horarios[boc]) || HuaroCore.huaroDiasRiegoDefault();
-                    if (caudalLs <= 0 || !r) return;
-                    _huaroProgramarBocatomaSemana(boc, iso, caudalLs, diasRiego);
-                    nSemanas++;
-                });
-                nBocatomas++;
-            });
-
-            _huaroResultados = null;
-            renderPanelHuaro();
-            alert('Listo: se recalcularon ' + nSemanas + ' semana(s) en ' + nBocatomas + ' bocatoma(s).' +
-                (saltadas.length ? '\n\nNo se pudieron recalcular (sin padrón cargado en esta sesión): ' + saltadas.join(', ') + '.' : '') +
-                '\n\nRevisa el Anexo G-2 de cada semana para confirmar los números.');
         }
 
         function huaroGestionarCola(boc) {
