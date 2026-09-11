@@ -4133,14 +4133,34 @@ const COMISIONES = {
             us.forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
             const excl = new Set(camp.excluidos);
 
+            // Quien ya regó la semana ANTERIOR a la que se está por programar
+            // aparece premarcado para NO programarse de nuevo esta semana — se
+            // asume que no toca repetir turno semana tras semana salvo que el
+            // operador lo decida a propósito, desmarcándolo acá. Esto es solo el
+            // estado inicial de los checkboxes: no se guarda hasta apretar
+            // "Guardar", así que abrir la Cola y cancelar no cambia nada.
+            const semanaISO = _huaroSemanaSeleccionada();
+            const semanaAnteriorISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() - 7 * 864e5).toISOString().slice(0, 10);
+            const pdaAnterior = _huaroLeerPda(semanaAnteriorISO);
+            const progAnteriorKeys = new Set(
+                ((pdaAnterior && pdaAnterior.resultados && pdaAnterior.resultados[boc] && pdaAnterior.resultados[boc].programados) || [])
+                    .map(p => HuaroCore.huaroClaveUsuario(p)));
+
             const pendSet = new Set(camp.pendientes || []);
             const listaHtml = us.slice().sort((a, b) => a.nOrden - b.nOrden).map(u => {
                 const k = HuaroCore.huaroClaveUsuario(u);
                 const pend = pendSet.has(k);
+                const exclManual = excl.has(k);
+                const regoAntes = !exclManual && progAnteriorKeys.has(k);
+                const marcado = exclManual || regoAntes;
+                let etiqueta = '—', color = '#999';
+                if (exclManual) { etiqueta = 'excluido'; color = '#b00'; }
+                else if (regoAntes) { etiqueta = 'regó la semana pasada'; color = '#0a6fb0'; }
+                else if (pend) { etiqueta = 'viene de antes'; color = '#b26a00'; }
                 return `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;border-bottom:1px solid #eee;">
-                    <input type="checkbox" data-k="${escapeHtml(k)}" ${excl.has(k) ? 'checked' : ''}>
+                    <input type="checkbox" data-k="${escapeHtml(k)}" ${marcado ? 'checked' : ''}>
                     <span style="flex:1;">N°${u.nOrden} · ${escapeHtml(u.nombre)} · ${(u.areaHa || 0).toFixed(2)} ha · ${(u.topos || 0).toFixed(1)} topos</span>
-                    <span style="font-size:10px;color:${excl.has(k) ? '#b00' : (pend ? '#b26a00' : '#999')};">${excl.has(k) ? 'excluido' : (pend ? 'viene de antes' : '—')}</span>
+                    <span style="font-size:10px;color:${color};">${etiqueta}</span>
                 </label>`;
             }).join('');
 
@@ -4150,7 +4170,7 @@ const COMISIONES = {
             div.innerHTML = `
                 <div class="modal-container" style="max-width:640px;max-height:82vh;overflow-y:auto;">
                     <h3>Cola de riego — ${escapeHtml(boc)}</h3>
-                    <p class="huaro-mini">Marca los usuarios que NO deben programarse (excluidos de la cola). Los "pendientes" se atienden primero la próxima semana.</p>
+                    <p class="huaro-mini">Marca los usuarios que NO deben programarse (excluidos de la cola). Los que regaron la semana pasada aparecen premarcados para no repetir turno — desmárcalos si necesitas que rieguen de nuevo esta semana. Los "pendientes" se atienden primero.</p>
                     <div style="margin:8px 0;">${listaHtml}</div>
                     <div style="display:flex;gap:10px;margin-top:12px;">
                         <button class="huaro-btn" id="huaroColaGuardar">Guardar</button>
@@ -4204,9 +4224,33 @@ const COMISIONES = {
             const base = HuaroCore.huaroNormalizarDiasRiego(
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
             const dNom = HuaroCore.HUARO_DIAS_NOMBRE;
-            const lunISO = _huaroSemanaSeleccionada();
-            const toposTot = (_huaroPadron[boc] || []).reduce((s, u) => s + (u.topos || 0), 0);
-            const tReal = toposTot * HuaroCore.HUARO_H_POR_TOPO;
+            const semanaISO = _huaroSemanaSeleccionada();
+            const lunISO = semanaISO;
+
+            // Tiempo/volumen TOTAL de la bocatoma (todo el padrón) vs. lo que
+            // realmente toca A PROGRAMAR esta semana (descontando a los
+            // excluidos en la Cola — pendientes de la semana anterior no se
+            // descuentan: siguen en el padrón, solo cambian de prioridad).
+            const us = _huaroPadron[boc] || [];
+            const toposTotalPadron = us.reduce((s, u) => s + (u.topos || 0), 0);
+            const tiempoTotalBocatoma = toposTotalPadron * HuaroCore.HUARO_H_POR_TOPO;
+
+            const camp = _huaroLeerCampana(boc);
+            const excl = new Set(camp.excluidos);
+            const usAProgramar = us.filter(u => !excl.has(HuaroCore.huaroClaveUsuario(u)));
+            const toposAProgramar = usAProgramar.reduce((s, u) => s + (u.topos || 0), 0);
+            const tiempoAProgramar = toposAProgramar * HuaroCore.HUARO_H_POR_TOPO;
+
+            const pdaGuardadoHR = _huaroLeerPda(semanaISO);
+            const masaHR = HuaroCore.huaroMasaDeAgua(boc);
+            const caudalHR = parseFloat(
+                (_huaroCaudalTemp[boc] != null && _huaroCaudalTemp[boc] !== '')
+                    ? _huaroCaudalTemp[boc]
+                    : (pdaGuardadoHR && pdaGuardadoHR.caudales && pdaGuardadoHR.caudales[boc] != null)
+                        ? pdaGuardadoHR.caudales[boc]
+                        : (masaHR && masaHR.caudalLs != null ? masaHR.caudalLs : 0)) || 0;
+            const volumenTotalBocatoma = caudalHR * tiempoTotalBocatoma * 3.6;
+            const volumenAProgramar = caudalHR * tiempoAProgramar * 3.6;
 
             const filas = base.map((d, i) => `
                 <tr>
@@ -4232,7 +4276,11 @@ const COMISIONES = {
                 <div class="modal-container" style="max-width:560px;max-height:82vh;overflow-y:auto;">
                     <h3>⏱️ Días y horas de riego — ${escapeHtml(boc)}</h3>
                     <p class="huaro-mini">Marca los días en que la bocatoma reparte agua y define la ventana de horas de cada día. Los turnos de los usuarios (n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h) se encadenan dentro de esas ventanas, en orden de N° del padrón; lo que no entra en la semana pasa a la siguiente.</p>
-                    <p class="huaro-mini" style="background:#f3ede6;border-radius:5px;padding:6px 8px;">Tiempo real de riego de esta bocatoma: <b>${tReal.toFixed(1)} h</b> (Σ ${toposTot.toFixed(1)} topos × ${HuaroCore.HUARO_H_POR_TOPO} h). Solo se ocupa ese tiempo dentro de las ventanas activas — <b>no se fuerza a llenar las 16 h</b>: lo que sobra de cada ventana queda libre. La columna "Ventana (h)" es el máximo disponible del día, no el tiempo que se va a usar.</p>
+                    <p class="huaro-mini" style="background:#f3ede6;border-radius:5px;padding:6px 8px;">
+                        Tiempo total de la bocatoma (${us.length} usuarios del padrón): <b>${tiempoTotalBocatoma.toFixed(1)} h</b> (Σ ${toposTotalPadron.toFixed(1)} topos × ${HuaroCore.HUARO_H_POR_TOPO} h)${caudalHR > 0 ? ' · ' + volumenTotalBocatoma.toFixed(2) + ' m³' : ''}.<br>
+                        A programar esta semana (${usAProgramar.length} usuarios${excl.size ? ', ' + excl.size + ' excluido(s) en la Cola' : ''}): <b>${tiempoAProgramar.toFixed(1)} h</b>${caudalHR > 0 ? ' · <b>' + volumenAProgramar.toFixed(2) + ' m³</b> (caudal ' + caudalHR.toFixed(2) + ' l/s)' : ' — ingresa el caudal para ver el volumen'}.<br>
+                        Solo se ocupa el tiempo <b>a programar</b> dentro de las ventanas activas — <b>no se fuerza a llenar las 16 h</b>: lo que sobra de cada ventana queda libre. La columna "Ventana (h)" es el máximo disponible del día, no el tiempo que se va a usar.
+                    </p>
                     <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
                         <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRTodos">Todos los días</button>
                         <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" id="huaroHRLunVie">Lun–Vie</button>
