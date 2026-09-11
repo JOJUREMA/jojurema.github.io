@@ -3623,18 +3623,26 @@ const COMISIONES = {
         function _huaroKeyCampana(boc) { return 'cusshmi_huaro_campana__HUARO__' + boc; }
         function _huaroKeyPda(iso) { return 'cusshmi_huaro_pda__' + iso; }
         function _huaroLeerCampana(boc) {
-            // El PDA es semanal: la "campaña" solo guarda los excluidos de la Cola
-            // y, en el caso extremo, los pendientes que arrastran a la semana
-            // siguiente. (Ya no hay "servidos": cada semana se reprograma todo.)
+            // El PDA es semanal (se reprograman los usuarios elegibles cada
+            // semana), PERO en una bocatoma que no alcanza a atender a todo su
+            // padrón en una sola semana hace falta rotar: `servidosCiclo`
+            // acumula, semana a semana, a quién ya le tocó turno en el ciclo de
+            // rotación actual (no solo la semana anterior) para que no se le
+            // vuelva a programar hasta que le toque a todo el padrón — recién
+            // ahí se reinicia el ciclo. `excluidos` sigue siendo la exclusión
+            // manual de la Cola (permanente hasta que se destilde a mano);
+            // `pendientes`/`prev` siguen siendo el desborde dentro de una misma
+            // semana (lo que no cupo en los 7 días).
             try {
                 const o = JSON.parse(localStorage.getItem(_huaroKeyCampana(boc)));
                 if (o && typeof o === 'object') {
                     o.pendientes = o.pendientes || [];
                     o.excluidos = o.excluidos || []; o.prev = o.prev || null;
+                    o.servidosCiclo = o.servidosCiclo || [];
                     return o;
                 }
             } catch (e) { /* noop */ }
-            return { pendientes: [], excluidos: [], prev: null, ultimaSemana: null };
+            return { pendientes: [], excluidos: [], prev: null, ultimaSemana: null, servidosCiclo: [] };
         }
         function _huaroGuardarCampana(boc, o) { localStorage.setItem(_huaroKeyCampana(boc), JSON.stringify(o)); }
         function _huaroLeerPda(iso) {
@@ -3739,7 +3747,7 @@ const COMISIONES = {
             const camp = _huaroLeerCampana(boc);
             return HuaroCore.huaroProgramarBocatoma({
                 usuarios: _huaroPadron[boc] || [], caudalLs: q, semanaInicioISO: semanaISO, bocatoma: boc,
-                pendientesPrevios: _huaroPendientesPrevios(camp, semanaISO), excluidos: camp.excluidos,
+                pendientesPrevios: _huaroPendientesPrevios(camp, semanaISO), excluidos: _huaroUnion(camp.excluidos, camp.servidosCiclo),
                 diasRiego,
             });
         }
@@ -4053,10 +4061,46 @@ const COMISIONES = {
         function _huaroProgramarBocatomaSemana(boc, semanaISO, caudalLs, diasRiego) {
             const semanaFinISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() + 6 * 864e5).toISOString().slice(0, 10);
             const camp = _huaroLeerCampana(boc);
-            const pendPrev = _huaroPendientesPrevios(camp, semanaISO);
+
+            // Si esta MISMA semana ya se había programado antes (se está
+            // corrigiendo caudal/horario y reprogramando), primero se retira del
+            // ciclo lo que esa corrida anterior había aportado — si no, un
+            // usuario que esa corrida anterior sí programó quedaría marcado como
+            // "ya le tocó" y se auto-excluiría al recalcular esta misma semana.
+            const pdaPrevioMismaSemana = _huaroLeerPda(semanaISO);
+            const progPrevioMismaSemana = (pdaPrevioMismaSemana && pdaPrevioMismaSemana.resultados && pdaPrevioMismaSemana.resultados[boc] && pdaPrevioMismaSemana.resultados[boc].programados) || [];
+            if (progPrevioMismaSemana.length) {
+                const keysPrevios = new Set(progPrevioMismaSemana.map(p => HuaroCore.huaroClaveUsuario(p)));
+                camp.servidosCiclo = (camp.servidosCiclo || []).filter(k => !keysPrevios.has(k));
+            }
+
+            // pendientesPrevios para ESTA semana puntual: si ya se había
+            // programado antes esta misma semana, se reutiliza el mismo insumo
+            // que se usó esa vez (pendientesPreviosUsados, guardado en su PDA) —
+            // así no cambia solo por recalcular. Si es la primera vez, son los
+            // pendientes que dejó la semana CALENDARIO anterior, leídos de su
+            // propio PDA persistido — no de camp.prev/camp.pendientes, que es un
+            // puntero único que la cascada automática o una reprogramación de
+            // OTRA semana pueden haber movido, dejándolo apuntando a la semana
+            // equivocada.
+            let pendPrev;
+            if (progPrevioMismaSemana.length && Array.isArray(pdaPrevioMismaSemana.resultados[boc].pendientesPreviosUsados)) {
+                pendPrev = pdaPrevioMismaSemana.resultados[boc].pendientesPreviosUsados.slice();
+            } else {
+                const semanaAnteriorISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() - 7 * 864e5).toISOString().slice(0, 10);
+                const pdaSemanaAnterior = _huaroLeerPda(semanaAnteriorISO);
+                const rSemanaAnterior = pdaSemanaAnterior && pdaSemanaAnterior.resultados && pdaSemanaAnterior.resultados[boc];
+                pendPrev = rSemanaAnterior ? (rSemanaAnterior.pendientes || []).slice() : [];
+            }
+            // Quien ya le tocó turno en este ciclo de rotación (servidosCiclo, ver
+            // _huaroLeerCampana) queda fuera de la cola igual que un excluido
+            // manual — así una bocatoma que no alcanza a atender a todo su
+            // padrón en una semana rota de verdad entre semana y semana, en vez
+            // de volver a barajar a todo el padrón (incluyendo a quien ya regó)
+            // cada vez que se programa.
             const res = HuaroCore.huaroProgramarBocatoma({
                 usuarios: _huaroPadron[boc], caudalLs, semanaInicioISO: semanaISO, bocatoma: boc,
-                pendientesPrevios: pendPrev, excluidos: camp.excluidos,
+                pendientesPrevios: pendPrev, excluidos: _huaroUnion(camp.excluidos, camp.servidosCiclo),
                 diasRiego,
             });
             res.agregado.sinUsuarios = (res.programados.length === 0);
@@ -4064,6 +4108,13 @@ const COMISIONES = {
             camp.prev = { pendientes: pendPrev.slice() };
             camp.pendientes = res.pendientes.slice();
             camp.ultimaSemana = semanaISO;
+
+            const nuevosServidos = res.programados.map(p => HuaroCore.huaroClaveUsuario(p));
+            camp.servidosCiclo = _huaroUnion(camp.servidosCiclo, nuevosServidos);
+            const exclSet = new Set(camp.excluidos);
+            const serviblesTotal = (_huaroPadron[boc] || []).filter(u => !exclSet.has(HuaroCore.huaroClaveUsuario(u))).length;
+            if (serviblesTotal > 0 && camp.servidosCiclo.length >= serviblesTotal) camp.servidosCiclo = []; // ciclo completo: reinicia
+
             _huaroGuardarCampana(boc, camp);
 
             const pda = _huaroLeerPda(semanaISO) || {};
@@ -4071,7 +4122,7 @@ const COMISIONES = {
             pda.caudales = pda.caudales || {}; pda.horarios = pda.horarios || {}; pda.resultados = pda.resultados || {};
             pda.caudales[boc] = caudalLs;
             pda.horarios[boc] = diasRiego;
-            pda.resultados[boc] = { programados: res.programados, pendientes: res.pendientes, agregado: res.agregado };
+            pda.resultados[boc] = { programados: res.programados, pendientes: res.pendientes, agregado: res.agregado, pendientesPreviosUsados: pendPrev.slice() };
             _huaroGuardarPda(pda);
             return { res, pda };
         }
@@ -4133,29 +4184,27 @@ const COMISIONES = {
             us.forEach(u => { porClave[HuaroCore.huaroClaveUsuario(u)] = u; });
             const excl = new Set(camp.excluidos);
 
-            // Quien ya regó la semana ANTERIOR a la que se está por programar
-            // aparece premarcado para NO programarse de nuevo esta semana — se
-            // asume que no toca repetir turno semana tras semana salvo que el
-            // operador lo decida a propósito, desmarcándolo acá. Esto es solo el
-            // estado inicial de los checkboxes: no se guarda hasta apretar
-            // "Guardar", así que abrir la Cola y cancelar no cambia nada.
-            const semanaISO = _huaroSemanaSeleccionada();
-            const semanaAnteriorISO = new Date(new Date(semanaISO + 'T00:00:00').getTime() - 7 * 864e5).toISOString().slice(0, 10);
-            const pdaAnterior = _huaroLeerPda(semanaAnteriorISO);
-            const progAnteriorKeys = new Set(
-                ((pdaAnterior && pdaAnterior.resultados && pdaAnterior.resultados[boc] && pdaAnterior.resultados[boc].programados) || [])
-                    .map(p => HuaroCore.huaroClaveUsuario(p)));
+            // Quien ya le tocó turno en el ciclo de rotación actual (servidosCiclo
+            // — acumulado semana a semana por _huaroProgramarBocatomaSemana, no
+            // solo la semana inmediatamente anterior) aparece premarcado para NO
+            // programarse de nuevo — se asume que no repite turno hasta que le
+            // toque a todo el padrón, salvo que el operador lo decida a
+            // propósito, desmarcándolo acá. Esto es solo el estado inicial de los
+            // checkboxes: no se guarda hasta apretar "Guardar", así que abrir la
+            // Cola y cancelar no cambia nada. Al guardar, desmarcar a alguien lo
+            // saca del ciclo (vuelve a estar disponible esta semana).
+            const servidosCicloSet = new Set(camp.servidosCiclo || []);
 
             const pendSet = new Set(camp.pendientes || []);
             const listaHtml = us.slice().sort((a, b) => a.nOrden - b.nOrden).map(u => {
                 const k = HuaroCore.huaroClaveUsuario(u);
                 const pend = pendSet.has(k);
                 const exclManual = excl.has(k);
-                const regoAntes = !exclManual && progAnteriorKeys.has(k);
-                const marcado = exclManual || regoAntes;
+                const yaLeTocoCiclo = !exclManual && servidosCicloSet.has(k);
+                const marcado = exclManual || yaLeTocoCiclo;
                 let etiqueta = '—', color = '#999';
                 if (exclManual) { etiqueta = 'excluido'; color = '#b00'; }
-                else if (regoAntes) { etiqueta = 'regó la semana pasada'; color = '#0a6fb0'; }
+                else if (yaLeTocoCiclo) { etiqueta = 'ya regó en este ciclo'; color = '#0a6fb0'; }
                 else if (pend) { etiqueta = 'viene de antes'; color = '#b26a00'; }
                 return `<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px;border-bottom:1px solid #eee;">
                     <input type="checkbox" data-k="${escapeHtml(k)}" ${marcado ? 'checked' : ''}>
@@ -4170,7 +4219,7 @@ const COMISIONES = {
             div.innerHTML = `
                 <div class="modal-container" style="max-width:640px;max-height:82vh;overflow-y:auto;">
                     <h3>Cola de riego — ${escapeHtml(boc)}</h3>
-                    <p class="huaro-mini">Marca los usuarios que NO deben programarse (excluidos de la cola). Los que regaron la semana pasada aparecen premarcados para no repetir turno — desmárcalos si necesitas que rieguen de nuevo esta semana. Los "pendientes" se atienden primero.</p>
+                    <p class="huaro-mini">Marca los usuarios que NO deben programarse (excluidos de la cola). Los que ya regaron en este ciclo de rotación aparecen premarcados para no repetir turno hasta que le toque a todo el padrón — desmárcalos si necesitas que rieguen de nuevo antes de eso. Los "pendientes" se atienden primero.</p>
                     <div style="margin:8px 0;">${listaHtml}</div>
                     <div style="display:flex;gap:10px;margin-top:12px;">
                         <button class="huaro-btn" id="huaroColaGuardar">Guardar</button>
@@ -4179,9 +4228,14 @@ const COMISIONES = {
                 </div>`;
             document.body.appendChild(div);
             div.querySelector('#huaroColaGuardar').onclick = () => {
-                const nuevos = Array.from(div.querySelectorAll('input[type=checkbox]'))
-                    .filter(c => c.checked).map(c => c.getAttribute('data-k'));
-                camp.excluidos = nuevos;
+                const marcados = new Set(Array.from(div.querySelectorAll('input[type=checkbox]'))
+                    .filter(c => c.checked).map(c => c.getAttribute('data-k')));
+                // Lo marcado que NO venía del ciclo de rotación es exclusión
+                // manual nueva. Lo que venía del ciclo (servidosCiclo) y el
+                // operador DESMARCÓ sale del ciclo (vuelve a estar disponible
+                // esta semana); lo que dejó marcado se queda igual en el ciclo.
+                camp.excluidos = Array.from(marcados).filter(k => !servidosCicloSet.has(k));
+                camp.servidosCiclo = (camp.servidosCiclo || []).filter(k => marcados.has(k));
                 _huaroGuardarCampana(boc, camp);
                 div.remove();
                 renderPanelHuaro();
@@ -4236,7 +4290,7 @@ const COMISIONES = {
             const tiempoTotalBocatoma = toposTotalPadron * HuaroCore.HUARO_H_POR_TOPO;
 
             const camp = _huaroLeerCampana(boc);
-            const excl = new Set(camp.excluidos);
+            const excl = new Set(_huaroUnion(camp.excluidos, camp.servidosCiclo));
             const usAProgramar = us.filter(u => !excl.has(HuaroCore.huaroClaveUsuario(u)));
             const toposAProgramar = usAProgramar.reduce((s, u) => s + (u.topos || 0), 0);
             const tiempoAProgramar = toposAProgramar * HuaroCore.HUARO_H_POR_TOPO;
@@ -4278,7 +4332,7 @@ const COMISIONES = {
                     <p class="huaro-mini">Marca los días en que la bocatoma reparte agua y define la ventana de horas de cada día. Los turnos de los usuarios (n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h) se encadenan dentro de esas ventanas, en orden de N° del padrón; lo que no entra en la semana pasa a la siguiente.</p>
                     <p class="huaro-mini" style="background:#f3ede6;border-radius:5px;padding:6px 8px;">
                         Tiempo total de la bocatoma (${us.length} usuarios del padrón): <b>${tiempoTotalBocatoma.toFixed(1)} h</b> (Σ ${toposTotalPadron.toFixed(1)} topos × ${HuaroCore.HUARO_H_POR_TOPO} h)${caudalHR > 0 ? ' · ' + volumenTotalBocatoma.toFixed(2) + ' m³' : ''}.<br>
-                        A programar esta semana (${usAProgramar.length} usuarios${excl.size ? ', ' + excl.size + ' excluido(s) en la Cola' : ''}): <b>${tiempoAProgramar.toFixed(1)} h</b>${caudalHR > 0 ? ' · <b>' + volumenAProgramar.toFixed(2) + ' m³</b> (caudal ' + caudalHR.toFixed(2) + ' l/s)' : ' — ingresa el caudal para ver el volumen'}.<br>
+                        A programar esta semana (${usAProgramar.length} usuarios${excl.size ? ', ' + excl.size + ' no elegible(s): excluidos o ya les tocó en este ciclo' : ''}): <b>${tiempoAProgramar.toFixed(1)} h</b>${caudalHR > 0 ? ' · <b>' + volumenAProgramar.toFixed(2) + ' m³</b> (caudal ' + caudalHR.toFixed(2) + ' l/s)' : ' — ingresa el caudal para ver el volumen'}.<br>
                         Solo se ocupa el tiempo <b>a programar</b> dentro de las ventanas activas — <b>no se fuerza a llenar las 16 h</b>: lo que sobra de cada ventana queda libre. La columna "Ventana (h)" es el máximo disponible del día, no el tiempo que se va a usar.
                     </p>
                     <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;">
