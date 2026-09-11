@@ -4473,6 +4473,10 @@ const COMISIONES = {
                 'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a Entregar (l/s)',
                 'Inicio — Día', 'Inicio — Hora', 'Término — Día', 'Término — Hora', 'Observaciones'];
             const alinear = (c, j) => { c.alignment = { horizontal: j === 1 ? 'left' : 'center', vertical: 'middle' }; };
+            const bl0 = (datos.bloques && datos.bloques[0]) || null;
+            const canalG3 = bl0 ? HuaroCore.huaroCanalBocatoma(bl0.bocatoma) : '';
+            const caudalG3 = bl0 ? (bl0.caudalLs || 0).toFixed(2) + ' (l/s)' : '';
+            const multi = (datos.bloques || []).length > 1;
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 14 }));
@@ -4482,21 +4486,22 @@ const COMISIONES = {
                 ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
             };
             ws.mergeCells(1, 1, 1, heads.length);
-            ws.getCell(1, 1).value = 'ANEXO G'; ws.getCell(1, 1).font = { bold: true, size: 13 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
-            ws.mergeCells(2, 1, 2, heads.length);
-            ws.getCell(2, 1).value = 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
-            ws.getCell(2, 1).font = { size: 10 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
-            poner(4, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(5, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
-            poner(6, 'Canal de abastecimiento de agua:', HuaroCore.HUARO_FUENTE);
+            ws.getCell(1, 1).value = 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
+            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
+            poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
+            poner(4, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(5, 'Canal de abastecimiento de agua:', canalG3);
+            poner(6, 'Caudal:', caudalG3);
             poner(7, 'Mes:', datos.mesTexto || '');
-            poner(8, 'PERIODO:', per);
+            poner(8, 'Periodo:', per);
             let r = 10;
             (datos.bloques || []).forEach(bl => {
-                const cB = ws.getCell(r, 1);
-                cB.value = 'Canal de abastecimiento de agua: ' + HuaroCore.huaroCanalBocatoma(bl.bocatoma) + '   ·   Caudal: ' + ((bl.caudalLs || 0)).toFixed(2) + ' (l/s)';
-                cB.font = { bold: true, size: 10 };
-                r++;
+                if (multi) {
+                    const cB = ws.getCell(r, 1);
+                    cB.value = 'Canal de abastecimiento de agua: ' + HuaroCore.huaroCanalBocatoma(bl.bocatoma) + '   ·   Caudal: ' + ((bl.caudalLs || 0)).toFixed(2) + ' (l/s)';
+                    cB.font = { bold: true, size: 10 };
+                    r++;
+                }
                 heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
                 r++;
                 const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));

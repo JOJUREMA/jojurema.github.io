@@ -577,16 +577,16 @@ function huaroConstruirG3Html(datos) {
     const th = 'border:1px solid #000;padding:4px 5px;font-weight:700;text-align:center;vertical-align:middle;';
     const td = 'border:1px solid #000;padding:4px 5px;color:#000;text-align:center;';
     const tdL = 'border:1px solid #000;padding:4px 5px;color:#000;text-align:left;';
-    const semTxt = 'LUNES ' + _huaroFechaCorta(datos.semanaInicioISO) + ' al DOMINGO ' + _huaroFechaCorta(datos.semanaFinISO);
-    const hoy = _huaroFechaCorta(_huaroFechaISO(new Date()));
+    const perTxt = _huaroFechaCorta(datos.semanaInicioISO) + ' al ' + _huaroFechaCorta(datos.semanaFinISO);
+    const bloques = datos.bloques || [];
+    const multi = bloques.length > 1;
+    const bl0 = bloques[0] || null;
+    const canalCab = bl0 ? huaroCanalBocatoma(bl0.bocatoma) : '';
+    const caudalCab = bl0 ? (bl0.caudalLs || 0).toFixed(2) + ' (l/s)' : '';
 
-    const bloquesHtml = (datos.bloques || []).map(bl => {
+    const bloquesHtml = bloques.map(bl => {
         const prog = (bl.programados || []).slice().sort((a, b) => (a.dia - b.dia) || (a.inicioMin - b.inicioMin));
         const caudalLs = (bl.caudalLs || 0);
-        const pIni = prog[0], pFin = prog[prog.length - 1];
-        const periodoTxt = pIni
-            ? `${_huaroDiaEtiqueta(pIni.fechaISO)} ${pIni.inicioTexto}  →  ${_huaroDiaEtiqueta(pFin.fechaISO)} ${pFin.terminoTexto}`
-            : '—';
 
         let filas = prog.map((p, i) => `
             <tr>
@@ -596,9 +596,9 @@ function huaroConstruirG3Html(datos) {
                 <td style="${td}">${(p.volumenM3 || 0).toFixed(2)}</td>
                 <td style="${td}">${(p.tiempoH || 0).toFixed(2)}</td>
                 <td style="${td}">${caudalLs.toFixed(2)}</td>
-                <td style="${td}white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
                 <td style="${td}">${p.inicioTexto}</td>
-                <td style="${td}white-space:nowrap;">${_huaroDiaEtiqueta(p.fechaISO)}</td>
+                <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
                 <td style="${td}">${p.terminoTexto}</td>
                 <td style="${td}"></td>
             </tr>`).join('');
@@ -616,31 +616,24 @@ function huaroConstruirG3Html(datos) {
             </div>` : '<div style="margin-bottom:16px;"></div>';
 
         return `
-        <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;">
-            <div><strong>Canal de abastecimiento de agua:</strong> ${_huaroEsc(huaroCanalBocatoma(bl.bocatoma))}</div>
-            <div><strong>Caudal:</strong> ${caudalLs.toFixed(2)} (l/s)</div>
-            <div><strong>Período de operación:</strong> ${periodoTxt} &nbsp;·&nbsp; <strong>Tiempo de operación:</strong> ${tTiempo.toFixed(1)} h</div>
-        </div>
+        ${multi ? `<div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:12px 0 4px;line-height:1.5;font-weight:700;">
+            Canal de abastecimiento de agua: ${_huaroEsc(huaroCanalBocatoma(bl.bocatoma))} &nbsp;·&nbsp; Caudal: ${caudalLs.toFixed(2)} (l/s)
+        </div>` : ''}
         <div style="overflow-x:auto;">
         <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;width:100%;">
             <thead>
                 <tr style="background:#E6E6E6;color:#000;">
-                    <th rowspan="3" style="${th}">N° Orden<br>de suministro</th>
-                    <th rowspan="3" style="${th}">Usuario<br>(nombres y apellidos)</th>
-                    <th rowspan="3" style="${th}">Área<br>(has)</th>
-                    <th rowspan="3" style="${th}">Volumen de Agua<br>Programado (m³)</th>
-                    <th colspan="6" style="${th}">Programación de la Distribución del agua</th>
-                    <th rowspan="3" style="${th}">Observaciones</th>
-                </tr>
-                <tr style="background:#E6E6E6;color:#000;">
-                    <th rowspan="2" style="${th}">Tiempo de Uso<br>del Agua (hr)</th>
-                    <th rowspan="2" style="${th}">Caudal a<br>Entregar (l/s)</th>
-                    <th colspan="2" style="${th}">Inicio</th>
-                    <th colspan="2" style="${th}">Término</th>
-                </tr>
-                <tr style="background:#E6E6E6;color:#000;">
-                    <th style="${th}">Día</th><th style="${th}">Hora</th>
-                    <th style="${th}">Día</th><th style="${th}">Hora</th>
+                    <th style="${th}">N° Orden<br>de suministro</th>
+                    <th style="${th}">Usuario<br>(nombres y apellidos)</th>
+                    <th style="${th}">Área<br>(has)</th>
+                    <th style="${th}">Volumen de Agua<br>Programado (m³)</th>
+                    <th style="${th}">Tiempo de Uso del<br>Agua (hr)</th>
+                    <th style="${th}">Caudal a<br>Entregar (l/s)</th>
+                    <th style="${th}">Inicio — Día</th>
+                    <th style="${th}">Inicio — Hora</th>
+                    <th style="${th}">Término — Día</th>
+                    <th style="${th}">Término — Hora</th>
+                    <th style="${th}">Observaciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -658,17 +651,19 @@ function huaroConstruirG3Html(datos) {
         ${pendHtml}`;
     }).join('');
 
+    const _lbl = 'font-weight:700;padding:1px 14px 1px 0;white-space:nowrap;vertical-align:top;';
     return `
-    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:8px;">
-        ANEXO G-3: Parte Diario de Distribución de Agua a los Usuarios
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:10px;">
+        Formato G-3: Parte diario de Distribución de Agua a los Usuarios
     </div>
-    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;margin:6px 0;line-height:1.6;">
-        <div><strong>Sector hidráulico:</strong> ${HUARO_JUNTA}</div>
-        <div><strong>Subsector hidráulico:</strong> ${HUARO_COMISION_NOMBRE}</div>
-        <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
-        <div><strong>Semana:</strong> ${semTxt}</div>
-        <div><strong>Fecha:</strong> ${hoy}</div>
-    </div>
+    <table style="font-family:Arial,sans-serif;color:#000;font-size:10px;border-collapse:collapse;margin:6px 0 10px;">
+        <tr><td style="${_lbl}">Sector hidráulico:</td><td>${HUARO_JUNTA}</td></tr>
+        <tr><td style="${_lbl}">Subsector hidráulico:</td><td>${HUARO_COMISION_NOMBRE}</td></tr>
+        <tr><td style="${_lbl}">Canal de abastecimiento de agua:</td><td>${_huaroEsc(canalCab)}</td></tr>
+        <tr><td style="${_lbl}">Caudal:</td><td>${_huaroEsc(caudalCab)}</td></tr>
+        <tr><td style="${_lbl}">Mes:</td><td>${_huaroEsc(datos.mesTexto || '')}</td></tr>
+        <tr><td style="${_lbl}">Periodo:</td><td>${perTxt}</td></tr>
+    </table>
     ${bloquesHtml}`;
 }
 
