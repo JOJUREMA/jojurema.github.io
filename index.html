@@ -6266,7 +6266,7 @@ const COMISIONES = {
             // grande que sature el plano.
             const medidasPredios = predios.map((p) => {
                 const uc = (p.catastralKey || '').toString();
-                const nombre = (p.usuario || '(sin nombre)').toString();
+                const nombre = nombreUsuarioPlanoA2(p.usuario);
                 const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
                 return { p, uc, nombre, medida };
             }).filter((m) => m.medida.longitudPx >= 12);
@@ -7752,7 +7752,7 @@ const COMISIONES = {
         function _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc(p) {
             const r = _levantamientoA2Estado.registroActual;
             if (!r) return;
-            const nombrePredio = p.usuario || '(sin nombre)';
+            const nombrePredio = nombreUsuarioPlanoA2(p.usuario);
             const yaTenia = Array.isArray(r.verticesUtm) && r.verticesUtm.length >= 3;
             const mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
                 ' del bloque de riego como el área de este registro observado?' +
@@ -7921,7 +7921,7 @@ const COMISIONES = {
                 // cabe adentro sin salirse del predio (ver
                 // _actualizarEtiquetasBloqueA2Esc).
                 const medida = (typeof medirLadoMasLargo === 'function') ? medirLadoMasLargo(latlngs, true) : { anguloCss: 0, longitudM: 0 };
-                const nombreEsc = escapeHtml(p.usuario || '(sin nombre)');
+                const nombreEsc = escapeHtml(nombreUsuarioPlanoA2(p.usuario));
                 const ucEsc = p.catastralKey ? escapeHtml(p.catastralKey) : '';
                 const textoCompacta = ucEsc ? ('UC ' + ucEsc) : nombreEsc;
                 const textoCompleta = `${nombreEsc}${ucEsc ? ('<br>UC ' + ucEsc) : ''}`;

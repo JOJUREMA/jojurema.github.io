@@ -19,6 +19,17 @@ const DERECHO_PLANO_A2 = {
     A2_FUERA_BLOQUE: { etiqueta: 'A2 - FUERA BLOQUE', fill: '#d7a8e0', stroke: '#7d3c98' },
 };
 
+// Nombre del titular a MOSTRAR en etiquetas (plano/editor interactivo) — el
+// KML de origen deja el campo USUARIO como "-" (un guion, no vacío) cuando no
+// hay titular cargado, así que `p.usuario || '(sin nombre)'` NUNCA disparaba
+// ese respaldo (un string "-" es verdadero en JS). Sin este helper, esos
+// predios mostraban literalmente "-" como si fuera un nombre real, en vez de
+// avisar que falta el dato.
+function nombreUsuarioPlanoA2(usuario) {
+    const v = (usuario == null ? '' : usuario).toString().trim();
+    return (!v || v === '-') ? '(sin nombre)' : v;
+}
+
 // Normaliza un nombre para cruzarlo — mismo criterio ya usado en todo el
 // proyecto (mayúsculas, sin comas, sin espacios dobles, sin tildes para
 // tolerar variantes de tipeo entre KML/Excel/Supabase).
