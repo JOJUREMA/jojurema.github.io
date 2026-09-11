@@ -1511,24 +1511,38 @@
         <div class="modal-container" style="text-align: center; padding: 30px; max-width: 480px;">
             <h3>🗺️ Generar Plano de Predios</h3>
             <p class="info-text" style="text-align:left;">
-                Genera un plano imprimible (PDF) de los predios del bloque de riego de la toma elegida:
-                grilla de coordenadas UTM, canales y drenes con su color/línea real, y cada predio
-                coloreado según su situación (Permiso/Licencia, Formato A-2 dentro/fuera de bloque, o sin
-                registro) — clasificación automática cruzando el Padrón A-1 y el Formato A-2 ya cargados
-                (puede tener algún error de cruce, igual que el reporte de nombres ya revisado).
+                Genera un plano imprimible (PDF): grilla de coordenadas UTM, canales con su color/línea
+                real, y cada predio coloreado según su situación (Permiso/Licencia, Formato A-2 dentro/
+                fuera de bloque, o sin registro) — clasificación automática cruzando el Padrón A-1 y el
+                Formato A-2 ya cargados (puede tener algún error de cruce, igual que el reporte de nombres
+                ya revisado). En la vista previa puedes elegir horizontal/vertical y <strong>arrastrar sobre
+                el plano para recortarlo a la ventana exacta que quieras imprimir</strong> — el membrete y la
+                leyenda se vuelven a generar solos para lo que quede dentro de esa ventana.
             </p>
-            <div style="text-align:left; margin-bottom:10px;">
-                <label for="selectTomaPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Toma</label>
-                <select id="selectTomaPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;" onchange="_actualizarSelectorUsuarioPlanoA2()">
-                    <option value="">Cargando…</option>
-                </select>
-            </div>
             <div style="text-align:left; margin-bottom:14px;">
-                <label for="selectUsuarioPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Usuario (opcional)</label>
-                <select id="selectUsuarioPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
-                    <option value="TODOS">Todos (plano general de la toma)</option>
-                </select>
-                <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia.</p>
+                <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Ámbito del plano</label>
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; margin-bottom:4px;">
+                    <input type="radio" name="ambitoPlanoA2" value="toma" checked onchange="_cambiarAmbitoPlanoA2()"> Solo el bloque de riego de una toma
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+                    <input type="radio" name="ambitoPlanoA2" value="todos" onchange="_cambiarAmbitoPlanoA2()"> Todos los bloques de la comisión
+                </label>
+                <p id="notaAmbitoTodosPlanoA2" style="display:none; font-size:11px; color:#666; margin:4px 0 0;">Se cargan todos los predios y canales mapeados. El plano arranca mostrando la comisión completa — usa la vista previa para recortarlo a la zona que quieras imprimir con buen detalle.</p>
+            </div>
+            <div id="bloqueTomaPlanoA2">
+                <div style="text-align:left; margin-bottom:10px;">
+                    <label for="selectTomaPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Toma</label>
+                    <select id="selectTomaPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;" onchange="_actualizarSelectorUsuarioPlanoA2()">
+                        <option value="">Cargando…</option>
+                    </select>
+                </div>
+                <div style="text-align:left; margin-bottom:14px;">
+                    <label for="selectUsuarioPlanoA2" style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Usuario (opcional)</label>
+                    <select id="selectUsuarioPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
+                        <option value="TODOS">Todos (plano general de la toma)</option>
+                    </select>
+                    <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia.</p>
+                </div>
             </div>
             <div style="text-align:left; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; font-size:13px;">
                 <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -5475,6 +5489,20 @@ const COMISIONES = {
                 });
                 _actualizarSelectorUsuarioPlanoA2();
             }
+            _cambiarAmbitoPlanoA2();
+        }
+
+        // "Solo una toma" (default) muestra el selector de Toma/Usuario;
+        // "Todos los bloques" los oculta — no aplican (el plano sale con
+        // TODOS los predios/canales mapeados de la comisión, sin resaltar
+        // a un usuario en particular).
+        function _cambiarAmbitoPlanoA2() {
+            const radioTodos = document.querySelector('input[name="ambitoPlanoA2"]:checked');
+            const esTodos = !!radioTodos && radioTodos.value === 'todos';
+            const bloqueToma = document.getElementById('bloqueTomaPlanoA2');
+            const nota = document.getElementById('notaAmbitoTodosPlanoA2');
+            if (bloqueToma) bloqueToma.style.display = esTodos ? 'none' : '';
+            if (nota) nota.style.display = esTodos ? '' : 'none';
         }
 
         // Usuarios de la toma elegida — reutiliza el mismo caché de
@@ -5545,12 +5573,50 @@ const COMISIONES = {
             return _canalesTroncalesTodosPlanoA2;
         }
 
+        // ── Ámbito "Todos los bloques" ── predios/canales de TODAS las tomas
+        // mapeadas (KML_POR_TOMA, assets/core/mapa.js), no solo una. Mismos
+        // parsers (parsearKmlATomas) y mismo archivo de canales
+        // (canal_lateral.json) que el resto del Plano de Predios — acá
+        // simplemente no se filtra por toma, así que ya vienen incluidos los
+        // canales troncales (Canal Sur/Derivación) sin necesidad de
+        // combinarlos aparte.
+        let _todosLosPrediosPlanoA2 = null;
+        async function _obtenerTodosLosPrediosParaPlanoA2() {
+            if (_todosLosPrediosPlanoA2 === null) {
+                try {
+                    const archivosUnicos = Array.from(new Set(
+                        Object.values((typeof KML_POR_TOMA !== 'undefined' && KML_POR_TOMA) || {}).flat()
+                    ));
+                    const listas = await Promise.all(archivosUnicos.map((nombreArchivo) =>
+                        fetch('mapas/' + nombreArchivo)
+                            .then((resp) => (resp.ok ? resp.text() : Promise.reject(new Error('HTTP ' + resp.status))))
+                            .then((texto) => parsearKmlATomas(texto))
+                            .catch(() => [])
+                    ));
+                    _todosLosPrediosPlanoA2 = [].concat(...listas);
+                } catch (e) { _todosLosPrediosPlanoA2 = []; }
+            }
+            return _todosLosPrediosPlanoA2;
+        }
+        let _todosLosCanalesPlanoA2 = null;
+        async function _obtenerTodosLosCanalesParaPlanoA2() {
+            if (_todosLosCanalesPlanoA2 === null) {
+                try {
+                    const resp = await fetch('mapas/inventario_gis/canal_lateral.json');
+                    _todosLosCanalesPlanoA2 = resp.ok ? await resp.json() : [];
+                } catch (e) { _todosLosCanalesPlanoA2 = []; }
+            }
+            return _todosLosCanalesPlanoA2;
+        }
+
         async function _generarPlanoPrediosA2() {
-            const tomaNombre = document.getElementById('selectTomaPlanoA2').value;
-            const usuarioElegido = document.getElementById('selectUsuarioPlanoA2').value; // 'TODOS' o un apellidos_nombres exacto
+            const radioAmbito = document.querySelector('input[name="ambitoPlanoA2"]:checked');
+            const esTodos = !!radioAmbito && radioAmbito.value === 'todos';
+            const tomaNombre = esTodos ? null : document.getElementById('selectTomaPlanoA2').value;
+            const usuarioElegido = esTodos ? 'TODOS' : document.getElementById('selectUsuarioPlanoA2').value; // 'TODOS' o un apellidos_nombres exacto
             const conSatelite = document.getElementById('checkSateliteplanoA2').checked;
             const conMembrete = document.getElementById('checkMembretePlanoA2').checked;
-            if (!tomaNombre) { alert('Elige una toma.'); return; }
+            if (!esTodos && !tomaNombre) { alert('Elige una toma.'); return; }
             if (!window.CusshmiDatos) { alert('No hay conexión con Supabase. Intenta de nuevo en un momento.'); return; }
             if (!window.jspdf) { alert('No se pudo cargar la librería de PDF. Intenta de nuevo en un momento.'); return; }
 
@@ -5560,53 +5626,71 @@ const COMISIONES = {
 
             try {
                 const comisionKey = localStorage.getItem('cusshmi_comision');
-                const predios = (await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(tomaNombre))
-                    .filter((p) => p.coordenadas && p.coordenadas.length >= 3);
-                if (predios.length === 0) { alert('No hay predios mapeados (KML del bloque de riego) para esta toma.'); return; }
-                // Filtro de sanidad geográfica: algunos canales de
-                // canal_lateral.json vienen con la toma mal etiquetada en el
-                // dato de origen (confirmado con SD11 real: dos canales
-                // llamados "CANAL SAN JOSE"/"CANAL GONZALES" con toma='SD11'
-                // — uno junto a los predios reales, otro a ~9-10 km de
-                // distancia). Sin este filtro, ese canal lejano estira el
-                // bbox del plano para abarcar ambos, dejando los predios
-                // reales aplastados en una esquina. Se excluye cualquier
-                // canal cuyo punto más cercano a los predios de la toma
-                // quede a más de 2 km — generoso frente a canales reales
-                // (el más ancho medido hasta ahora, ~1 km), muy por debajo
-                // del caso detectado (~9 km).
-                const bboxPrediosSanidad = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
-                const UMBRAL_SANIDAD_CANAL_M = 2000;
-                const canalesConTomaMalEtiquetada = [];
-                const canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
-                    .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2)
-                    .filter((c) => {
-                        const cerca = c.geom.coords.some((par) => {
-                            const utm = latLonAUtm17S(par[0], par[1]);
-                            return utm.easting >= bboxPrediosSanidad.minEasting - UMBRAL_SANIDAD_CANAL_M && utm.easting <= bboxPrediosSanidad.maxEasting + UMBRAL_SANIDAD_CANAL_M &&
-                                   utm.northing >= bboxPrediosSanidad.minNorthing - UMBRAL_SANIDAD_CANAL_M && utm.northing <= bboxPrediosSanidad.maxNorthing + UMBRAL_SANIDAD_CANAL_M;
+                let predios, canales, canalesTroncales;
+
+                if (esTodos) {
+                    // "Todos los bloques": los mismos parsers/fuente de cada
+                    // predio y canal, pero sin filtrar por toma — el archivo
+                    // de canales ya trae los troncales (toma=null) mezclados
+                    // con los de cada toma, así que no hay que combinarlos
+                    // aparte ni aplicar el filtro de sanidad geográfica (que
+                    // solo tiene sentido acotado a UNA toma).
+                    predios = (await _obtenerTodosLosPrediosParaPlanoA2())
+                        .filter((p) => p.coordenadas && p.coordenadas.length >= 3);
+                    if (predios.length === 0) { alert('No hay predios mapeados en ningún bloque.'); return; }
+                    canales = (await _obtenerTodosLosCanalesParaPlanoA2())
+                        .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2);
+                    canalesTroncales = [];
+                } else {
+                    predios = (await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(tomaNombre))
+                        .filter((p) => p.coordenadas && p.coordenadas.length >= 3);
+                    if (predios.length === 0) { alert('No hay predios mapeados (KML del bloque de riego) para esta toma.'); return; }
+                    // Filtro de sanidad geográfica: algunos canales de
+                    // canal_lateral.json vienen con la toma mal etiquetada en el
+                    // dato de origen (confirmado con SD11 real: dos canales
+                    // llamados "CANAL SAN JOSE"/"CANAL GONZALES" con toma='SD11'
+                    // — uno junto a los predios reales, otro a ~9-10 km de
+                    // distancia). Sin este filtro, ese canal lejano estira el
+                    // bbox del plano para abarcar ambos, dejando los predios
+                    // reales aplastados en una esquina. Se excluye cualquier
+                    // canal cuyo punto más cercano a los predios de la toma
+                    // quede a más de 2 km — generoso frente a canales reales
+                    // (el más ancho medido hasta ahora, ~1 km), muy por debajo
+                    // del caso detectado (~9 km).
+                    const bboxPrediosSanidad = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
+                    const UMBRAL_SANIDAD_CANAL_M = 2000;
+                    const canalesConTomaMalEtiquetada = [];
+                    canales = (await _obtenerCanalesBloqueRiegoLevantamientoA2Esc(tomaNombre))
+                        .filter((c) => c.geom && c.geom.type === 'LineString' && c.geom.coords && c.geom.coords.length >= 2)
+                        .filter((c) => {
+                            const cerca = c.geom.coords.some((par) => {
+                                const utm = latLonAUtm17S(par[0], par[1]);
+                                return utm.easting >= bboxPrediosSanidad.minEasting - UMBRAL_SANIDAD_CANAL_M && utm.easting <= bboxPrediosSanidad.maxEasting + UMBRAL_SANIDAD_CANAL_M &&
+                                       utm.northing >= bboxPrediosSanidad.minNorthing - UMBRAL_SANIDAD_CANAL_M && utm.northing <= bboxPrediosSanidad.maxNorthing + UMBRAL_SANIDAD_CANAL_M;
+                            });
+                            if (!cerca) canalesConTomaMalEtiquetada.push((c.campos && c.campos.NOMBRE) || c.nombre || '(sin nombre)');
+                            return cerca;
                         });
-                        if (!cerca) canalesConTomaMalEtiquetada.push((c.campos && c.campos.NOMBRE) || c.nombre || '(sin nombre)');
-                        return cerca;
-                    });
-                if (canalesConTomaMalEtiquetada.length) {
-                    console.warn('Plano de Predios: se omitieron ' + canalesConTomaMalEtiquetada.length + ' canal(es) con la toma "' + tomaNombre + '" pero geográficamente lejos de sus predios (posible error de etiquetado en canal_lateral.json): ' + canalesConTomaMalEtiquetada.join(', '));
+                    if (canalesConTomaMalEtiquetada.length) {
+                        console.warn('Plano de Predios: se omitieron ' + canalesConTomaMalEtiquetada.length + ' canal(es) con la toma "' + tomaNombre + '" pero geográficamente lejos de sus predios (posible error de etiquetado en canal_lateral.json): ' + canalesConTomaMalEtiquetada.join(', '));
+                    }
                 }
 
                 const [resPadronA1, registrosFormatoA2, todosLosCanalesTroncales] = await Promise.all([
                     CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
                     _obtenerRegistrosParaExportarPoligonosA2(), // ya cacheado, mismo origen que el selector de Usuario
-                    _obtenerCanalesTroncalesParaPlanoA2(),
+                    esTodos ? Promise.resolve([]) : _obtenerCanalesTroncalesParaPlanoA2(),
                 ]);
                 const padronA1Rows = resPadronA1.ok ? resPadronA1.resultados : [];
                 const formatoA2Rows = registrosFormatoA2;
 
-                // Plano por usuario (opcional): el polígono medido/importado del
-                // Formato A-2 de ESE usuario — "tal cual" el KML del bloque de
-                // riego sigue mostrando TODOS los predios sin cambios; esto es
-                // un resaltado adicional encima, no un reemplazo.
+                // Plano por usuario (opcional, solo en ámbito "una toma"): el
+                // polígono medido/importado del Formato A-2 de ESE usuario —
+                // "tal cual" el KML del bloque de riego sigue mostrando TODOS
+                // los predios sin cambios; esto es un resaltado adicional
+                // encima, no un reemplazo.
                 let usuarioResaltado = null;
-                if (usuarioElegido !== 'TODOS') {
+                if (!esTodos && usuarioElegido !== 'TODOS') {
                     const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
                     const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
                     if (verticesUtm.length < 3) {
@@ -5617,7 +5701,8 @@ const COMISIONES = {
                 }
 
                 // bbox UTM de predios+canales (+el polígono resaltado, si lo
-                // hay, por si se sale del bloque KML) de la toma, para filtrar
+                // hay, por si se sale del bloque KML) — de la toma, o de TODA
+                // la comisión en ámbito "todos los bloques" — para filtrar
                 // los canales troncales (que no tienen toma resuelta) por
                 // superposición geográfica, y para decidir la orientación de
                 // arranque de la vista previa. Nota: predios trae [lon,lat] y
@@ -5644,33 +5729,39 @@ const COMISIONES = {
                 // ver _obtenerCanalesTroncalesParaPlanoA2) — filtrados por
                 // cercanía geográfica (300m) para no arrastrar la longitud
                 // completa de un canal que cruza toda la comisión ni inflar
-                // el encuadre del plano con ella.
-                const canalesTroncales = todosLosCanalesTroncales.filter((c) => {
-                    if (!c.geom || c.geom.type !== 'LineString' || !c.geom.coords || c.geom.coords.length < 2) return false;
-                    return c.geom.coords.some((par) => {
-                        const utm = latLonAUtm17S(par[0], par[1]);
-                        return utm.easting >= bboxToma.minEasting - 300 && utm.easting <= bboxToma.maxEasting + 300 &&
-                               utm.northing >= bboxToma.minNorthing - 300 && utm.northing <= bboxToma.maxNorthing + 300;
+                // el encuadre del plano con ella. En ámbito "todos los
+                // bloques" ya vienen incluidos en `canales` (arriba quedó
+                // `canalesTroncales = []` para no duplicarlos).
+                if (!esTodos) {
+                    canalesTroncales = todosLosCanalesTroncales.filter((c) => {
+                        if (!c.geom || c.geom.type !== 'LineString' || !c.geom.coords || c.geom.coords.length < 2) return false;
+                        return c.geom.coords.some((par) => {
+                            const utm = latLonAUtm17S(par[0], par[1]);
+                            return utm.easting >= bboxToma.minEasting - 300 && utm.easting <= bboxToma.maxEasting + 300 &&
+                                   utm.northing >= bboxToma.minNorthing - 300 && utm.northing <= bboxToma.maxNorthing + 300;
+                        });
                     });
-                });
+                }
 
-                // Orientación de arranque: si el bbox real de la toma es
-                // notablemente más alto que ancho (predios angostos y
-                // alargados, como SD8.1), la vista previa abre en vertical de
-                // entrada, en vez de dejar el dibujo real aplastado al centro
-                // de un lienzo horizontal con enormes franjas en blanco a los
-                // lados — el usuario puede cambiarlo igual dentro de la vista
-                // previa.
+                // Orientación de arranque: si el bbox real es notablemente
+                // más alto que ancho (predios angostos y alargados, como
+                // SD8.1), la vista previa abre en vertical de entrada, en vez
+                // de dejar el dibujo real aplastado al centro de un lienzo
+                // horizontal con enormes franjas en blanco a los lados — el
+                // usuario puede cambiarlo igual dentro de la vista previa.
                 const anchoBbox = bboxToma.maxEasting - bboxToma.minEasting;
                 const altoBbox = bboxToma.maxNorthing - bboxToma.minNorthing;
                 const orientacionInicial = (altoBbox > anchoBbox * 1.15) ? 'vertical' : 'horizontal';
 
                 const fecha = new Date().toISOString().split('T')[0];
                 const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_') : '';
-                const nombreArchivoBase = `Plano_Predio${usuarioResaltado ? '' : 's'}${sufijoUsuario}_${tomaNombre}_${conSatelite ? 'satelite' : 'sinfondo'}_${fecha}`;
+                const ambitoTexto = esTodos ? 'TODOS_LOS_BLOQUES' : tomaNombre;
+                const nombreArchivoBase = `Plano_Predio${usuarioResaltado ? '' : 's'}${sufijoUsuario}_${ambitoTexto}_${conSatelite ? 'satelite' : 'sinfondo'}_${fecha}`;
 
                 await _abrirVistaPreviaPlanoA2({
-                    predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado,
+                    predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows,
+                    tomaNombre: esTodos ? 'TODOS LOS BLOQUES' : tomaNombre,
+                    comisionKey, conSatelite, conMembrete, usuarioResaltado,
                     orientacionInicial, nombreArchivoBase,
                 });
             } catch (e) {
@@ -6479,7 +6570,7 @@ const COMISIONES = {
             ctx.font = '700 34px Arial, sans-serif';
             const titulo = usuarioResaltado
                 ? ('PLANO DE PREDIO — ' + usuarioResaltado.nombre + ' (TOMA ' + (tomaNombre || '') + ')')
-                : ('PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''));
+                : (tomaNombre === 'TODOS LOS BLOQUES' ? 'PLANO DE PREDIOS — TODOS LOS BLOQUES' : 'PLANO DE PREDIOS — TOMA ' + (tomaNombre || ''));
             ctx.fillText(titulo, 40, alto / 2 - 20);
             ctx.font = '400 20px Arial, sans-serif';
             // "SUBSECTOR" (una palabra) -> "SUB SECTOR" (dos palabras), a
