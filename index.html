@@ -2138,6 +2138,9 @@ const COMISIONES = {
             // HUARO: modelo por topos, flujo propio (assets/core/huaro.js).
             if (key === 'HUARO') activarModoHuaro();
             else desactivarModoHuaro();
+
+            // CIENEGUILLO: barra lateral simplificada (ver _aplicarModoCieneguilloSidebar).
+            _aplicarModoCieneguilloSidebar(key === 'CIENEGUILLO');
         }
 
         function iniciarLatidoPresencia(comisionKey) {
@@ -3594,6 +3597,33 @@ const COMISIONES = {
                     <p>Carga tu archivo Excel TOMAS.xlsx para comenzar a generar reportes<br>
                     de usuarios con derecho de uso de agua para riego.</p>
                 </div>`;
+        }
+
+        // CIENEGUILLO: barra lateral simplificada — a pedido del usuario, solo
+        // quedan los botones realmente usados en el flujo de esta comisión
+        // (Generar Reporte, Programar PDA, Avance de siembra, Resumen por
+        // Cultivo, Limpiar Datos). "Reporte Consolidado" se quita porque el
+        // mismo resultado se obtiene eligiendo "TODAS LAS TOMAS (Consolidado)"
+        // en el desplegable de toma + "Generar Reporte"; los tres botones de
+        // sincronización con el móvil (Padrón A-1, Declaración de Intención de
+        // Siembra, Inventario) no se usan en Cieneguillo por ahora. Solo afecta
+        // a esta comisión — el resto conserva la barra completa.
+        const _CIENEGUILLO_OCULTAR = ['#btnConsolidado', '#btnSincronizarPadron', '#btnAbrirPadronA1', '#btnAbrirSiembraDIS', '#btnAbrirInventario'];
+        function _aplicarModoCieneguilloSidebar(activar) {
+            _CIENEGUILLO_OCULTAR.forEach(sel => {
+                const el = document.querySelector(sel);
+                if (el) el.style.display = activar ? 'none' : '';
+            });
+            // "Limpiar Datos" pasa al final de la lista (activar) o vuelve a su
+            // lugar original, justo antes de "Avance de siembra" (desactivar).
+            const btnLimpiar = document.getElementById('btnLimpiar');
+            const btnAccederConsolidado = document.getElementById('btnAccederConsolidado');
+            if (!btnLimpiar || !btnLimpiar.parentElement) return;
+            if (activar) {
+                btnLimpiar.parentElement.appendChild(btnLimpiar);
+            } else if (btnAccederConsolidado && btnAccederConsolidado.parentElement === btnLimpiar.parentElement) {
+                btnAccederConsolidado.parentElement.insertBefore(btnLimpiar, btnAccederConsolidado);
+            }
         }
 
         function huaroProcesarWorkbook() {
@@ -12203,7 +12233,13 @@ if (incluirGraficos.checked) {
 
         function generarReporteConsolidado() {
     const deudaMax = parseFloat(deudaMinima.value) || 0;
-    
+    // El encabezado del reporte (nombre/unidad de la comisión) antes estaba
+    // fijo a Margen Izquierda sin importar la comisión activa — ahora se lee
+    // de COMISIONES[comisionKey], igual que ya hacen el Anexo G-2/G-3.
+    const comisionKeyReporte = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+    const comisionNombreReporte = (COMISIONES[comisionKeyReporte] && COMISIONES[comisionKeyReporte].nombre) || 'COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA';
+    const comisionUnidadReporte = (COMISIONES[comisionKeyReporte] && COMISIONES[comisionKeyReporte].unidad) || 'CUSSHMI - Unidad de Operación y Tarifas';
+
     // ========== RECOLECTAR DATOS ==========
     
     // Datos para tabla resumen (deuda por toma)
@@ -12262,8 +12298,8 @@ tomasResumen.sort((a, b) => {
             <!-- ========== HOJA 1: USUARIOS CON DERECHO DE USO DE RIEGO ========== -->
             <div class="hoja-print">
                 <div class="encabezado-hoja">
-                    <h2>COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA</h2>
-                    <p><strong>CUSSHMI - Unidad de Operación y Tarifas</strong></p>
+                    <h2>${comisionNombreReporte}</h2>
+                    <p><strong>${comisionUnidadReporte}</strong></p>
                     <p style="font-size: 10pt; color: #155724; margin-top: 5px;">
                         📋 HOJA 1: USUARIOS CON DERECHO DE USO DE RIEGO
                     </p>
@@ -12294,8 +12330,8 @@ tomasResumen.sort((a, b) => {
             <!-- ========== HOJA 2: USUARIOS SIN DERECHO DE USO DE RIEGO ========== -->
             <div class="hoja-print">
                 <div class="encabezado-hoja">
-                    <h2>COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA</h2>
-                    <p><strong>CUSSHMI - Unidad de Operación y Tarifas</strong></p>
+                    <h2>${comisionNombreReporte}</h2>
+                    <p><strong>${comisionUnidadReporte}</strong></p>
                     <p style="font-size: 18pt; color: #b30000 !important; margin-top: 6px; font-weight: 900; letter-spacing: 0.25px; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;">
                         📋 HOJA 2: USUARIOS SIN DERECHO DE USO DE RIEGO (CON DEUDA)
                     </p>
@@ -12326,8 +12362,8 @@ tomasResumen.sort((a, b) => {
             <!-- ========== HOJA 3: RESUMEN DE DEUDA POR TOMA ========== -->
             <div class="hoja-print">
                 <div class="encabezado-hoja">
-                    <h2>COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA</h2>
-                    <p><strong>CUSSHMI - Unidad de Operación y Tarifas</strong></p>
+                    <h2>${comisionNombreReporte}</h2>
+                    <p><strong>${comisionUnidadReporte}</strong></p>
                     <p style="font-size: 10pt; color: #0070c0; margin-top: 5px;">
                         📋 HOJA 3: RESUMEN DE DEUDA Y USUARIOS POR TOMA
                     </p>
@@ -13302,6 +13338,8 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
 
         document.getElementById('btnExportExcel').addEventListener('click', () => {
             const printContainer = document.getElementById('printContainer');
+            const comisionKeyExcel = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+            const comisionNombreExcel = (COMISIONES[comisionKeyExcel] && COMISIONES[comisionKeyExcel].nombre) || 'COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA';
 
             // Reporte Consolidado (📑): son 3 hojas distintas en pantalla/impresión — Usuarios
             // con derecho, Usuarios sin derecho y Resumen por toma. Antes el Excel solo tomaba
@@ -13326,7 +13364,7 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
                         .replace(/📋/g, '').trim();
 
                     const ws_data = [];
-                    ws_data.push(['COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA']);
+                    ws_data.push([comisionNombreExcel]);
                     ws_data.push(['CUSSHMI']);
                     ws_data.push(['']);
                     ws_data.push(['ÁREA ENCARGADA: Unidad de Operación y Tarifas']);
@@ -13357,7 +13395,7 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
             const wb = XLSX.utils.book_new();
             const ws_data = [];
 
-            ws_data.push(['COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA']);
+            ws_data.push([comisionNombreExcel]);
             ws_data.push(['CUSSHMI']);
             ws_data.push(['']);
             ws_data.push(['ÁREA ENCARGADA: Unidad de Operación y Tarifas']);
@@ -13480,8 +13518,8 @@ function formatearNombreCultivoDosLineas(nombreCultivo) {
             </style>
         </head><body>
             <div class="header-print">
-                <h1>COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA</h1>
-                <h2>CUSSHMI - Unidad de Operación y Tarifas</h2>
+                <h1>${(COMISIONES[localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA'] || {}).nombre || 'COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO MARGEN IZQUIERDA'}</h1>
+                <h2>${(COMISIONES[localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA'] || {}).unidad || 'CUSSHMI - Unidad de Operación y Tarifas'}</h2>
                 <p style="${tipoReporteSelect?.value === 'noAptos' ? 'color:#dc3545;font-size:16px;font-weight:700;' : 'color:#666;font-size:11px;'} margin:3px 0;"><strong>REPORTE:</strong> ${tipoReporteSelect?.value === 'noAptos' ? 'USUARIOS SIN DERECHO DE USO DE RIEGO (CON DEUDA)' : 'USUARIOS CON DERECHO DE USO DE RIEGO'}</p>
                 <p style="${tipoReporteSelect?.value === 'noAptos' ? 'color:#dc3545;font-size:16px;font-weight:700;' : 'color:#666;font-size:11px;'} margin:3px 0;"><strong>TOMA:</strong> ${tomaSelect?.value || 'No especificada'}</p>
                 <p><strong>Fecha de generación:</strong> ${new Date().toLocaleString('es-PE')}</p>
@@ -19471,7 +19509,7 @@ function imprimirConsolidado() {
             <div class="header">
                 <h2>CONSOLIDADO DE DEMANDAS DE AGUA SEMANAL</h2>
                 <p class="semana">SEMANA ${semanaTexto}</p>
-                <p class="subtitulo">CUSSHMI - Unidad de Operación y Tarifas</p>
+                <p class="subtitulo">${(COMISIONES[localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA'] || {}).unidad || 'CUSSHMI - Unidad de Operación y Tarifas'}</p>
                 <p class="fecha">Generado: ${new Date().toLocaleString('es-PE')}</p>
             </div>
             
