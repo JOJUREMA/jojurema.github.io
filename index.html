@@ -10588,18 +10588,36 @@ const COMISIONES = {
             const idxUnidad = buscarIndice(headersNorm, ['UNIDAD CATASTRAL', 'UNIDAD']);
             const idxTipoRiego = buscarIndice(headersNorm, ['TIPO DE RIEGO', 'TIPO RIEGO']);
 
-            const idxDeudaCampana = buscarIndice(headersNorm, ['DEUDA CAMPANA', 'DEUDA CAMPAÑA']);
             const idxDeudaAtrasada = buscarIndice(headersNorm, ['DEUDA ATRASADA']);
-            const idxDeudaConvenio = buscarIndice(headersNorm, ['DEUDA CONVENIO']);
+            const idxDeudaConvenio = buscarIndice(headersNorm, ['DEUDA CONVENIO', 'DEUDA ACUMULADA']);
             const idxDeudaTotal = buscarIndice(headersNorm, ['DEUDA TOTAL']);
+            let idxDeudaCampana = buscarIndice(headersNorm, ['DEUDA CAMPANA', 'DEUDA CAMPAÑA']);
+            if (idxDeudaCampana < 0) {
+                // Algunos padrones (ej. Cieneguillo TOMAS.xlsx) rotulan la deuda de
+                // la campaña en curso como "DEUDA <año>" (p.ej. "DEUDA 2026") en vez
+                // de "DEUDA CAMPAÑA" — cambia de nombre cada año, así que se busca
+                // por patrón en vez de un texto fijo, evitando las columnas ya
+                // identificadas como atrasada/convenio-acumulada/total.
+                const ocupados = new Set([idxDeudaAtrasada, idxDeudaConvenio, idxDeudaTotal].filter(i => i >= 0));
+                idxDeudaCampana = headersNorm.findIndex((h, i) => !ocupados.has(i) && /^DEUDA\s*\d{4}$/.test(h || ''));
+            }
             const idxAlDia = buscarIndice(headersNorm, ['AL DIA', 'AL DÍA']);
             const idxDebito = buscarIndice(headersNorm, ['DEBITO', 'DÉBITO']);
             const idxCelular = buscarIndice(headersNorm, ['CELULAR', 'CEL', 'TELEFONO', 'TELÉFONO', 'WHATSAPP']);
+            const idxOrdenRiego = buscarIndice(headersNorm, ['ORDEN DE RIEGO', 'ORDEN RIEGO']);
+            const idxCanalReal = buscarIndice(headersNorm, ['CANAL']);
+            const idxBloqueRiego = buscarIndice(headersNorm, ['BLOQUE DE RIEGO', 'BLOQUE RIEGO']);
 
             const paresCultivo = detectarParesCultivoArea(headersNorm);
             meta.maxCultivos = paresCultivo.length;
 
-            if (idxPredio >= 0) meta.groupKey = 'nombrePredio';
+            // NO se agrupa por "Nombre Predio/Lateral" cuando cada pestaña del
+            // Excel ya representa una toma completa (ej. Cieneguillo TOMAS.xlsx:
+            // pestañas "0+400", "42+190A", etc., con decenas de laterales/predios
+            // distintos DENTRO de cada una) — agrupar ahí explotaría una sola toma
+            // en decenas de "tomas" ficticias. meta.groupKey queda en null
+            // (ver arriba) y procesarWorkbook usa la pestaña completa como toma,
+            // igual que el resto de comisiones.
 
             for (let i = headerRowIndex + 1; i < data.length; i++) {
                 const row = data[i] || [];
@@ -10617,7 +10635,10 @@ const COMISIONES = {
                     deudaConvenio: idxDeudaConvenio >= 0 ? numeroSeguro(row[idxDeudaConvenio]) : numeroSeguro(row[10]),
                     deudaTotal: idxDeudaTotal >= 0 ? numeroSeguro(row[idxDeudaTotal]) : numeroSeguro(row[11]),
                     alDia: idxAlDia >= 0 ? (row[idxAlDia] || '') : (row[12] || ''),
-                    debito: idxDebito >= 0 ? numeroSeguro(row[idxDebito]) : numeroSeguro(row[13])
+                    debito: idxDebito >= 0 ? numeroSeguro(row[idxDebito]) : numeroSeguro(row[13]),
+                    ordenRiego: idxOrdenRiego >= 0 ? (row[idxOrdenRiego] || '') : '',
+                    canal: idxCanalReal >= 0 ? (row[idxCanalReal] || '') : '',
+                    bloqueRiego: idxBloqueRiego >= 0 ? (row[idxBloqueRiego] || '') : '',
                 };
 
                 paresCultivo.forEach((p, idx) => {
@@ -15302,10 +15323,13 @@ function generarAvanceSiembraPorTomaEspecifica(tomaSeleccionada) {
     
     // PROCESAR TODOS LOS USUARIOS DE LA HOJA
     usuarios.forEach((u, index) => {
-        const cultivos = [
-            { nombre: u.cultivo1, area: u.area1 },
-            { nombre: u.cultivo2, area: u.area2 }
-        ];
+        // obtenerParesCultivoAreaUsuario (assets/core/clasificacion.js) lee
+        // cultivo1..10/area1..10 (con retroceso a cultivo1/cultivo2 si no hay
+        // más) — antes esta función solo miraba cultivo1/cultivo2 a mano, así
+        // que un usuario con 3+ cultivos (ej. Cieneguillo TOMAS.xlsx, hoja
+        // "42+190B" con Cultivo1/2/3) perdía el resto sin que hubiera forma de
+        // programarlos nunca en el Avance de Siembra.
+        const cultivos = obtenerParesCultivoAreaUsuario(u).map(p => ({ nombre: p.cultivo, area: p.area }));
 
         cultivos.forEach(c => {
             if (!c.nombre || c.area <= 0) return;
