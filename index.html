@@ -10967,8 +10967,17 @@ function recalcularDesdeQTeorico(input) {
     actualizarTotalesFinales();
 }
 
-function abrirProgramacionNoAptosToma() {
-    console.log("=== ABRIR PROGRAMACION NO APTOS TOMA ===");
+// Abre el panel de "programar usuarios no aptos" acotado a UN cultivo — se
+// llama desde el botón embebido en el modal de "Área Semana" (ver
+// abrirSelectorUsuariosCultivo), así el operador no tiene que salir de esa
+// ventana para encontrar solo a los no aptos de este cultivo puntual, en vez
+// de la lista mezclada de todos los cultivos de la toma.
+function abrirProgramacionNoAptosCultivo(toma, cultivo) {
+    abrirProgramacionNoAptosToma(cultivo);
+}
+
+function abrirProgramacionNoAptosToma(cultivoFiltro) {
+    console.log("=== ABRIR PROGRAMACION NO APTOS TOMA ===", cultivoFiltro ? ('cultivo=' + cultivoFiltro) : '(todos los cultivos)');
     
     // Obtener la toma de la tabla actual (más confiable que window.tomaActualSeleccionada)
     const tabla = document.getElementById('tablaAvanceSiembra');
@@ -11045,58 +11054,74 @@ function abrirProgramacionNoAptosToma() {
             return tieneDeuda && noEsApto && noExcluido;
         })
         .flatMap(expandirUsuarioNoAptoPorCultivos);
-    
+
+    // Acotar a un solo cultivo (cada registro expandido ya trae SU cultivo en
+    // cultivo1, uno por cada cultivo/área que tenía el usuario original) —
+    // así la lista solo muestra a quienes realmente tienen ese cultivo, en
+    // vez de mezclar los no aptos de todos los cultivos de la toma.
+    if (cultivoFiltro) {
+        const cf = cultivoFiltro.toString().trim().toUpperCase();
+        usuariosNoAptosDisponibles = usuariosNoAptosDisponibles.filter(u => (u.cultivo1 || '').toString().trim().toUpperCase() === cf);
+    }
+
     // Agregar información de la toma a cada registro (cultivo)
     usuariosNoAptosDisponibles.forEach(u => { u._tomaOrigen = nombreToma; });
-    
+
     console.log(`Usuarios no aptos encontrados: ${usuariosNoAptosDisponibles.length}`);
-    
+
     if (usuariosNoAptosDisponibles.length === 0) {
-        alert(`No hay usuarios no aptos en la toma: ${nombreToma}\n\n(Todos los usuarios están al día o no tienen deuda)`);
+        alert(cultivoFiltro
+            ? `No hay usuarios no aptos con el cultivo "${cultivoFiltro}" en la toma: ${nombreToma}`
+            : `No hay usuarios no aptos en la toma: ${nombreToma}\n\n(Todos los usuarios están al día o no tienen deuda)`);
         return;
     }
-    
+
     // Mostrar paneles
-    generarPanelesNoAptosTomaSimple(nombreToma);
+    generarPanelesNoAptosTomaSimple(nombreToma, cultivoFiltro);
 }
-function generarPanelesNoAptosTomaSimple(nombreToma) {
-    console.log("Generando paneles para toma:", nombreToma);
-    
+// Guarda el cultivo con el que se abrió este panel (o null = todos), para
+// que las filas/acciones que se re-renderizan después (al programar/deshacer
+// un usuario) sigan respetando el mismo filtro.
+let _cultivoFiltroNoAptos = null;
+
+function generarPanelesNoAptosTomaSimple(nombreToma, cultivoFiltro) {
+    console.log("Generando paneles para toma:", nombreToma, cultivoFiltro || '(todos)');
+    _cultivoFiltroNoAptos = cultivoFiltro || null;
+
     // Eliminar contenedor anterior si existe
     let contenedor = document.getElementById('contenedorPanelesNoAptos');
     if (contenedor) {
         contenedor.remove();
     }
-    
-    // Crear nuevo contenedor
+
+    // Overlay fijo por encima de TODO (incluida la ventana "Área Semana", que
+    // ya tiene z-index 99999) — antes este panel se insertaba después de la
+    // tabla de Avance de Siembra, así que si se abría desde "Área Semana"
+    // quedaba escondido detrás de esa ventana modal.
     contenedor = document.createElement('div');
     contenedor.id = 'contenedorPanelesNoAptos';
-    contenedor.style.cssText = 'margin-top: 20px; border: 2px solid #0070c0; padding: 20px; border-radius: 8px; background: #f8f9fa;';
-    
-    // Insertar DESPUÉS de la tabla
-    const tabla = document.getElementById('tablaAvanceSiembra');
-    if (tabla && tabla.parentNode) {
-        tabla.parentNode.insertBefore(contenedor, tabla.nextSibling);
-    } else {
-        contentArea.appendChild(contenedor);
-    }
-    
+    contenedor.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,20,50,0.80);z-index:999999;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;';
+    document.body.appendChild(contenedor);
+
+    const tituloCultivo = cultivoFiltro ? ` — CULTIVO: ${cultivoFiltro}` : '';
+
     // Generar HTML de los paneles
     let html = `
+        <div style="background:white;border-radius:8px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #dee2e6;">
             <h3 style="color: #0070c0; margin-bottom: 15px; border-bottom: 2px solid #0070c0; padding-bottom: 8px;">
-                📋 PROGRAMAR USUARIOS NO APTOS - TOMA: ${nombreToma}
+                📋 PROGRAMAR USUARIOS NO APTOS - TOMA: ${nombreToma}${tituloCultivo}
             </h3>
             <div style="background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px;">
-                <strong>Total usuarios no aptos:</strong> ${usuariosNoAptosDisponibles.length}
+                <strong>Total usuarios no aptos${cultivoFiltro ? ' de este cultivo' : ''}:</strong> ${usuariosNoAptosDisponibles.length}
             </div>
-            
-            <input type="text" 
+
+            <input type="text"
                    id="buscadorNoAptos"
                    placeholder="🔍 Buscar por nombre o apellido..."
                    style="width:100%; padding:10px; margin-bottom:15px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;"
                    oninput="filtrarNoAptosTomaSimple()">
-            
+
             <div style="max-height:300px; overflow-y:auto; border: 1px solid #dee2e6; border-radius: 6px;">
                 <table class="report-table" id="tablaNoAptos" style="margin: 0; font-size: 13px;">
                     <thead style="background: #0070c0; color: white;">
@@ -11114,9 +11139,9 @@ function generarPanelesNoAptosTomaSimple(nombreToma) {
                     </tbody>
                 </table>
             </div>
-            
+
             <div style="margin-top: 15px; text-align: center;">
-                <button onclick="cerrarPanelNoAptosTomaSimple()" 
+                <button onclick="cerrarPanelNoAptosTomaSimple()"
                     style="background:#dc3545; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight: bold;">
                     ❌ Cerrar Panel
                 </button>
@@ -11124,9 +11149,12 @@ function generarPanelesNoAptosTomaSimple(nombreToma) {
         </div>
     `;
 
-    // Panel de usuarios programados (inicialmente oculto si no hay programados)
-    const programadosDeEstaToma = usuariosProgramados.filter(u => u._tomaOrigen === nombreToma);
-    
+    // Panel de usuarios programados (inicialmente oculto si no hay programados) —
+    // acotado al mismo cultivo cuando el panel se abrió filtrado por uno.
+    const programadosDeEstaToma = usuariosProgramados.filter(u =>
+        u._tomaOrigen === nombreToma &&
+        (!cultivoFiltro || (u._cultivoProgramado || u.cultivo1 || '').toString().trim().toUpperCase() === cultivoFiltro.toString().trim().toUpperCase()));
+
     html += `
         <div id="panelNoAptosProgramados" style="background: #d4edda; padding: 15px; border-radius: 8px; border: 2px solid #28a745; display: ${programadosDeEstaToma.length > 0 ? 'block' : 'none'};">
             <h3 style="color: #155724; margin-bottom: 15px; border-bottom: 2px solid #28a745; padding-bottom: 8px;">
@@ -11152,13 +11180,9 @@ function generarPanelesNoAptosTomaSimple(nombreToma) {
         </div>
     `;
 
+    html += `</div>`;
     contenedor.innerHTML = html;
-    
-    // Scroll suave hacia el panel
-    setTimeout(() => {
-        contenedor.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-    
+
     console.log("Paneles generados exitosamente");
 }
 function generarFilasNoAptosTomaSimple() {
@@ -11191,9 +11215,12 @@ function generarFilasProgramadosTomaSimple() {
     let html = '';
     let item = 1;
 
-    // Filtrar solo los usuarios programados de la toma actual
-    const programadosDeEstaToma = usuariosProgramados.filter(u => 
-        u._tomaOrigen === window.tomaActualSeleccionada
+    // Filtrar solo los usuarios programados de la toma actual (y, si el panel
+    // se abrió acotado a un cultivo, solo los de ese cultivo).
+    const cf = _cultivoFiltroNoAptos ? _cultivoFiltroNoAptos.toString().trim().toUpperCase() : null;
+    const programadosDeEstaToma = usuariosProgramados.filter(u =>
+        u._tomaOrigen === window.tomaActualSeleccionada &&
+        (!cf || (u._cultivoProgramado || u.cultivo1 || '').toString().trim().toUpperCase() === cf)
     );
 
     programadosDeEstaToma.forEach((usuario) => {
@@ -11401,11 +11428,27 @@ function cerrarPanelNoAptosTomaSimple() {
     if (contenedor) {
         contenedor.style.transition = "opacity 0.3s ease";
         contenedor.style.opacity = "0";
-        
+
         setTimeout(() => {
             contenedor.remove();
         }, 300);
     }
+    // Si este panel se abrió desde "Área Semana" (botón embebido), refrescarla
+    // al cerrar para que el/los usuario(s) recién programados aparezcan ya
+    // habilitados y marcados, sin que el operador tenga que reabrirla a mano.
+    refrescarModalAreaSemanaSiAbierto();
+}
+
+// Vuelve a abrir (recalculando desde cero) el modal de "Área Semana" que
+// estuviera abierto antes de entrar a "Programar no aptos de este cultivo" —
+// así el checkbox del usuario recién programado aparece ya habilitado/marcado
+// de inmediato, sin cerrar y reabrir a mano.
+function refrescarModalAreaSemanaSiAbierto() {
+    const input = window._inputAreaSemanaActivo;
+    if (!input || !document.body.contains(input)) return;
+    if (!document.getElementById('modalSelectorUsuarios')) return;
+    cerrarSelectorUsuarios();
+    abrirSelectorUsuariosCultivo(input);
 }
 function actualizarSumatoriaToma(nombreToma) {
     // Buscar todas las filas de esta toma (excluyendo la fila de sumatoria)
@@ -14983,19 +15026,6 @@ function mostrarAvanceSiembraConTomaEspecifica(tomaSeleccionada, resumen, qMax) 
                     margin-right:5px;
                 ">
                 🔄 Cambiar Grupo/Toma
-            </button>
-            <button onclick="abrirProgramacionNoAptosToma()"
-                style="
-                    background:#2e7d32;
-                    color:white;
-                    border:none;
-                    padding:6px 12px;
-                    border-radius:6px;
-                    cursor:pointer;
-                    font-weight:bold;
-                    margin-right:5px;
-                ">
-                ➕ Programar Usuarios No Aptos
             </button>
            <button onclick="solicitarDiasTurnados()"
                 style="
@@ -20500,6 +20530,11 @@ function reconciliarNoAptosEnSnapshot(toma, cultivo) {
 }
 
 async function abrirSelectorUsuariosCultivo(input) {
+    // Referencia guardada para poder refrescar este mismo modal (checkboxes +
+    // contador) después de programar/deshacer un usuario no apto desde el
+    // panel embebido (ver abrirProgramacionNoAptosCultivo), sin que el
+    // operador tenga que cerrar y volver a abrir "Área Semana" a mano.
+    window._inputAreaSemanaActivo = input;
     const fila = input.closest('tr');
     if (!fila) { console.error('G3: No se encontró la fila TR'); return; }
 
@@ -20616,7 +20651,10 @@ async function abrirSelectorUsuariosCultivo(input) {
                         onchange="document.querySelectorAll('.chk-usuario-g3:not([disabled])').forEach(c=>c.checked=this.checked);actualizarContadorG3()">
                     Seleccionar todos los habilitados
                 </label>
-                <span style="font-size:11px;color:#718096;">No aptos solo se habilitan si fueron programados en "Programar Usuarios No Aptos"</span>
+                <button type="button" onclick="abrirProgramacionNoAptosCultivo('${toma.replace(/'/g, "\\'")}','${cultivo.replace(/'/g, "\\'")}')"
+                    style="margin-left:auto;padding:6px 12px;background:#2e7d32;color:white;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">
+                    ➕ Programar no aptos de este cultivo
+                </button>
             </div>
             <div style="padding:10px 20px 0;background:#f4f5f7;">
                 <input type="text" id="buscadorUsuariosAreaSemana" placeholder="🔎 Buscar por nombre o apellido..."
