@@ -6302,16 +6302,71 @@ const COMISIONES = {
 
         async function _abrirVistaPreviaPlanoA2(datosPlano) {
             _cerrarVistaPreviaPlanoA2();
-            _previaPlanoA2Estado = { datosPlano, orientacion: datosPlano.orientacionInicial || 'horizontal', bboxOverride: null };
+
+            // Categorías de Derecho y órdenes de canal que de verdad aparecen
+            // en ESTE plano (toma/ámbito elegido) — la UI de filtros solo
+            // ofrece checkboxes para lo que existe acá, igual criterio que ya
+            // usa la leyenda del propio plano (ver _dibujarLeyendaPlanoA2).
+            // Todo arranca activado (checked) para que el plano se vea igual
+            // que antes de tener filtros; el usuario apaga lo que no quiere ver.
+            const categoriasDerechoPresentes = Array.from(new Set((datosPlano.predios || []).map((p) =>
+                clasificarDerechoPredioA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria)));
+            const ORDEN_CANAL_ORDEN_PLANO_A2 = ['L1', 'L2', 'L3', 'L4', 'L5'];
+            const canalesTodosPlanoA2 = (datosPlano.canales || []).concat(datosPlano.canalesTroncales || []);
+            const ordenesCanalPresentes = Array.from(new Set(canalesTodosPlanoA2.map((c) => (c.campos && c.campos.ORDEN) || '')))
+                .filter(Boolean)
+                .sort((a, b) => ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(a) - ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(b));
+
+            _previaPlanoA2Estado = {
+                datosPlano,
+                orientacion: datosPlano.orientacionInicial || 'horizontal',
+                bboxOverride: null,
+                filtros: {
+                    derecho: new Set(categoriasDerechoPresentes),
+                    canalOrdenes: new Set(ordenesCanalPresentes),
+                },
+            };
 
             const estiloBotonOrient = 'padding:8px 16px;border:2px solid #003876;background:white;color:#003876;font-weight:600;font-size:13px;cursor:pointer;';
+
+            const filtroDerechoHtml = categoriasDerechoPresentes.length ? `
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    <span style="font-size:11px;font-weight:700;color:#003876;letter-spacing:0.3px;">👥 USUARIOS / DERECHO</span>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                        ${categoriasDerechoPresentes.map((k) => `
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#333;cursor:pointer;">
+                                <input type="checkbox" checked onchange="_alternarFiltroPlanoA2('derecho','${k}',this.checked)">
+                                <span style="width:13px;height:13px;border-radius:3px;background:${DERECHO_PLANO_A2[k].fill};border:1.5px solid ${DERECHO_PLANO_A2[k].stroke};display:inline-block;"></span>
+                                ${DERECHO_PLANO_A2[k].etiqueta}
+                            </label>`).join('')}
+                    </div>
+                </div>` : '';
+            const filtroCanalHtml = ordenesCanalPresentes.length ? `
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    <span style="font-size:11px;font-weight:700;color:#003876;letter-spacing:0.3px;">🚰 INFRAESTRUCTURA DE RIEGO</span>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                        ${ordenesCanalPresentes.map((orden) => `
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#333;cursor:pointer;">
+                                <input type="checkbox" checked onchange="_alternarFiltroPlanoA2('canalOrdenes','${orden}',this.checked)">
+                                <span style="width:18px;height:3px;background:${COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666'};display:inline-block;"></span>
+                                Canal ${orden}
+                            </label>`).join('')}
+                    </div>
+                </div>` : '';
+            const filtrosHtml = (filtroDerechoHtml || filtroCanalHtml) ? `
+                <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-bottom:12px;padding:10px 14px;background:#f4f6f9;border:1px solid #dde3ea;border-radius:6px;">
+                    ${filtroDerechoHtml}${filtroCanalHtml}
+                </div>` : '';
+
             const modalHtml = `
                 <div id="modalVistaPreviaPlanoA2" class="modal-overlay active" style="z-index:99997;background:rgba(0,20,50,0.9);">
                     <div class="modal-container" style="max-width:1300px;max-height:94vh;overflow-y:auto;padding:20px;text-align:left;">
                         <h3 style="margin-bottom:4px;">🖨️ Vista previa — Plano de Predios</h3>
                         <div style="font-size:12px;color:#666;margin-bottom:14px;">
-                            Arrastra sobre el plano para elegir el área de impresión (opcional). Elige la orientación que ocupe mejor la hoja según la forma del predio/bloque.
+                            Arrastra sobre el plano para elegir el área de impresión (opcional). Elige la orientación que ocupe mejor la hoja según la forma del predio/bloque. Usa los filtros para mostrar u ocultar categorías de usuarios/derecho e infraestructura de riego.
                         </div>
+
+                        ${filtrosHtml}
 
                         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
                             <div style="display:flex;">
@@ -6361,9 +6416,12 @@ const COMISIONES = {
             if (estadoTexto) estadoTexto.textContent = 'Generando…';
             _seleccionAreaPlanoA2Temp = null;
 
-            const resultado = await _dibujarPlanoPrediosA2Canvas(Object.assign({}, estado.datosPlano, {
+            const datosFiltrados = _filtrarDatosParaDibujoPlanoA2(estado.datosPlano, estado.filtros);
+            const resultado = await _dibujarPlanoPrediosA2Canvas(Object.assign({}, estado.datosPlano, datosFiltrados, {
                 orientacion: estado.orientacion,
                 bboxOverride: estado.bboxOverride,
+                prediosCompletos: estado.datosPlano.predios,
+                canalesCompletos: estado.datosPlano.canales,
             }));
             estado.canvas = resultado.canvas;
             estado.bbox = resultado.bbox;
@@ -6400,6 +6458,31 @@ const COMISIONES = {
             if (btnAreaCompleta) btnAreaCompleta.style.display = estado.bboxOverride ? 'inline-block' : 'none';
             const btnRecortar = document.getElementById('btnRecortarAreaPlanoA2');
             if (btnRecortar) btnRecortar.disabled = true;
+        }
+
+        // Aplica los filtros de la vista previa (categoría de Derecho de cada
+        // predio, orden de cada canal) al conjunto de datos ANTES de
+        // dibujarlos — el encuadre/bbox sigue calculándose aparte sobre el
+        // conjunto completo (ver `prediosCompletos`/`canalesCompletos` en
+        // _dibujarPlanoPrediosA2Canvas) para que el plano no cambie de marco
+        // al prender/apagar un filtro.
+        function _filtrarDatosParaDibujoPlanoA2(datosPlano, filtros) {
+            const predios = (datosPlano.predios || []).filter((p) =>
+                filtros.derecho.has(clasificarDerechoPredioA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria));
+            const ordenActivo = (c) => filtros.canalOrdenes.has((c.campos && c.campos.ORDEN) || '');
+            const canales = (datosPlano.canales || []).filter(ordenActivo);
+            const canalesTroncales = (datosPlano.canalesTroncales || []).filter(ordenActivo);
+            return { predios, canales, canalesTroncales };
+        }
+
+        // Prende/apaga una categoría de filtro (checkbox de la vista previa)
+        // y regenera el canvas con la selección actualizada.
+        function _alternarFiltroPlanoA2(tipo, valor, activo) {
+            const estado = _previaPlanoA2Estado;
+            if (!estado || !estado.filtros || !estado.filtros[tipo]) return;
+            if (activo) estado.filtros[tipo].add(valor);
+            else estado.filtros[tipo].delete(valor);
+            _regenerarVistaPreviaPlanoA2();
         }
 
         function _cambiarOrientacionVistaPreviaPlanoA2(orientacion) {
@@ -6522,7 +6605,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, orientacion = 'horizontal', bboxOverride = null }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -6565,8 +6648,18 @@ const COMISIONES = {
                 bbox.minEasting -= colchonManualE; bbox.maxEasting += colchonManualE;
                 bbox.minNorthing -= colchonManualN; bbox.maxNorthing += colchonManualN;
             } else {
-                const bboxPredios = calcularBboxUtmPlanoA2(predios.map((p) => p.coordenadas), true);
-                const bboxCanales = canales.length ? calcularBboxUtmPlanoA2(canales.map((c) => c.geom.coords), false) : null;
+                // El encuadre automático se calcula sobre el conjunto COMPLETO
+                // de predios/canales (`*Completos`, sin filtrar por Derecho u
+                // orden de canal) cuando el llamador los provee — así, al
+                // activar/desactivar un filtro en la vista previa, el plano
+                // no "salta" de encuadre; solo aparecen/desaparecen los
+                // elementos filtrados dentro del mismo marco. Si no vienen
+                // (otros llamadores), se usa el propio `predios`/`canales`
+                // recibido, igual que antes.
+                const prediosParaBbox = prediosCompletos || predios;
+                const canalesParaBbox = canalesCompletos || canales;
+                const bboxPredios = calcularBboxUtmPlanoA2(prediosParaBbox.map((p) => p.coordenadas), true);
+                const bboxCanales = canalesParaBbox.length ? calcularBboxUtmPlanoA2(canalesParaBbox.map((c) => c.geom.coords), false) : null;
                 bbox = {
                     minEasting: Math.min(bboxPredios.minEasting, bboxCanales ? bboxCanales.minEasting : Infinity),
                     maxEasting: Math.max(bboxPredios.maxEasting, bboxCanales ? bboxCanales.maxEasting : -Infinity),
@@ -6746,22 +6839,28 @@ const COMISIONES = {
             }
 
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
-            //    paralelas a su lado/tramo más largo y con tamaño de fuente
-            //    proporcional al espacio real disponible (mismo criterio del
-            //    editor interactivo, adaptado a un plano estático).
+            //    paralelas a su lado/tramo más largo, con tamaño de fuente
+            //    compartido y ANTI-SOLAPE real: cada etiqueta reserva su
+            //    rectángulo aproximado (`_bboxTextoRotadoPlanoA2`) y una
+            //    etiqueta que chocaría con una ya colocada se compacta (o se
+            //    omite como último recurso) en vez de superponerse al vecino
+            //    — ver `assets/core/planoPrediosA2.js`. Prioridad de
+            //    colocación: canales primero (son pocos y son la referencia
+            //    física del plano), luego predios de mayor a menor tamaño —
+            //    los predios chicos y muy apretados son los que más se
+            //    compactan/omiten, que es justamente donde se producía el
+            //    amontonamiento.
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
             const FUENTE_MAX_PREDIO = 10;
+            const GAP_ETIQUETAS_PLANO_A2 = -2; // tolerancia negativa = deja un pequeño respiro entre etiquetas vecinas
+            const rectangulosOcupadosPlanoA2 = [];
             // Fuente ÚNICA para TODOS los predios del plano — nunca varía de
             // un predio a otro. Se calcula con el percentil 15 (no la
             // mediana) de la fuente "natural" de cada predio para que su UC
             // quepa, con un techo bajo — apunta a la densidad de texto del
             // plano de referencia (predios etiquetados con letra chica y
-            // pareja, sin pisarse entre vecinos). Los predios más chicos que
-            // ese percentil simplemente muestran su nombre/UC un poco
-            // ajustados o desbordando su propio polígono (nunca se omiten,
-            // ver más abajo) — mejor eso que una fuente uniforme demasiado
-            // grande que sature el plano.
+            // pareja, sin pisarse entre vecinos).
             const medidasPredios = predios.map((p) => {
                 const uc = (p.catastralKey || '').toString();
                 const nombre = nombreUsuarioPlanoA2(p.usuario);
@@ -6776,65 +6875,89 @@ const COMISIONES = {
                 ? fuentesNaturales[Math.floor(fuentesNaturales.length * 0.15)]
                 : FUENTE_MAX_PREDIO;
             fuentePredios = Math.max(6, Math.min(fuentePredios, FUENTE_MAX_PREDIO));
-            // Nombre y UC SIEMPRE se muestran juntos, para TODOS los predios
-            // — no solo cuando "caben" dentro del propio polígono. Un predio
-            // angosto es simplemente demasiado chico para su propia etiqueta
-            // a una fuente legible y pareja con el resto del plano; en vez de
-            // sacrificar el nombre (que es la información más importante), el
-            // texto puede sobresalir un poco de un polígono chico — igual
-            // criterio que ya se usaba como "último recurso" solo para la UC,
-            // ahora aplicado también al nombre. El nombre se parte en 2
-            // líneas balanceadas (nunca a mitad de palabra) solo si es largo,
-            // para no dejar una sola línea excesivamente ancha.
+            // El nombre se parte en 2 líneas balanceadas (nunca a mitad de
+            // palabra) solo si es largo, para no dejar una sola línea
+            // excesivamente ancha.
             const UMBRAL_PARTIR_NOMBRE_PLANO_A2 = 24;
-            medidasPredios.forEach(({ p, uc, nombre, medida }) => {
-                const textoUc = uc ? ('UC ' + uc) : '';
 
-                const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
-                const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
-                if (!centroPx) return;
-
-                let lineasNombre = [nombre];
-                if (nombre.length > UMBRAL_PARTIR_NOMBRE_PLANO_A2) {
-                    const partes = partirNombreEnDosLineas(nombre);
-                    if (partes[1]) lineasNombre = partes;
-                }
-                const lineas = textoUc ? lineasNombre.concat([textoUc]) : lineasNombre;
-
-                ctx.save();
-                ctx.translate(centroPx[0], centroPx[1]);
-                ctx.rotate(medida.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
-                const fuente = fuentePredios;
-                ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
-                ctx.fillStyle = '#002b52';
-                if (lineas.length === 1) {
-                    ctx.fillText(lineas[0], 0, 0);
-                } else {
-                    const alturaLinea = fuente * 1.15;
-                    const offsetInicial = -((lineas.length - 1) * alturaLinea) / 2;
-                    lineas.forEach((linea, i) => ctx.fillText(linea, 0, offsetInicial + i * alturaLinea));
-                }
-                ctx.restore();
-            });
+            // 6a) Canales primero — reservan su espacio con prioridad sobre
+            //     los predios (mismo criterio visual de siempre: rótulo
+            //     sobre una "píldora" del color del canal, en el punto medio
+            //     de su tramo más largo).
             canalesParaDibujo.forEach((c, idx) => {
                 const nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || '';
                 if (!nombreCanal) return;
-                // El rótulo se dibuja EN el punto medio del tramo más largo
-                // (medida.centroPx), no en el punto medio del arreglo de
-                // vértices — así queda siempre paralelo a la dirección real
-                // de la línea justo donde se decide ponerlo, aunque el canal
-                // curvee. Sobre una "píldora" del mismo color de la línea
-                // (fondo claro, texto con el color real) — mismo criterio
-                // visual del plano de referencia.
                 const medida = medirEtiquetaPlanoA2(_coordsVisiblesPlanoA2(c.geom.coords), false, proyector.proyectar);
                 if (medida.longitudPx < 12 || !medida.centroPx) return;
                 let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
                 if (fuente < 6.5) return;
                 fuente = Math.min(fuente, 10);
+                ctx.font = '700 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                const anchoTexto = ctx.measureText(nombreCanal).width;
+                const padX = fuente * 0.55, padY = fuente * 0.3;
+                const wPildora = anchoTexto + padX * 2, hPildora = fuente + padY * 2;
+                const anguloRad = medida.anguloCss * Math.PI / 180; // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
+                const bboxCanal = _bboxTextoRotadoPlanoA2(medida.centroPx[0], medida.centroPx[1], wPildora, hPildora, anguloRad);
+                if (_colisionaConOcupadosPlanoA2(bboxCanal, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2)) return;
+                rectangulosOcupadosPlanoA2.push(bboxCanal);
                 const orden = (c.campos && c.campos.ORDEN) || '';
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
-                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, medida.anguloCss * Math.PI / 180, nombreCanal, colorLinea, fuente);
+                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, anguloRad, nombreCanal, colorLinea, fuente);
             });
+
+            // 6b) Predios — de mayor a menor tamaño (los más grandes reclaman
+            //     su espacio primero). Si el nombre+UC completo choca con una
+            //     etiqueta ya colocada, se compacta a solo la UC; si ni así
+            //     entra sin pisar al vecino, se omite — mejor un predio sin
+            //     rótulo que texto ilegible cruzando dos parcelas.
+            medidasPredios
+                .slice()
+                .sort((a, b) => b.medida.longitudPx - a.medida.longitudPx)
+                .forEach(({ p, uc, nombre, medida }) => {
+                    const textoUc = uc ? ('UC ' + uc) : '';
+                    const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
+                    const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
+                    if (!centroPx) return;
+
+                    let lineasNombre = [nombre];
+                    if (nombre.length > UMBRAL_PARTIR_NOMBRE_PLANO_A2) {
+                        const partes = partirNombreEnDosLineas(nombre);
+                        if (partes[1]) lineasNombre = partes;
+                    }
+                    const fuente = fuentePredios;
+                    ctx.font = '600 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                    const anguloRad = medida.anguloCss * Math.PI / 180;
+                    const alturaLinea = fuente * 1.15;
+
+                    const intentarColocar = (lineas) => {
+                        const anchoMax = lineas.reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0);
+                        const alto = lineas.length * alturaLinea;
+                        const bbox = _bboxTextoRotadoPlanoA2(centroPx[0], centroPx[1], anchoMax, alto, anguloRad);
+                        return _colisionaConOcupadosPlanoA2(bbox, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2) ? null : bbox;
+                    };
+
+                    const lineasCompletas = textoUc ? lineasNombre.concat([textoUc]) : lineasNombre;
+                    let lineas = lineasCompletas;
+                    let bbox = intentarColocar(lineas);
+                    if (!bbox && textoUc) {
+                        lineas = [textoUc]; // no entra completo: compactar al identificador mínimo (solo UC)
+                        bbox = intentarColocar(lineas);
+                    }
+                    if (!bbox) return; // ni la versión compacta entra sin pisar a un vecino: se omite
+
+                    rectangulosOcupadosPlanoA2.push(bbox);
+                    ctx.save();
+                    ctx.translate(centroPx[0], centroPx[1]);
+                    ctx.rotate(anguloRad);
+                    ctx.fillStyle = '#002b52';
+                    if (lineas.length === 1) {
+                        ctx.fillText(lineas[0], 0, 0);
+                    } else {
+                        const offsetInicial = -((lineas.length - 1) * alturaLinea) / 2;
+                        lineas.forEach((linea, i) => ctx.fillText(linea, 0, offsetInicial + i * alturaLinea));
+                    }
+                    ctx.restore();
+                });
 
             // 7) Leyenda (esquina inferior izquierda, dentro del marco) y
             //    escala gráfica (esquina inferior derecha, simétrica a la

@@ -311,6 +311,46 @@ function partirNombreEnDosLineas(nombre) {
     return [palabras.slice(0, mejorCorte).join(' '), palabras.slice(mejorCorte).join(' ')];
 }
 
+// ── Anti-solape de etiquetas del plano (predios + canales) ──
+// Un plano con muchos predios chicos y angostos, cada uno rotado a su
+// propio ángulo, termina con nombres cruzándose entre parcelas vecinas si
+// se dibujan todos sin más — el motivo real de que el plano se vea
+// "desordenado". En vez de una sola fuente uniforme forzada en todos, cada
+// etiqueta reserva su propio rectángulo (aproximado como el bounding box
+// SIN rotar del texto ya rotado — más simple que una intersección de
+// rectángulos rotados, y suficientemente ajustado para este uso) en una
+// lista compartida; una etiqueta que solaparía una ya colocada
+// simplemente no se dibuja, en vez de superponerse.
+
+// Bounding box (sin rotar) de un bloque de texto de anchoPx×altoPx
+// centrado en (cx,cy) y rotado anguloRad — las 4 esquinas rotadas, min/max.
+function _bboxTextoRotadoPlanoA2(cx, cy, anchoPx, altoPx, anguloRad) {
+    const hw = anchoPx / 2, hh = altoPx / 2;
+    const cosA = Math.cos(anguloRad), sinA = Math.sin(anguloRad);
+    const esquinas = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([dx, dy]) => [
+        cx + dx * cosA - dy * sinA,
+        cy + dx * sinA + dy * cosA,
+    ]);
+    const xs = esquinas.map((p) => p[0]), ys = esquinas.map((p) => p[1]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+// true si dos bbox se solapan más que un margen chico de tolerancia (en px) —
+// sin margen, dos etiquetas apenas tocándose por un borde ya se descartarían
+// una a la otra, más estricto de lo necesario.
+function _seSolapanBBoxPlanoA2(a, b, tolerancia) {
+    const t = tolerancia || 0;
+    return (a.x0 + t) < (b.x1 - t) && (a.x1 - t) > (b.x0 + t) && (a.y0 + t) < (b.y1 - t) && (a.y1 - t) > (b.y0 + t);
+}
+
+// true si el rectángulo `rect` solapa a CUALQUIERA de los ya colocados en
+// `ocupados` (array de bbox {x0,y0,x1,y1}) — la lista se pasa por
+// referencia y el llamador decide cuándo agregar `rect` a ella (solo si
+// termina dibujando la etiqueta).
+function _colisionaConOcupadosPlanoA2(rect, ocupados, tolerancia) {
+    return ocupados.some((o) => _seSolapanBBoxPlanoA2(rect, o, tolerancia));
+}
+
 // Mayor número "redondo" (1, 2 o 5 × una potencia de 10, en metros) que
 // cabe dentro de `anchoDeseadoPx * metrosPorPx` sin excederlo — para que
 // la barra de escala gráfica del plano represente una distancia legible
