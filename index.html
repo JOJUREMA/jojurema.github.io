@@ -1493,6 +1493,10 @@
                 📤 Importar Polígonos (KML/KMZ)
             </button>
             <input type="file" id="inputImportarPoligonosA2" accept=".kml,.kmz" style="display:none;" onchange="importarPoligonosFormatoA2Levantamiento(event)">
+            <button class="btn btn-primary" id="btnImportarFechaDeudaFormatoA2Levantamiento" onclick="document.getElementById('inputImportarFechaDeudaA2').click()" style="width: 100%; margin-top: 12px;" title="Sube el Excel de campo con 'Última fecha de riego' y deuda por usuario (hoja con el listado completo) — se cruza por Nombre y Apellidos, completa 'Última fecha de riego' (mes y año) y agrega la deuda en Observaciones anteponiendo S/.">
+                📤 Importar Fecha de Riego / Deuda (Excel)
+            </button>
+            <input type="file" id="inputImportarFechaDeudaA2" accept=".xlsx,.xls" style="display:none;" onchange="importarFechaDeudaFormatoA2Levantamiento(event)">
             <button class="btn btn-primary" id="btnAvanceFormatoA2Levantamiento" onclick="mostrarPanelAvanceFormatoA2Levantamiento()" style="width: 100%; margin-top: 12px;" title="Avance del levantamiento de observaciones por toma y consolidado, con exportación a Excel">
                 📊 Avance Levantamiento A-2
             </button>
@@ -5594,6 +5598,235 @@ const COMISIONES = {
                 alert(mensaje);
             } catch (e) {
                 console.error('Error al importar polígonos del Formato A-2 (Levantamiento):', e);
+                alert('No se pudo leer el archivo: ' + (e.message || e));
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+                event.target.value = '';
+            }
+        }
+
+        // ── Importar "Última fecha de riego" + deuda (Observaciones) desde el
+        //    Excel de campo del Formato A-2 ──
+        // El Excel trae, por usuario, UNA fila por cada visita/observación (a
+        // veces varias, una por cultivo/parcela) con su propia "ULTIMA FECHA DE
+        // RIEGO" y su propia deuda — cuando hay más de una, se usa la más
+        // reciente (y, si esa fila no trae deuda, se busca hacia atrás en el
+        // tiempo la fila más cercana que sí la tenga). No se toca ningún otro
+        // campo del registro.
+        const _A2_MESES_TEXTO = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+        const _A2_MES_NUM = { ENERO: 1, FEBRERO: 2, MARZO: 3, ABRIL: 4, MAYO: 5, JUNIO: 6, JULIO: 7, AGOSTO: 8, SETIEMBRE: 9, SEPTIEMBRE: 9, OCTUBRE: 10, NOVIEMBRE: 11, DICIEMBRE: 12 };
+        const _A2_MES_NOMBRE = { 1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto', 9: 'Setiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre' };
+
+        function _a2ExtraerMesDeTexto(texto) {
+            const up = (texto || '').toString().toUpperCase();
+            for (const m of _A2_MESES_TEXTO) { if (up.includes(m)) return _A2_MES_NUM[m]; }
+            return null;
+        }
+
+        // Interpreta el par de columnas "ULTIMA FECHA DE RIEGO" (semana/mes en
+        // texto + fecha u año) de una fila. Dos formatos reales conviven en el
+        // mismo Excel: "DD.MM.AA" (fecha exacta, la más reciente en la
+        // práctica) y "MES" + "AAAA" (más antiguas, sin día). Devuelve null si
+        // no hay nada usable en esa fila.
+        function _a2ParsearFechaRiego(eTexto, fTexto) {
+            if (!fTexto) return null;
+            const f = fTexto.toString().trim();
+            // DD.MM.AA o DD.MM.A (un solo dígito de año es un typo real visto en
+            // el archivo — ej. "15.07.6" por "15.07.26"; se asume década 20xx).
+            const mFecha = f.match(/^(\d{1,2})\.(\d{1,2})\.(\d{1,2})$/);
+            if (mFecha) {
+                const day = parseInt(mFecha[1], 10);
+                const month = parseInt(mFecha[2], 10);
+                const anioTxt = mFecha[3].length === 1 ? ('2' + mFecha[3]) : mFecha[3];
+                const year = 2000 + parseInt(anioTxt, 10);
+                if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                    return { year, month, day, ordinal: year * 372 + month * 31 + day };
+                }
+            }
+            // Año suelto (4 dígitos) + nombre de mes en la otra columna.
+            const mAnio = f.match(/^(\d{4})$/);
+            if (mAnio) {
+                const year = parseInt(mAnio[1], 10);
+                const month = _a2ExtraerMesDeTexto(eTexto);
+                if (!month) return null; // sin mes reconocible, no se puede resumir a "mes y año"
+                return { year, month, day: 1, ordinal: year * 372 + month * 31 + 1 };
+            }
+            return null;
+        }
+
+        // Rellena las celdas de rangos combinados (merge) de una hoja de SheetJS
+        // con el valor de su celda ancla — sheet_to_json(header:1) solo trae el
+        // valor en la celda superior-izquierda del rango, dejando el resto
+        // vacío; sin este relleno se pierde a qué usuario pertenece cada fila
+        // "extra" de fecha/deuda.
+        function _a2RellenarMerges(data, merges) {
+            (merges || []).forEach((m) => {
+                const anchor = (data[m.s.r] || [])[m.s.c];
+                if (anchor === undefined || anchor === '') return;
+                for (let r = m.s.r; r <= m.e.r; r++) {
+                    data[r] = data[r] || [];
+                    for (let c = m.s.c; c <= m.e.c; c++) {
+                        if (data[r][c] === undefined || data[r][c] === '') data[r][c] = anchor;
+                    }
+                }
+            });
+        }
+
+        // Agrupa las filas (ya con merges rellenados) en bloques por usuario —
+        // columnas fijas A=N°Orden(0) B=Nombre(1) C=Cultivo(2) D=Área(3)
+        // E=mes/semana(4) F=año o fecha(5) G=deuda(6), formato de la hoja
+        // consolidada "Margen Izquierda"/"<Nombre comisión>" del Excel oficial
+        // de campo. Cada fila nueva con un Nombre distinto al bloque anterior
+        // abre un usuario nuevo; las filas siguientes con el mismo nombre
+        // (repetido o heredado de un merge) son observaciones adicionales del
+        // mismo usuario (otra parcela/visita).
+        function _a2AgruparFilasPorUsuario(data, filaInicio) {
+            const usuarios = [];
+            let actual = null;
+            for (let i = filaInicio; i < data.length; i++) {
+                const row = data[i] || [];
+                const nombre = (row[1] || '').toString().trim();
+                if (!nombre) continue;
+                if (!actual || actual.nombre !== nombre) {
+                    actual = { nombre, entradas: [] };
+                    usuarios.push(actual);
+                }
+                const fecha = _a2ParsearFechaRiego(row[4], row[5]);
+                // "-" es la convención de la planilla para "sin deuda registrada"
+                // en esa fila (no cero) — parseFloat("-") da NaN, que sin este
+                // filtro se hubiera escrito como "S/. NaN" en Observaciones.
+                const deudaTxt = (row[6] === undefined || row[6] === null) ? '' : row[6].toString().trim();
+                const deudaNum = (deudaTxt && deudaTxt !== '-') ? parseFloat(deudaTxt.replace(/,/g, '')) : NaN;
+                const deuda = Number.isFinite(deudaNum) ? deudaNum : null;
+                if (fecha || deuda !== null) actual.entradas.push({ ...fecha, deuda, filaExcel: i + 1 });
+            }
+            return usuarios;
+        }
+
+        // Encuentra la fila donde empiezan los datos reales: la primera fila
+        // cuya columna A sea exactamente "1" (N° Orden 1) con un nombre en B —
+        // más robusto que depender del texto exacto del encabezado, que varía
+        // de comisión en comisión.
+        function _a2EncontrarFilaInicioDatos(data) {
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i] || [];
+                if ((row[0] || '').toString().trim() === '1' && (row[1] || '').toString().trim().length > 2) return i;
+            }
+            return -1;
+        }
+
+        async function importarFechaDeudaFormatoA2Levantamiento(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            if (!window.CusshmiDatos) { alert('No hay conexión con Supabase. Intenta de nuevo en un momento.'); event.target.value = ''; return; }
+
+            const btn = document.getElementById('btnImportarFechaDeudaFormatoA2Levantamiento');
+            const textoOriginal = btn ? btn.textContent : '';
+            if (btn) { btn.disabled = true; btn.textContent = '📤 Leyendo archivo…'; }
+
+            try {
+                const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+
+                // La hoja con el listado completo (una fila por usuario/parcela,
+                // sin repetir por toma) se llama como la comisión — "Margen
+                // Izquierda" en el Excel de esta comisión. Si no se encuentra por
+                // ese nombre exacto, se avisa en vez de adivinar una hoja
+                // equivocada (las pestañas por toma repiten los mismos usuarios y
+                // duplicarían las filas).
+                const comisionKey = localStorage.getItem('cusshmi_comision') || 'MARGEN_IZQUIERDA';
+                const nombreComisionCorto = (COMISIONES[comisionKey] && COMISIONES[comisionKey].nombre || '').replace(/^COMISIÓN DE (USUARIOS DEL )?(SUB\s?SECTOR HIDRÁULICO|SUBSECTOR HIDRÁULICO)\s*/i, '').trim();
+                const candidatos = [nombreComisionCorto, 'Margen Izquierda'].filter(Boolean);
+                let nombreHoja = wb.SheetNames.find((n) => candidatos.some((c) => n.trim().toLowerCase() === c.toLowerCase()));
+                if (!nombreHoja) {
+                    alert('No se encontró en el Excel una hoja llamada "' + (nombreComisionCorto || 'Margen Izquierda') + '" (el listado completo, sin repetir por toma).\n\nHojas disponibles: ' + wb.SheetNames.join(', '));
+                    return;
+                }
+
+                const ws = wb.Sheets[nombreHoja];
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+                _a2RellenarMerges(data, ws['!merges']);
+
+                const filaInicio = _a2EncontrarFilaInicioDatos(data);
+                if (filaInicio < 0) {
+                    alert('No se pudo ubicar dónde empiezan los datos en la hoja "' + nombreHoja + '" (se busca la fila con N° Orden = 1).');
+                    return;
+                }
+
+                const usuariosExcel = _a2AgruparFilasPorUsuario(data, filaInicio);
+                if (usuariosExcel.length === 0) {
+                    alert('No se encontró ningún usuario con datos en la hoja "' + nombreHoja + '".');
+                    return;
+                }
+
+                // Por usuario: la fecha más reciente (mayor "ordinal"), y la
+                // deuda de la fila con fecha más reciente que SÍ tenga deuda
+                // (si la más reciente no la tiene, se busca hacia atrás).
+                const resueltos = usuariosExcel.map((u) => {
+                    const conFecha = u.entradas.filter((e) => e.ordinal !== undefined).sort((a, b) => b.ordinal - a.ordinal);
+                    const masReciente = conFecha[0] || null;
+                    const conDeuda = conFecha.find((e) => e.deuda !== null) || u.entradas.find((e) => e.deuda !== null) || null;
+                    return {
+                        nombre: u.nombre,
+                        mesAnio: masReciente ? (_A2_MES_NOMBRE[masReciente.month] + ' ' + masReciente.year) : null,
+                        deuda: conDeuda ? conDeuda.deuda : null,
+                    };
+                });
+
+                const resultadoRegistros = await CusshmiDatos.cargarFormatoA2LevantamientoParaExportar(comisionKey);
+                if (!resultadoRegistros.ok) { alert('⚠️ No se pudo cargar los registros de Formato A-2: ' + resultadoRegistros.error); return; }
+                const registros = resultadoRegistros.registros || [];
+                if (registros.length === 0) {
+                    alert('No hay registros de Formato A-2 (Levantamiento) sincronizados todavía — sincroniza el Excel primero.');
+                    return;
+                }
+
+                function normNombre(v) { return (v || '').toString().replace(/,/g, ' ').trim().toUpperCase().replace(/\s+/g, ' '); }
+
+                let actualizados = 0, conFechaSinDeuda = 0, conDeudaSinFecha = 0;
+                const sinMatch = [];
+                const sinDatoUtil = [];
+                for (const r of resueltos) {
+                    if (!r.mesAnio && r.deuda === null) { sinDatoUtil.push(r.nombre); continue; }
+                    const registro = registros.find((reg) => normNombre(reg.apellidos_nombres) === normNombre(r.nombre));
+                    if (!registro) { sinMatch.push(r.nombre); continue; }
+
+                    const datosParciales = { id: registro.id };
+                    if (r.mesAnio) datosParciales.ultimaFechaRiego = r.mesAnio;
+                    if (r.deuda !== null) {
+                        const deudaTexto = 'S/. ' + r.deuda.toFixed(2);
+                        const previo = (registro.observaciones || '').toString().trim();
+                        datosParciales.observaciones = previo ? (previo + ' - ' + deudaTexto) : deudaTexto;
+                    }
+                    if (r.mesAnio && r.deuda === null) conFechaSinDeuda++;
+                    if (!r.mesAnio && r.deuda !== null) conDeudaSinFecha++;
+
+                    const resultadoGuardar = await CusshmiDatos.guardarRegistroFormatoA2Levantamiento(datosParciales);
+                    if (resultadoGuardar.ok) {
+                        actualizados++;
+                        // refleja el cambio en el registro en memoria por si el
+                        // mismo nombre vuelve a aparecer (usuario con más de un
+                        // registro/toma) — no debería pasar con match por nombre,
+                        // pero evita pisar el "previo" de observaciones dos veces.
+                        registro.observaciones = datosParciales.observaciones ?? registro.observaciones;
+                    }
+                }
+
+                _cacheRegistrosExportarPoligonosA2 = null; // fuerza recarga en el próximo export/selector
+
+                let mensaje = '✅ Registros actualizados: ' + actualizados + ' de ' + resueltos.length + ' usuarios del Excel (hoja "' + nombreHoja + '").\n\n';
+                if (conFechaSinDeuda > 0) mensaje += 'ℹ️ ' + conFechaSinDeuda + ' solo tenían fecha (sin deuda en el Excel) — Observaciones no se tocó.\n';
+                if (conDeudaSinFecha > 0) mensaje += 'ℹ️ ' + conDeudaSinFecha + ' solo tenían deuda (sin fecha reconocible) — Última fecha de riego no se tocó.\n';
+                if (sinDatoUtil.length > 0) {
+                    mensaje += '\n⚠️ ' + sinDatoUtil.length + ' usuario(s) del Excel sin fecha ni deuda utilizable (revisar a mano, ej. "NO FIGURA" o datos incompletos en esa fila):\n' +
+                        sinDatoUtil.slice(0, 20).join(', ') + (sinDatoUtil.length > 20 ? '… (+' + (sinDatoUtil.length - 20) + ' más)' : '');
+                }
+                if (sinMatch.length > 0) {
+                    mensaje += '\n\n❌ ' + sinMatch.length + ' sin coincidencia en el Formato A-2 de esta comisión (revisar el nombre exacto):\n' +
+                        sinMatch.slice(0, 20).join(', ') + (sinMatch.length > 20 ? '… (+' + (sinMatch.length - 20) + ' más)' : '');
+                }
+                alert(mensaje);
+            } catch (e) {
+                console.error('Error al importar fecha de riego / deuda del Formato A-2 (Levantamiento):', e);
                 alert('No se pudo leer el archivo: ' + (e.message || e));
             } finally {
                 if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
