@@ -6744,9 +6744,14 @@ const COMISIONES = {
             //    realmente muestra, igual criterio ya aplicado a canales.
             const alphaRelleno = conSatelite ? 0.6 : 1;
             const categoriasDerechoPresentes = new Set();
+            // Categoría de cada predio, guardada para reusarla en la etiqueta
+            // (más abajo, sección 6b) sin volver a cruzar contra el Padrón A-1
+            // / Formato A-2 — mismo resultado, un solo cálculo.
+            const categoriaPorPredioPlanoA2 = new Map();
             predios.forEach((p) => {
                 const clasif = clasificarDerechoPredioA2(p, padronA1Rows, formatoA2Rows);
                 categoriasDerechoPresentes.add(clasif.categoria);
+                categoriaPorPredioPlanoA2.set(p, clasif.categoria);
                 const puntosPx = p.coordenadas.map((par) => {
                     const utm = latLonAUtm17S(par[1], par[0]); // [lon,lat] -> lat,lon
                     return proyector.proyectar(utm.easting, utm.northing);
@@ -6906,18 +6911,32 @@ const COMISIONES = {
             });
 
             // 6b) Predios — de mayor a menor tamaño (los más grandes reclaman
-            //     su espacio primero). Si el nombre+UC completo choca con una
-            //     etiqueta ya colocada, se compacta a solo la UC; si ni así
-            //     entra sin pisar al vecino, se omite — mejor un predio sin
-            //     rótulo que texto ilegible cruzando dos parcelas.
+            //     su espacio primero). Si el nombre+identificador completo
+            //     choca con una etiqueta ya colocada, se compacta a solo el
+            //     identificador; si ni así entra sin pisar al vecino, se
+            //     omite — mejor un predio sin rótulo que texto ilegible
+            //     cruzando dos parcelas.
+            //
+            //     El "identificador" es normalmente la UC — salvo para
+            //     A2-FUERA BLOQUE y SIN REGISTRO, donde la UC no es
+            //     confiable (predio fuera del bloque reconocido, o sin
+            //     ningún cruce contra Padrón A-1/Formato A-2): ahí se
+            //     muestran las coordenadas UTM del centroide en su lugar,
+            //     a pedido explícito, para poder ubicar a ese usuario en
+            //     campo sin depender de un dato catastral que no aplica.
+            const CATEGORIAS_CENTROIDE_EN_VEZ_DE_UC_PLANO_A2 = new Set(['A2_FUERA_BLOQUE', 'SIN_REGISTRO']);
             medidasPredios
                 .slice()
                 .sort((a, b) => b.medida.longitudPx - a.medida.longitudPx)
                 .forEach(({ p, uc, nombre, medida }) => {
-                    const textoUc = uc ? ('UC ' + uc) : '';
                     const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
                     const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
                     if (!centroPx) return;
+
+                    const categoria = categoriaPorPredioPlanoA2.get(p);
+                    const textoIdentificador = CATEGORIAS_CENTROIDE_EN_VEZ_DE_UC_PLANO_A2.has(categoria)
+                        ? (centroide ? ('E ' + Math.round(centroide.easting) + ' / N ' + Math.round(centroide.northing)) : '')
+                        : (uc ? ('UC ' + uc) : '');
 
                     let lineasNombre = [nombre];
                     if (nombre.length > UMBRAL_PARTIR_NOMBRE_PLANO_A2) {
@@ -6936,11 +6955,11 @@ const COMISIONES = {
                         return _colisionaConOcupadosPlanoA2(bbox, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2) ? null : bbox;
                     };
 
-                    const lineasCompletas = textoUc ? lineasNombre.concat([textoUc]) : lineasNombre;
+                    const lineasCompletas = textoIdentificador ? lineasNombre.concat([textoIdentificador]) : lineasNombre;
                     let lineas = lineasCompletas;
                     let bbox = intentarColocar(lineas);
-                    if (!bbox && textoUc) {
-                        lineas = [textoUc]; // no entra completo: compactar al identificador mínimo (solo UC)
+                    if (!bbox && textoIdentificador) {
+                        lineas = [textoIdentificador]; // no entra completo: compactar al identificador mínimo (UC, o el centroide en A2-Fuera Bloque/Sin Registro)
                         bbox = intentarColocar(lineas);
                     }
                     if (!bbox) return; // ni la versión compacta entra sin pisar a un vecino: se omite
