@@ -7298,9 +7298,9 @@ const COMISIONES = {
 
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
             ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
-            ctx.fillText('USUARIOS OBSERVADOS A2', x0 + 12, y0 + 18);
+            ctx.fillText('CENTROIDE DE POLÍGONOS', x0 + 12, y0 + 18);
             ctx.font = '400 11px Arial, sans-serif'; ctx.fillStyle = '#666666';
-            ctx.fillText('(Fuera de Bloque / Sin Registro)', x0 + 12, y0 + 34);
+            ctx.fillText('Usuarios Observados A2 — Fuera de Bloque / Sin Registro', x0 + 12, y0 + 34);
 
             const xN = x0 + 12, xNombre = x0 + 40, xEste = x0 + 280, xNorte = x0 + 370;
             let y = y0 + ALTO_TITULO;
@@ -7329,8 +7329,8 @@ const COMISIONES = {
                 ctx.font = '700 11px Arial, sans-serif';
                 ctx.fillText(truncarTexto(u.nombre, 30), xNombre, yCentro);
                 ctx.font = '400 11px Arial, sans-serif';
-                ctx.fillText(centroide ? Math.round(centroide.easting).toLocaleString('es-PE') : '—', xEste, yCentro);
-                ctx.fillText(centroide ? Math.round(centroide.northing).toLocaleString('es-PE') : '—', xNorte, yCentro);
+                ctx.fillText(centroide ? String(Math.round(centroide.easting)) : '—', xEste, yCentro);
+                ctx.fillText(centroide ? String(Math.round(centroide.northing)) : '—', xNorte, yCentro);
                 y += ALTO_FILA;
             }
             if (truncar) {
