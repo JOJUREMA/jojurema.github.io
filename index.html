@@ -7137,13 +7137,17 @@ const COMISIONES = {
 
             // 8) Cajas de la esquina superior derecha, apiladas de arriba
             //    hacia abajo: datos del predio (Formato A-2), coordenadas del
-            //    centroide (en su PROPIA caja, separada a pedido explícito) y
-            //    un "zoom" del polígono observado — cada función devuelve su
-            //    propio alto para que la siguiente se dibuje justo debajo.
+            //    centroide (en su PROPIA caja, separada a pedido explícito),
+            //    un "zoom" del polígono observado, y la tabla de Usuarios
+            //    Observados A2 — cada función devuelve su propio alto para
+            //    que la siguiente se dibuje justo debajo (mismo x0/ancho para
+            //    las 4, así se ven como una sola columna apilada, aunque en
+            //    la práctica solo una de las 2 primeras (resaltado vs. tabla
+            //    de observados) suele estar activa a la vez).
+            const ANCHO_CAJA_DATOS = 460;
+            const xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
+            let yCajaDatos = MARGEN + 15;
             if (usuarioResaltado) {
-                const ANCHO_CAJA_DATOS = 460;
-                const xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
-                let yCajaDatos = MARGEN + 15;
                 const altoDatos = _dibujarCuadroDatosUsuarioPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
                 yCajaDatos += altoDatos + 12;
 
@@ -7154,6 +7158,10 @@ const COMISIONES = {
                 yCajaDatos += altoCentroide + 12;
 
                 _dibujarZoomPoligonoObservadoPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
+            }
+            if (usuariosObservadosA2 && usuariosObservadosA2.length) {
+                const altoDisponibleTabla = ALTO_MAPA - MARGEN - 15 - yCajaDatos;
+                _dibujarTablaObservadosA2PlanoA2(ctx, xCajaDatos, yCajaDatos, usuariosObservadosA2, ANCHO_CAJA_DATOS, altoDisponibleTabla);
             }
 
             ctx.restore(); // deshace el translate(0, HEADER_H)
@@ -7261,6 +7269,75 @@ const COMISIONES = {
                 ctx.fillText(String(valor), x0 + 230, yCentro);
                 y += ALTO_FILA;
             });
+            ctx.restore();
+            return altoTotal;
+        }
+
+        // Tabla de "Usuarios Observados A2" — a diferencia de las cajas de
+        // arriba (pensadas para UN solo usuario resaltado), acá puede haber
+        // varios a la vez, así que se listan en filas: N°, Nombre y
+        // Apellidos, y las coordenadas UTM (Este/Norte) de su centroide. Si
+        // no caben todas en el espacio disponible (`altoDisponible`, hasta
+        // el margen inferior del mapa), se truncan y la última fila avisa
+        // cuántas quedaron fuera — mejor eso que desbordar el marco del plano.
+        function _dibujarTablaObservadosA2PlanoA2(ctx, x0, y0, usuarios, anchoCaja, altoDisponible) {
+            const ALTO_TITULO = 44, ALTO_HEADER = 24, ALTO_FILA = 22, PAD = 16;
+            const filasQueCaben = Math.max(0, Math.floor((altoDisponible - ALTO_TITULO - ALTO_HEADER - PAD) / ALTO_FILA));
+            const truncar = filasQueCaben > 0 && usuarios.length > filasQueCaben;
+            // Si hay que truncar, se reserva la última fila visible para el
+            // aviso "+ N más" en vez de cortar la lista sin avisar.
+            const nMostrados = truncar ? Math.max(0, filasQueCaben - 1) : Math.min(usuarios.length, filasQueCaben);
+            const nFilasDibujadas = nMostrados + (truncar ? 1 : 0);
+            const altoTotal = ALTO_TITULO + ALTO_HEADER + nFilasDibujadas * ALTO_FILA + PAD;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, anchoCaja, altoTotal);
+            ctx.strokeRect(x0, y0, anchoCaja, altoTotal);
+
+            ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+            ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
+            ctx.fillText('USUARIOS OBSERVADOS A2', x0 + 12, y0 + 18);
+            ctx.font = '400 11px Arial, sans-serif'; ctx.fillStyle = '#666666';
+            ctx.fillText('(Fuera de Bloque / Sin Registro)', x0 + 12, y0 + 34);
+
+            const xN = x0 + 12, xNombre = x0 + 40, xEste = x0 + 280, xNorte = x0 + 370;
+            let y = y0 + ALTO_TITULO;
+            ctx.fillStyle = '#eef1f5';
+            ctx.fillRect(x0 + 1, y, anchoCaja - 2, ALTO_HEADER);
+            const yHeaderCentro = y + ALTO_HEADER / 2;
+            ctx.font = '700 11px Arial, sans-serif'; ctx.fillStyle = '#444444';
+            ctx.fillText('N°', xN, yHeaderCentro);
+            ctx.fillText('NOMBRE Y APELLIDOS', xNombre, yHeaderCentro);
+            ctx.fillText('ESTE (m)', xEste, yHeaderCentro);
+            ctx.fillText('NORTE (m)', xNorte, yHeaderCentro);
+            y += ALTO_HEADER;
+
+            function truncarTexto(texto, max) {
+                const t = (texto || '').toString();
+                return t.length > max ? (t.slice(0, max - 1) + '…') : t;
+            }
+
+            for (let i = 0; i < nMostrados; i++) {
+                const u = usuarios[i];
+                const centroide = calcularCentroidePoligono(u.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })));
+                if (i % 2 === 1) { ctx.fillStyle = '#f7f8fa'; ctx.fillRect(x0 + 1, y, anchoCaja - 2, ALTO_FILA); }
+                const yCentro = y + ALTO_FILA / 2;
+                ctx.font = '400 11px Arial, sans-serif'; ctx.fillStyle = '#000000';
+                ctx.fillText(String(i + 1), xN, yCentro);
+                ctx.font = '700 11px Arial, sans-serif';
+                ctx.fillText(truncarTexto(u.nombre, 30), xNombre, yCentro);
+                ctx.font = '400 11px Arial, sans-serif';
+                ctx.fillText(centroide ? Math.round(centroide.easting).toLocaleString('es-PE') : '—', xEste, yCentro);
+                ctx.fillText(centroide ? Math.round(centroide.northing).toLocaleString('es-PE') : '—', xNorte, yCentro);
+                y += ALTO_FILA;
+            }
+            if (truncar) {
+                const yCentro = y + ALTO_FILA / 2;
+                ctx.font = '700 11px Arial, sans-serif'; ctx.fillStyle = '#8e44ad';
+                ctx.fillText('+ ' + (usuarios.length - nMostrados) + ' usuario(s) más — ver Formato A-2', xNombre, yCentro);
+            }
             ctx.restore();
             return altoTotal;
         }
