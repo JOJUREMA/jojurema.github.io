@@ -1493,7 +1493,7 @@
                 📤 Importar Polígonos (KML/KMZ)
             </button>
             <input type="file" id="inputImportarPoligonosA2" accept=".kml,.kmz" style="display:none;" onchange="importarPoligonosFormatoA2Levantamiento(event)">
-            <button class="btn btn-primary" id="btnImportarFechaDeudaFormatoA2Levantamiento" onclick="document.getElementById('inputImportarFechaDeudaA2').click()" style="width: 100%; margin-top: 12px;" title="Sube el Excel de campo con 'Última fecha de riego' y deuda por usuario (hoja con el listado completo) — se cruza por Nombre y Apellidos, completa 'Última fecha de riego' (mes y año) y agrega la deuda en Observaciones anteponiendo S/.">
+            <button class="btn btn-primary" id="btnImportarFechaDeudaFormatoA2Levantamiento" onclick="document.getElementById('inputImportarFechaDeudaA2').click()" style="width: 100%; margin-top: 12px;" title="Sube el Excel de campo con 'Última fecha de riego' y deuda por usuario (hoja con el listado completo) — se cruza por Nombre y Apellidos, completa 'Última fecha de riego' (mes y año) y agrega en Observaciones: 'Actualmente figura una deuda de S/. ...'">
                 📤 Importar Fecha de Riego / Deuda (Excel)
             </button>
             <input type="file" id="inputImportarFechaDeudaA2" accept=".xlsx,.xls" style="display:none;" onchange="importarFechaDeudaFormatoA2Levantamiento(event)">
@@ -5793,7 +5793,7 @@ const COMISIONES = {
                     const datosParciales = { id: registro.id };
                     if (r.mesAnio) datosParciales.ultimaFechaRiego = r.mesAnio;
                     if (r.deuda !== null) {
-                        const deudaTexto = 'S/. ' + r.deuda.toFixed(2);
+                        const deudaTexto = 'Actualmente figura una deuda de S/. ' + r.deuda.toFixed(2);
                         const previo = (registro.observaciones || '').toString().trim();
                         datosParciales.observaciones = previo ? (previo + ' - ' + deudaTexto) : deudaTexto;
                     }
