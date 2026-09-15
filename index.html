@@ -1548,7 +1548,7 @@
                     <select id="selectUsuarioPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
                         <option value="TODOS">Todos (plano general de la toma)</option>
                     </select>
-                    <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia. La opción "Usuarios observados A2" muestra a la vez el polígono medido/importado de TODOS los usuarios "A2-Fuera de Bloque" o "Sin Registro" de esta toma, cada uno con su nombre y las coordenadas de su centroide.</p>
+                    <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia. En la vista previa hay además un filtro para mostrar a la vez TODOS los usuarios observados "A2-Fuera de Bloque" o "Sin Registro" de esta toma.</p>
                 </div>
             </div>
             <div style="text-align:left; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; font-size:13px;">
@@ -5982,7 +5982,6 @@ const COMISIONES = {
             const filtrados = registros.filter((r) => r.toma_nombre === toma);
             const nombres = Array.from(new Set(filtrados.map((r) => r.apellidos_nombres).filter(Boolean))).sort();
             selectUsuario.innerHTML = '<option value="TODOS">Todos (plano general de la toma)</option>' +
-                '<option value="OBSERVADOS_A2">📐 Usuarios observados A2 (Fuera de Bloque / Sin Registro)</option>' +
                 nombres.map((n) => {
                     const tienePoligono = filtrados.some((r) => r.apellidos_nombres === n && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3);
                     return `<option value="${escapeHtml(n)}">${escapeHtml(n)}${tienePoligono ? ' 📐' : ''}</option>`;
@@ -6187,19 +6186,31 @@ const COMISIONES = {
                 // los predios sin cambios; esto es un resaltado adicional
                 // encima, no un reemplazo.
                 let usuarioResaltado = null;
-                let usuariosObservadosA2 = null;
-                if (esUnaToma && usuarioElegido === 'OBSERVADOS_A2') {
-                    // TODOS los usuarios observados (Formato A-2, con
-                    // polígono medido/importado) de esta toma que sean
-                    // "A2-Fuera de Bloque" (campo se_ubica_bloque='fuera') o
-                    // que no coincidan con NINGÚN predio del KML del bloque
-                    // (equivalente a "Sin Registro" frente al bloque) — para
-                    // estos 2 casos el predio del KML del bloque no
-                    // representa su ubicación real, así que se usa su propio
-                    // polígono observado en su lugar.
+                if (esUnaToma && usuarioElegido !== 'TODOS') {
+                    const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
+                    const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
+                    if (verticesUtm.length < 3) {
+                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido o importado en el Formato A-2 — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
+                        return;
+                    }
+                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario };
+                }
+
+                // Candidatos a "Usuarios Observados A2" (TODOS los usuarios
+                // observados del Formato A-2 de esta toma, con polígono
+                // medido/importado, que sean "A2-Fuera de Bloque" o que no
+                // coincidan con NINGÚN predio del KML del bloque — para esos
+                // 2 casos el predio del KML del bloque no representa su
+                // ubicación real, así que se usa su propio polígono
+                // observado en su lugar). Se calculan SIEMPRE (no dependen
+                // de qué usuario esté elegido arriba) — la vista previa
+                // decide si se muestran o no con un checkbox de filtro,
+                // igual que las categorías de Derecho/canales.
+                let usuariosObservadosA2Candidatos = [];
+                if (esUnaToma) {
                     const ucsKmlBloque = new Set(predios.map((p) => _normUcPlanoA2(p.catastralKey)).filter(Boolean));
                     const nombresKmlBloque = new Set(predios.map((p) => _normNombrePlanoA2(p.usuario)).filter(Boolean));
-                    usuariosObservadosA2 = formatoA2Rows
+                    usuariosObservadosA2Candidatos = formatoA2Rows
                         .filter((r) => r.toma_nombre === tomaNombre && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3)
                         .filter((r) => {
                             const esFuera = (r.se_ubica_bloque || '').toString().trim().toLowerCase() === 'fuera';
@@ -6210,18 +6221,6 @@ const COMISIONES = {
                             return !matcheaBloque; // sin cruce con el bloque KML = "Sin Registro"
                         })
                         .map((r) => ({ nombre: r.apellidos_nombres, verticesUtm: r.vertices_utm, registro: r }));
-                    if (usuariosObservadosA2.length === 0) {
-                        alert('No se encontró ningún usuario observado (Formato A-2, con polígono medido/importado) "A2-Fuera de Bloque" o "Sin Registro" en esta toma.');
-                        return;
-                    }
-                } else if (esUnaToma && usuarioElegido !== 'TODOS') {
-                    const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
-                    const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
-                    if (verticesUtm.length < 3) {
-                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido o importado en el Formato A-2 — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
-                        return;
-                    }
-                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario };
                 }
 
                 // bbox UTM de predios+canales (+el polígono resaltado, si lo
@@ -6249,14 +6248,12 @@ const COMISIONES = {
                         if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
                     });
                 }
-                if (usuariosObservadosA2) {
-                    usuariosObservadosA2.forEach((u) => u.verticesUtm.forEach((v) => {
-                        if (v.easting < bboxToma.minEasting) bboxToma.minEasting = v.easting;
-                        if (v.easting > bboxToma.maxEasting) bboxToma.maxEasting = v.easting;
-                        if (v.northing < bboxToma.minNorthing) bboxToma.minNorthing = v.northing;
-                        if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
-                    }));
-                }
+                usuariosObservadosA2Candidatos.forEach((u) => u.verticesUtm.forEach((v) => {
+                    if (v.easting < bboxToma.minEasting) bboxToma.minEasting = v.easting;
+                    if (v.easting > bboxToma.maxEasting) bboxToma.maxEasting = v.easting;
+                    if (v.northing < bboxToma.minNorthing) bboxToma.minNorthing = v.northing;
+                    if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
+                }));
                 // Canales troncales (Canal Sur/Derivación, sin toma propia,
                 // ver _obtenerCanalesTroncalesParaPlanoA2) — filtrados por
                 // cercanía geográfica (300m) para no arrastrar la longitud
@@ -6286,8 +6283,7 @@ const COMISIONES = {
                 const orientacionInicial = (altoBbox > anchoBbox * 1.15) ? 'vertical' : 'horizontal';
 
                 const fecha = new Date().toISOString().split('T')[0];
-                const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_')
-                    : (usuariosObservadosA2 ? '_OBSERVADOS_A2' : '');
+                const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_') : '';
                 const AMBITO_ARCHIVO = { todos: 'TODOS_LOS_BLOQUES', observados: 'PREDIOS_OBSERVADOS' };
                 const AMBITO_MEMBRETE = { todos: 'TODOS LOS BLOQUES', observados: 'TODOS LOS PREDIOS OBSERVADOS' };
                 const ambitoTexto = esUnaToma ? tomaNombre : AMBITO_ARCHIVO[ambito];
@@ -6296,7 +6292,8 @@ const COMISIONES = {
                 await _abrirVistaPreviaPlanoA2({
                     predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows,
                     tomaNombre: esUnaToma ? tomaNombre : AMBITO_MEMBRETE[ambito],
-                    comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2,
+                    comisionKey, conSatelite, conMembrete, usuarioResaltado,
+                    usuariosObservadosA2Candidatos,
                     orientacionInicial, nombreArchivoBase,
                 });
             } catch (e) {
@@ -6353,6 +6350,11 @@ const COMISIONES = {
             const ordenesCanalPresentes = Array.from(new Set(canalesTodosPlanoA2.map((c) => (c.campos && c.campos.ORDEN) || '')))
                 .filter(Boolean)
                 .sort((a, b) => ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(a) - ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(b));
+            // Usuarios observados A2 (Fuera de Bloque / Sin Registro, ya
+            // calculados en _generarPlanoPrediosA2 con su propio polígono del
+            // Formato A-2) — este checkbox solo aparece si de verdad hay
+            // alguno en esta toma, igual criterio que Derecho/canales.
+            const hayObservadosA2Plano = (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
 
             _previaPlanoA2Estado = {
                 datosPlano,
@@ -6361,12 +6363,19 @@ const COMISIONES = {
                 filtros: {
                     derecho: new Set(categoriasDerechoPresentes),
                     canalOrdenes: new Set(ordenesCanalPresentes),
+                    mostrarObservadosA2: hayObservadosA2Plano,
                 },
             };
 
             const estiloBotonOrient = 'padding:8px 16px;border:2px solid #003876;background:white;color:#003876;font-weight:600;font-size:13px;cursor:pointer;';
 
-            const filtroDerechoHtml = categoriasDerechoPresentes.length ? `
+            const checkboxObservadosA2Html = hayObservadosA2Plano ? `
+                            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#333;cursor:pointer;">
+                                <input type="checkbox" checked onchange="_alternarFiltroObservadosA2PlanoA2(this.checked)">
+                                <span style="width:13px;height:13px;border-radius:3px;background:rgba(155,89,182,0.30);border:1.5px solid #8e44ad;display:inline-block;"></span>
+                                📐 Usuarios Observados A2 (Fuera de Bloque / Sin Registro)
+                            </label>` : '';
+            const filtroDerechoHtml = (categoriasDerechoPresentes.length || hayObservadosA2Plano) ? `
                 <div style="display:flex;flex-direction:column;gap:6px;">
                     <span style="font-size:11px;font-weight:700;color:#003876;letter-spacing:0.3px;">👥 USUARIOS / DERECHO</span>
                     <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -6376,6 +6385,7 @@ const COMISIONES = {
                                 <span style="width:13px;height:13px;border-radius:3px;background:${DERECHO_PLANO_A2[k].fill};border:1.5px solid ${DERECHO_PLANO_A2[k].stroke};display:inline-block;"></span>
                                 ${DERECHO_PLANO_A2[k].etiqueta}
                             </label>`).join('')}
+                        ${checkboxObservadosA2Html}
                     </div>
                 </div>` : '';
             const filtroCanalHtml = ordenesCanalPresentes.length ? `
@@ -6459,6 +6469,8 @@ const COMISIONES = {
                 bboxOverride: estado.bboxOverride,
                 prediosCompletos: estado.datosPlano.predios,
                 canalesCompletos: estado.datosPlano.canales,
+                usuariosObservadosA2: estado.filtros.mostrarObservadosA2 ? estado.datosPlano.usuariosObservadosA2Candidatos : null,
+                usuariosObservadosA2Completos: estado.datosPlano.usuariosObservadosA2Candidatos,
             }));
             estado.canvas = resultado.canvas;
             estado.bbox = resultado.bbox;
@@ -6519,6 +6531,15 @@ const COMISIONES = {
             if (!estado || !estado.filtros || !estado.filtros[tipo]) return;
             if (activo) estado.filtros[tipo].add(valor);
             else estado.filtros[tipo].delete(valor);
+            _regenerarVistaPreviaPlanoA2();
+        }
+
+        // Prende/apaga la capa de "Usuarios Observados A2" (booleano simple,
+        // a diferencia de los otros filtros que son un Set de categorías).
+        function _alternarFiltroObservadosA2PlanoA2(activo) {
+            const estado = _previaPlanoA2Estado;
+            if (!estado || !estado.filtros) return;
+            estado.filtros.mostrarObservadosA2 = activo;
             _regenerarVistaPreviaPlanoA2();
         }
 
@@ -6642,7 +6663,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -6711,8 +6732,14 @@ const COMISIONES = {
                         if (v.northing > bbox.maxNorthing) bbox.maxNorthing = v.northing;
                     });
                 }
-                if (usuariosObservadosA2 && usuariosObservadosA2.length) {
-                    usuariosObservadosA2.forEach((u) => u.verticesUtm.forEach((v) => {
+                // Igual criterio que prediosCompletos/canalesCompletos: el
+                // encuadre automático usa el conjunto COMPLETO de usuarios
+                // observados candidatos (sin filtrar), no solo los que el
+                // checkbox de la vista previa decidió mostrar — así, prender/
+                // apagar ese filtro no hace "saltar" el plano de encuadre.
+                const usuariosObsParaBbox = usuariosObservadosA2Completos || usuariosObservadosA2;
+                if (usuariosObsParaBbox && usuariosObsParaBbox.length) {
+                    usuariosObsParaBbox.forEach((u) => u.verticesUtm.forEach((v) => {
                         if (v.easting < bbox.minEasting) bbox.minEasting = v.easting;
                         if (v.easting > bbox.maxEasting) bbox.maxEasting = v.easting;
                         if (v.northing < bbox.minNorthing) bbox.minNorthing = v.northing;
