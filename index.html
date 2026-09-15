@@ -6930,11 +6930,13 @@ const COMISIONES = {
             //      uno con su propio polígono medido/importado del Formato
             //      A-2 (no el predio del KML del bloque, que para estos casos
             //      no representa su ubicación real). Rótulo simplificado —
-            //      SOLO nombre y coordenadas UTM del centroide, sin la caja
-            //      de datos completa (esa solo tiene sentido para un usuario
-            //      a la vez) — con la MISMA prioridad de colocación más alta
-            //      que canales/predios, porque ver estos usuarios es el
-            //      propósito de haber elegido esta opción.
+            //      SOLO nombre y área (ha), sin la caja de datos completa
+            //      (esa solo tiene sentido para un usuario a la vez) — las
+            //      coordenadas del centroide van aparte, en la tabla
+            //      "Centroide de Polígonos" (esquina superior derecha), no
+            //      sobre el propio polígono — con la MISMA prioridad de
+            //      colocación más alta que canales/predios, porque ver estos
+            //      usuarios es el propósito de haber elegido esta opción.
             if (usuariosObservadosA2 && usuariosObservadosA2.length) {
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';
@@ -6961,8 +6963,11 @@ const COMISIONES = {
                         const partes = partirNombreEnDosLineas(u.nombre);
                         if (partes[1]) lineasNombre = partes;
                     }
-                    const textoCentroide = centroide ? ('E ' + Math.round(centroide.easting) + ' / N ' + Math.round(centroide.northing)) : '';
-                    const lineas = textoCentroide ? lineasNombre.concat([textoCentroide]) : lineasNombre;
+                    const areaHaObservado = (typeof calcularAreaPoligonoHa === 'function')
+                        ? calcularAreaPoligonoHa(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
+                        : 0;
+                    const textoArea = areaHaObservado ? (areaHaObservado.toFixed(2) + ' ha') : '';
+                    const lineas = textoArea ? lineasNombre.concat([textoArea]) : lineasNombre;
                     let fuente = medidaUsuario.longitudPx > 0
                         ? calcularFuenteParaAncho(medidaUsuario.longitudPx, 1, Math.max(Math.max(...lineas.map((l) => l.length)), 1))
                         : 11;
@@ -7070,22 +7075,28 @@ const COMISIONES = {
             //     A2-FUERA BLOQUE y SIN REGISTRO, donde la UC no es
             //     confiable (predio fuera del bloque reconocido, o sin
             //     ningún cruce contra Padrón A-1/Formato A-2): ahí se
-            //     muestran las coordenadas UTM del centroide en su lugar,
-            //     a pedido explícito, para poder ubicar a ese usuario en
-            //     campo sin depender de un dato catastral que no aplica.
-            const CATEGORIAS_CENTROIDE_EN_VEZ_DE_UC_PLANO_A2 = new Set(['A2_FUERA_BLOQUE', 'SIN_REGISTRO']);
+            //     muestra el ÁREA del polígono (ha) en su lugar — las
+            //     coordenadas del centroide van aparte, en la tabla
+            //     "Centroide de Polígonos" (esquina superior derecha), no
+            //     sobre el propio rótulo del predio.
+            const CATEGORIAS_AREA_EN_VEZ_DE_UC_PLANO_A2 = new Set(['A2_FUERA_BLOQUE', 'SIN_REGISTRO']);
             medidasPredios
                 .slice()
                 .sort((a, b) => b.medida.longitudPx - a.medida.longitudPx)
                 .forEach(({ p, uc, nombre, medida }) => {
-                    const centroide = calcularCentroidePoligono(p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; }));
+                    const verticesUtmPredio = p.coordenadas.map((par) => { const u = latLonAUtm17S(par[1], par[0]); return { easting: u.easting, northing: u.northing }; });
+                    const centroide = calcularCentroidePoligono(verticesUtmPredio);
                     const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : null;
                     if (!centroPx) return;
 
                     const categoria = categoriaPorPredioPlanoA2.get(p);
-                    const textoIdentificador = CATEGORIAS_CENTROIDE_EN_VEZ_DE_UC_PLANO_A2.has(categoria)
-                        ? (centroide ? ('E ' + Math.round(centroide.easting) + ' / N ' + Math.round(centroide.northing)) : '')
-                        : (uc ? ('UC ' + uc) : '');
+                    let textoIdentificador;
+                    if (CATEGORIAS_AREA_EN_VEZ_DE_UC_PLANO_A2.has(categoria)) {
+                        const areaHaPredio = (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(verticesUtmPredio) : 0;
+                        textoIdentificador = areaHaPredio ? (areaHaPredio.toFixed(2) + ' ha') : '';
+                    } else {
+                        textoIdentificador = uc ? ('UC ' + uc) : '';
+                    }
 
                     let lineasNombre = [nombre];
                     if (nombre.length > UMBRAL_PARTIR_NOMBRE_PLANO_A2) {
@@ -7108,7 +7119,7 @@ const COMISIONES = {
                     let lineas = lineasCompletas;
                     let bbox = intentarColocar(lineas);
                     if (!bbox && textoIdentificador) {
-                        lineas = [textoIdentificador]; // no entra completo: compactar al identificador mínimo (UC, o el centroide en A2-Fuera Bloque/Sin Registro)
+                        lineas = [textoIdentificador]; // no entra completo: compactar al identificador mínimo (UC, o el área en A2-Fuera Bloque/Sin Registro)
                         bbox = intentarColocar(lineas);
                     }
                     if (!bbox) return; // ni la versión compacta entra sin pisar a un vecino: se omite
