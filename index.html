@@ -5782,6 +5782,26 @@ const COMISIONES = {
 
                 function normNombre(v) { return (v || '').toString().replace(/,/g, ' ').trim().toUpperCase().replace(/\s+/g, ' '); }
 
+                // Quita, del final de Observaciones, una mención de deuda que ya
+                // haya dejado una corrida anterior de este mismo importador —
+                // tanto la frase actual ("Actualmente figura una deuda de S/. ...")
+                // como el formato antiguo ("S/. ..." a secas) — para que volver a
+                // importar el mismo Excel (p. ej. tras actualizar el texto, o con
+                // una deuda nueva) reemplace la mención previa en vez de apilar
+                // una segunda "S/." al final.
+                function limpiarDeudaPreviaDeObservaciones(texto) {
+                    let t = (texto || '').toString();
+                    let cambiado = true;
+                    while (cambiado) {
+                        const antes = t;
+                        t = t.replace(/\s*-?\s*Actualmente figura una deuda de S\/\.\s*[\d.,]+\s*$/i, '');
+                        t = t.replace(/\s*-?\s*S\/\.\s*[\d.,]+\s*$/i, '');
+                        t = t.trim();
+                        cambiado = (t !== antes);
+                    }
+                    return t;
+                }
+
                 let actualizados = 0, conFechaSinDeuda = 0, conDeudaSinFecha = 0;
                 const sinMatch = [];
                 const sinDatoUtil = [];
@@ -5794,7 +5814,7 @@ const COMISIONES = {
                     if (r.mesAnio) datosParciales.ultimaFechaRiego = r.mesAnio;
                     if (r.deuda !== null) {
                         const deudaTexto = 'Actualmente figura una deuda de S/. ' + r.deuda.toFixed(2);
-                        const previo = (registro.observaciones || '').toString().trim();
+                        const previo = limpiarDeudaPreviaDeObservaciones(registro.observaciones);
                         datosParciales.observaciones = previo ? (previo + ' - ' + deudaTexto) : deudaTexto;
                     }
                     if (r.mesAnio && r.deuda === null) conFechaSinDeuda++;
