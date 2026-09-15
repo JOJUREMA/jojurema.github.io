@@ -21749,12 +21749,19 @@ function mostrarAnexoG3(modoManual) {
             // ── Islas de días NO consecutivos (ej. Miércoles + Sábado, con Jueves/Viernes
             // inactivos): el motor de turnos trata cada área como UN tramo continuo que debe
             // caber en un solo día — con días no consecutivos eso hacía que el turno saltara
-            // semanas enteras buscando dónde caber. El modelo correcto (confirmado con el
-            // usuario contra sus números reales) es que CADA isla de días consecutivos es un
-            // turno independiente: el volumen semanal de cada área se reparte proporcional a
-            // la capacidad (caudal×horas×3600) de cada isla, y dentro de cada isla las áreas
-            // riegan una tras otra por orden, igual que hoy. Con 1 sola isla (caso común) este
-            // bloque no expande nada — entradasFinalesCultivo queda igual a usuariosCultivo.
+            // semanas enteras buscando dónde caber. Días no consecutivos NO son una repetición
+            // de la misma programación (ej. regar a los mismos usuarios el lunes Y el miércoles)
+            // — son días distintos con disponibilidad de agua propia, así que cada usuario se
+            // riega COMPLETO en UN solo día: el primer día cubre a la primera parte de los
+            // usuarios hasta agotar su capacidad (caudal×horas×3600), el siguiente día cubre al
+            // resto, y así sucesivamente — a diferencia de repartir a cada usuario en fracciones
+            // entre los días (eso daba, para 2 días iguales, a TODOS los usuarios regando medio
+            // turno cada día, el doble de veces de lo que corresponde). Solo se parte a un
+            // usuario puntual entre 2 días cuando su turno no cabe entero en lo que le queda de
+            // capacidad al día actual y aún no es el último día disponible — igual que ya se
+            // parte de forma normal un turno demasiado largo para lo que resta de un día.
+            // Con 1 sola isla (caso común) este bloque no expande nada — entradasFinalesCultivo
+            // queda igual a usuariosCultivo.
             const islas = agruparDiasEnIslas(diasDelCultivo);
             let entradasFinalesCultivo = usuariosCultivo;
             if (islas.length > 1) {
@@ -21776,16 +21783,39 @@ function mostrarAnexoG3(modoManual) {
                 const capacidadTotal = capacidadPorIsla.reduce((s, c) => s + c, 0);
                 if (capacidadTotal > 0) {
                     const nuevasEntradas = [];
-                    usuariosCultivo.forEach(uOriginal => {
-                        islas.forEach((isla, idxIsla) => {
-                            const fraccion = capacidadPorIsla[idxIsla] / capacidadTotal;
-                            nuevasEntradas.push(Object.assign({}, uOriginal, {
-                                volCorregido: uOriginal.volCorregido * fraccion,
-                                qTeorico: uOriginal.qTeorico * fraccion,
-                                tiempo: uOriginal.tiempo * fraccion,
-                                claveDia: claveCultivo + '#isla' + idxIsla,
-                            }));
-                        });
+                    const capacidadRestante = capacidadPorIsla.slice();
+                    let idxIslaActual = 0;
+                    usuariosCultivo.forEach((uOriginal) => {
+                        // Avanza a la siguiente isla mientras la actual ya esté agotada (y no sea
+                        // la última — la última siempre recibe lo que quede, aunque se pase de su
+                        // capacidad nominal, para no perder usuarios por redondeo).
+                        while (idxIslaActual < islas.length - 1 && capacidadRestante[idxIslaActual] <= 0) idxIslaActual++;
+
+                        let volumenPendiente = uOriginal.volCorregido;
+                        if (volumenPendiente <= capacidadRestante[idxIslaActual] || idxIslaActual === islas.length - 1) {
+                            // Cabe completo en la isla actual (o ya no hay más islas donde correr): un solo turno, sin partir al usuario.
+                            nuevasEntradas.push(Object.assign({}, uOriginal, { claveDia: claveCultivo + '#isla' + idxIslaActual }));
+                            capacidadRestante[idxIslaActual] -= volumenPendiente;
+                        } else {
+                            // No cabe entero en lo que resta de la isla actual: se parte ESTE usuario
+                            // (solo él, no todos) entre la isla actual y la(s) siguiente(s).
+                            while (volumenPendiente > 0 && idxIslaActual < islas.length) {
+                                const esUltimaIsla = idxIslaActual === islas.length - 1;
+                                const aAsignar = esUltimaIsla ? volumenPendiente : Math.min(volumenPendiente, Math.max(0, capacidadRestante[idxIslaActual]));
+                                if (aAsignar > 0) {
+                                    const fraccionParcial = aAsignar / uOriginal.volCorregido;
+                                    nuevasEntradas.push(Object.assign({}, uOriginal, {
+                                        volCorregido: uOriginal.volCorregido * fraccionParcial,
+                                        qTeorico: uOriginal.qTeorico * fraccionParcial,
+                                        tiempo: uOriginal.tiempo * fraccionParcial,
+                                        claveDia: claveCultivo + '#isla' + idxIslaActual,
+                                    }));
+                                    capacidadRestante[idxIslaActual] -= aAsignar;
+                                    volumenPendiente -= aAsignar;
+                                }
+                                if (volumenPendiente > 0) idxIslaActual++;
+                            }
+                        }
                     });
                     entradasFinalesCultivo = nuevasEntradas;
 
