@@ -1548,7 +1548,7 @@
                     <select id="selectUsuarioPlanoA2" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ccc;">
                         <option value="TODOS">Todos (plano general de la toma)</option>
                     </select>
-                    <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia.</p>
+                    <p style="font-size:11px; color:#666; margin:4px 0 0;">Elegir un usuario resalta su polígono medido/importado del Formato A-2 (📐) sobre los predios del bloque de riego — el resto del plano no cambia. La opción "Usuarios observados A2" muestra a la vez el polígono medido/importado de TODOS los usuarios "A2-Fuera de Bloque" o "Sin Registro" de esta toma, cada uno con su nombre y las coordenadas de su centroide.</p>
                 </div>
             </div>
             <div style="text-align:left; display:flex; flex-direction:column; gap:6px; margin-bottom:14px; font-size:13px;">
@@ -5982,6 +5982,7 @@ const COMISIONES = {
             const filtrados = registros.filter((r) => r.toma_nombre === toma);
             const nombres = Array.from(new Set(filtrados.map((r) => r.apellidos_nombres).filter(Boolean))).sort();
             selectUsuario.innerHTML = '<option value="TODOS">Todos (plano general de la toma)</option>' +
+                '<option value="OBSERVADOS_A2">📐 Usuarios observados A2 (Fuera de Bloque / Sin Registro)</option>' +
                 nombres.map((n) => {
                     const tienePoligono = filtrados.some((r) => r.apellidos_nombres === n && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3);
                     return `<option value="${escapeHtml(n)}">${escapeHtml(n)}${tienePoligono ? ' 📐' : ''}</option>`;
@@ -6186,7 +6187,34 @@ const COMISIONES = {
                 // los predios sin cambios; esto es un resaltado adicional
                 // encima, no un reemplazo.
                 let usuarioResaltado = null;
-                if (esUnaToma && usuarioElegido !== 'TODOS') {
+                let usuariosObservadosA2 = null;
+                if (esUnaToma && usuarioElegido === 'OBSERVADOS_A2') {
+                    // TODOS los usuarios observados (Formato A-2, con
+                    // polígono medido/importado) de esta toma que sean
+                    // "A2-Fuera de Bloque" (campo se_ubica_bloque='fuera') o
+                    // que no coincidan con NINGÚN predio del KML del bloque
+                    // (equivalente a "Sin Registro" frente al bloque) — para
+                    // estos 2 casos el predio del KML del bloque no
+                    // representa su ubicación real, así que se usa su propio
+                    // polígono observado en su lugar.
+                    const ucsKmlBloque = new Set(predios.map((p) => _normUcPlanoA2(p.catastralKey)).filter(Boolean));
+                    const nombresKmlBloque = new Set(predios.map((p) => _normNombrePlanoA2(p.usuario)).filter(Boolean));
+                    usuariosObservadosA2 = formatoA2Rows
+                        .filter((r) => r.toma_nombre === tomaNombre && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3)
+                        .filter((r) => {
+                            const esFuera = (r.se_ubica_bloque || '').toString().trim().toLowerCase() === 'fuera';
+                            if (esFuera) return true;
+                            const ucReg = _normUcPlanoA2(r.unidad_catastral);
+                            const nombreReg = _normNombrePlanoA2(r.apellidos_nombres);
+                            const matcheaBloque = (ucReg && ucsKmlBloque.has(ucReg)) || (nombreReg && nombresKmlBloque.has(nombreReg));
+                            return !matcheaBloque; // sin cruce con el bloque KML = "Sin Registro"
+                        })
+                        .map((r) => ({ nombre: r.apellidos_nombres, verticesUtm: r.vertices_utm, registro: r }));
+                    if (usuariosObservadosA2.length === 0) {
+                        alert('No se encontró ningún usuario observado (Formato A-2, con polígono medido/importado) "A2-Fuera de Bloque" o "Sin Registro" en esta toma.');
+                        return;
+                    }
+                } else if (esUnaToma && usuarioElegido !== 'TODOS') {
                     const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
                     const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
                     if (verticesUtm.length < 3) {
@@ -6221,6 +6249,14 @@ const COMISIONES = {
                         if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
                     });
                 }
+                if (usuariosObservadosA2) {
+                    usuariosObservadosA2.forEach((u) => u.verticesUtm.forEach((v) => {
+                        if (v.easting < bboxToma.minEasting) bboxToma.minEasting = v.easting;
+                        if (v.easting > bboxToma.maxEasting) bboxToma.maxEasting = v.easting;
+                        if (v.northing < bboxToma.minNorthing) bboxToma.minNorthing = v.northing;
+                        if (v.northing > bboxToma.maxNorthing) bboxToma.maxNorthing = v.northing;
+                    }));
+                }
                 // Canales troncales (Canal Sur/Derivación, sin toma propia,
                 // ver _obtenerCanalesTroncalesParaPlanoA2) — filtrados por
                 // cercanía geográfica (300m) para no arrastrar la longitud
@@ -6250,7 +6286,8 @@ const COMISIONES = {
                 const orientacionInicial = (altoBbox > anchoBbox * 1.15) ? 'vertical' : 'horizontal';
 
                 const fecha = new Date().toISOString().split('T')[0];
-                const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_') : '';
+                const sufijoUsuario = usuarioResaltado ? '_' + usuarioResaltado.nombre.replace(/[^A-Za-z0-9]+/g, '_')
+                    : (usuariosObservadosA2 ? '_OBSERVADOS_A2' : '');
                 const AMBITO_ARCHIVO = { todos: 'TODOS_LOS_BLOQUES', observados: 'PREDIOS_OBSERVADOS' };
                 const AMBITO_MEMBRETE = { todos: 'TODOS LOS BLOQUES', observados: 'TODOS LOS PREDIOS OBSERVADOS' };
                 const ambitoTexto = esUnaToma ? tomaNombre : AMBITO_ARCHIVO[ambito];
@@ -6259,7 +6296,7 @@ const COMISIONES = {
                 await _abrirVistaPreviaPlanoA2({
                     predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows,
                     tomaNombre: esUnaToma ? tomaNombre : AMBITO_MEMBRETE[ambito],
-                    comisionKey, conSatelite, conMembrete, usuarioResaltado,
+                    comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2,
                     orientacionInicial, nombreArchivoBase,
                 });
             } catch (e) {
@@ -6605,7 +6642,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -6673,6 +6710,14 @@ const COMISIONES = {
                         if (v.northing < bbox.minNorthing) bbox.minNorthing = v.northing;
                         if (v.northing > bbox.maxNorthing) bbox.maxNorthing = v.northing;
                     });
+                }
+                if (usuariosObservadosA2 && usuariosObservadosA2.length) {
+                    usuariosObservadosA2.forEach((u) => u.verticesUtm.forEach((v) => {
+                        if (v.easting < bbox.minEasting) bbox.minEasting = v.easting;
+                        if (v.easting > bbox.maxEasting) bbox.maxEasting = v.easting;
+                        if (v.northing < bbox.minNorthing) bbox.minNorthing = v.northing;
+                        if (v.northing > bbox.maxNorthing) bbox.maxNorthing = v.northing;
+                    }));
                 }
                 const colchonE = (bbox.maxEasting - bbox.minEasting) * 0.05 || 50;
                 const colchonN = (bbox.maxNorthing - bbox.minNorthing) * 0.05 || 50;
@@ -6843,6 +6888,84 @@ const COMISIONES = {
                 ctx.restore();
             }
 
+            // Colección compartida de rectángulos ya ocupados por una
+            // etiqueta (predios, canales, y ahora también los usuarios
+            // observados de 5.6) — declarada acá para que 5.6 (que tiene
+            // prioridad de colocación sobre canales/predios) pueda empezar a
+            // llenarla antes de que existan las demás.
+            const GAP_ETIQUETAS_PLANO_A2 = -2; // tolerancia negativa = deja un pequeño respiro entre etiquetas vecinas
+            const rectangulosOcupadosPlanoA2 = [];
+
+            // 5.6) Usuarios "observados" del Formato A-2 (A2-Fuera de Bloque
+            //      o Sin Registro) — a diferencia del resaltado único de 5.5
+            //      (un solo usuario elegido a mano), acá se dibujan TODOS los
+            //      polígonos observados de esas 2 categorías a la vez, cada
+            //      uno con su propio polígono medido/importado del Formato
+            //      A-2 (no el predio del KML del bloque, que para estos casos
+            //      no representa su ubicación real). Rótulo simplificado —
+            //      SOLO nombre y coordenadas UTM del centroide, sin la caja
+            //      de datos completa (esa solo tiene sentido para un usuario
+            //      a la vez) — con la MISMA prioridad de colocación más alta
+            //      que canales/predios, porque ver estos usuarios es el
+            //      propósito de haber elegido esta opción.
+            if (usuariosObservadosA2 && usuariosObservadosA2.length) {
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+                usuariosObservadosA2.forEach((u) => {
+                    const verticesOrdenados = u.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+                    const puntosPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
+                    if (puntosPx.length < 3) return;
+                    ctx.beginPath();
+                    puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                    ctx.closePath();
+                    ctx.fillStyle = 'rgba(155,89,182,0.30)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#8e44ad';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([]);
+                    ctx.stroke();
+
+                    const centroide = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
+                    const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : puntosPx[0];
+                    const verticesLatLon = verticesOrdenados.map((v) => [v.lat, v.lon]);
+                    const medidaUsuario = medirEtiquetaPlanoA2(verticesLatLon, true, proyector.proyectar);
+                    let lineasNombre = [u.nombre];
+                    if (u.nombre.length > 24) {
+                        const partes = partirNombreEnDosLineas(u.nombre);
+                        if (partes[1]) lineasNombre = partes;
+                    }
+                    const textoCentroide = centroide ? ('E ' + Math.round(centroide.easting) + ' / N ' + Math.round(centroide.northing)) : '';
+                    const lineas = textoCentroide ? lineasNombre.concat([textoCentroide]) : lineasNombre;
+                    let fuente = medidaUsuario.longitudPx > 0
+                        ? calcularFuenteParaAncho(medidaUsuario.longitudPx, 1, Math.max(Math.max(...lineas.map((l) => l.length)), 1))
+                        : 11;
+                    fuente = Math.max(8, Math.min(fuente, 13));
+                    const anguloRad = medidaUsuario.anguloCss * Math.PI / 180;
+                    const alturaLinea = fuente * 1.15;
+
+                    ctx.font = '700 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                    const anchoMax = lineas.reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0);
+                    const bboxEtiqueta = _bboxTextoRotadoPlanoA2(centroPx[0], centroPx[1], anchoMax, lineas.length * alturaLinea, anguloRad);
+                    // A diferencia de predios/canales, esta etiqueta NO se
+                    // compacta ni se omite — es la razón de ser del plano en
+                    // este modo, así que siempre se dibuja (puede superponerse
+                    // en el caso extremo de 2 usuarios observados muy
+                    // próximos, mejor eso que ocultar a alguien de la lista).
+                    rectangulosOcupadosPlanoA2.push(bboxEtiqueta);
+                    ctx.save();
+                    ctx.translate(centroPx[0], centroPx[1]);
+                    ctx.rotate(anguloRad);
+                    ctx.fillStyle = '#4a235a';
+                    if (lineas.length === 1) {
+                        ctx.fillText(lineas[0], 0, 0);
+                    } else {
+                        const offsetInicial = -((lineas.length - 1) * alturaLinea) / 2;
+                        lineas.forEach((linea, i) => ctx.fillText(linea, 0, offsetInicial + i * alturaLinea));
+                    }
+                    ctx.restore();
+                });
+            }
+
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
             //    paralelas a su lado/tramo más largo, con tamaño de fuente
             //    compartido y ANTI-SOLAPE real: cada etiqueta reserva su
@@ -6850,16 +6973,15 @@ const COMISIONES = {
             //    etiqueta que chocaría con una ya colocada se compacta (o se
             //    omite como último recurso) en vez de superponerse al vecino
             //    — ver `assets/core/planoPrediosA2.js`. Prioridad de
-            //    colocación: canales primero (son pocos y son la referencia
-            //    física del plano), luego predios de mayor a menor tamaño —
-            //    los predios chicos y muy apretados son los que más se
-            //    compactan/omiten, que es justamente donde se producía el
-            //    amontonamiento.
+            //    colocación: los usuarios observados de 5.6 (si los hay) ya
+            //    reservaron su espacio primero; acá siguen los canales (son
+            //    pocos y son la referencia física del plano), luego predios
+            //    de mayor a menor tamaño — los predios chicos y muy
+            //    apretados son los que más se compactan/omiten, que es
+            //    justamente donde se producía el amontonamiento.
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'center';
             const FUENTE_MAX_PREDIO = 10;
-            const GAP_ETIQUETAS_PLANO_A2 = -2; // tolerancia negativa = deja un pequeño respiro entre etiquetas vecinas
-            const rectangulosOcupadosPlanoA2 = [];
             // Fuente ÚNICA para TODOS los predios del plano — nunca varía de
             // un predio a otro. Se calcula con el percentil 15 (no la
             // mediana) de la fuente "natural" de cada predio para que su UC
@@ -6983,7 +7105,7 @@ const COMISIONES = {
             //    leyenda) — barra segmentada en vez de una razón "1:N" fija,
             //    porque sigue siendo correcta sin importar a qué tamaño de
             //    papel se termine imprimiendo el PDF.
-            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canalesParaDibujo, usuarioResaltado, categoriasDerechoPresentes);
+            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canalesParaDibujo, usuarioResaltado || (usuariosObservadosA2 && usuariosObservadosA2.length > 0), categoriasDerechoPresentes);
             dibujarEscalaGraficaPlanoA2(ctx, ANCHO - MARGEN - 15, ALTO_MAPA - MARGEN - 15, metrosPorPixelPlanoA2(proyector));
 
             // 8) Cajas de la esquina superior derecha, apiladas de arriba
