@@ -841,12 +841,24 @@ function huaroDocumentoImprimible(titulo, fragmentoHtml, orientacion) {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8">
     <title>${_huaroEsc(titulo)}</title>
     <style>
-        @page { size: A4 ${orientacion || 'landscape'}; margin: 12mm; }
+        @page { size: A4 ${orientacion || 'landscape'}; margin: 10mm; }
         body { font-family: Arial, sans-serif; color:#000; margin:0; padding:14px; }
         table { border-collapse: collapse; }
         .barra-print { position:sticky; top:0; background:#003876; padding:8px 12px; margin:-14px -14px 14px; text-align:right; }
         .btn-print { background:#c8a84b; color:#1a1a1a; border:none; padding:8px 18px; border-radius:4px; font-weight:700; cursor:pointer; font-size:13px; }
-        @media print { .barra-print { display:none; } }
+        @media print {
+            .barra-print { display:none; }
+            body { padding:0; }
+            /* Las tablas anchas (Anexo G-1/G-2) van en un div con
+               overflow-x:auto para poder desplazarlas en pantalla — al
+               imprimir eso solo RECORTA lo que no entra en el ancho de
+               la hoja (un contenedor con scroll no se reajusta al
+               imprimir). Se fuerza a que la tabla quepa en el ancho
+               impreso en vez de desbordarse/cortarse. */
+            *[style*="overflow-x"] { overflow: visible !important; }
+            table[style*="min-width"] { min-width: 0 !important; width: 100% !important; }
+            table[style*="min-width"] td, table[style*="min-width"] th { font-size: 7px !important; padding: 2px !important; }
+        }
     </style></head><body>
         <div class="barra-print"><button class="btn-print" onclick="window.print()">🖨️ Imprimir</button></div>
         ${fragmentoHtml}
