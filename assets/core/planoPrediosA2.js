@@ -37,8 +37,16 @@ function _normNombrePlanoA2(v) {
     return (v || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/,/g, ' ').trim().toUpperCase().replace(/\s+/g, ' ');
 }
+// Quita un prefijo "RE" inicial (ej. Padrón A-1 trae "RE44521.02" para el
+// mismo predio cuyo KML del bloque de riego lo digitalizó como CODCAT
+// "44521.02", sin el prefijo) — caso real confirmado: UC 44521.02 (CRUZ
+// PERALTA, JOSE — SD4/MIRAFLORES) tiene licencia en el Padrón A-1 pero,
+// sin este strip, el cruce por UC fallaba y el predio se pintaba "SIN
+// REGISTRO" (rojo) en el Plano de Predios en vez de "LICENCIA/DERECHO"
+// (verde). Sin este prefijo ambos lados ya comparten el mismo código
+// numérico, así que es seguro asumir que es el mismo predio.
 function _normUcPlanoA2(v) {
-    return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^0+/, '');
+    return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^RE/, '').replace(/^0+/, '');
 }
 
 function _buscarPorUcPlanoA2(filas, ucPredio) {
