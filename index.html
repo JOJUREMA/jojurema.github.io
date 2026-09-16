@@ -4811,6 +4811,7 @@ const COMISIONES = {
 
         async function _huaroExcelG1Oficial(datos) {
             const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
+            const diasHeads = [0, 1, 2, 3, 4, 5, 6].map((i) => HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i));
             const heads = [
                 'SUB SECTOR HIDRÁULICO',
                 'NOMBRE DE LA BOCATOMA O TOMA DIRECTA EN LA FUENTE NATURAL O INFRAESTRUCTURA HIDRÁULICA MAYOR',
@@ -4818,9 +4819,13 @@ const COMISIONES = {
                 'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO ATENDER (Ha)',
                 'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
                 'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
-                '1', '2', '3', '4', '5', '6', '7',
+                ...diasHeads,
                 'OBSERVACIONES',
             ];
+            // Columnas numéricas (0-based en `heads`) que llevan hasta 2 decimales
+            // y separador de miles por coma — todas las numéricas EXCEPTO "N° DE
+            // USUARIOS" (índice 3), que es un conteo entero.
+            const COLS_NUM_2DEC = new Set([4, 5, 6, 11, 12, 13, 14, 15, 16, 17]);
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => (i === 0 || i === 1 || i === 2 || i === heads.length - 1) ? { width: 24 } : { width: 12 });
@@ -4861,13 +4866,21 @@ const COMISIONES = {
                     ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)),
                     f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
                 ];
-                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
+                vals.forEach((v, i) => {
+                    const c = ws.getCell(r, i + 1); c.value = v;
+                    if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00';
+                    _huaroBorde(c); alinear(c, i);
+                });
                 r++;
             });
             const totalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
             const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
-            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; c.fill = totalFill; _huaroBorde(c); alinear(c, i); });
+            tot.forEach((v, i) => {
+                const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; c.fill = totalFill;
+                if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00';
+                _huaroBorde(c); alinear(c, i);
+            });
             await _descargarWorkbook(wb, 'Anexo G1.xlsx');
         }
 

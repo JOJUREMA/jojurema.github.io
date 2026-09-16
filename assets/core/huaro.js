@@ -474,6 +474,14 @@ function _huaroDiaDelMes(semanaInicioISO, idx) {
     return d.getDate();
 }
 
+// Formatea un número con hasta 2 decimales y separador de miles por comas
+// (ej. 1234.5 -> "1,234.50") — pedido explícito para todas las columnas
+// numéricas de los Anexos (Volumen, Área, Tiempo, Caudal por día) EXCEPTO
+// "N° de Usuarios", que es un conteo entero y se muestra tal cual.
+function _huaroFmtNum(n) {
+    return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // ── ANEXO G-1 ──
 // Formato G-1: Programación de Distribución del Agua a Nivel de Canales de
 // Derivación (R.J. N° 0155-2022-ANA, Anexo G) — un nivel por ENCIMA del G-2:
@@ -481,8 +489,9 @@ function _huaroDiaDelMes(semanaInicioISO, idx) {
 // canal de derivación (huaroCanalBocatoma), así que tiene la misma
 // granularidad por bocatoma que el G-2 — mismo `datos.filas` (agregado por
 // bocatoma), solo cambian las columnas mostradas (sin "Toma"/"Canal de
-// Distribución", que no aplican a este nivel) y los días van numerados 1-7
-// (no abreviatura+fecha, así los pide el formato oficial de este anexo).
+// Distribución", que no aplican a este nivel) y los días van con el número
+// de día del mes (sin abreviatura), así los pide el formato oficial de
+// este anexo.
 // datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
 function huaroConstruirG1Html(datos) {
     const th = 'border:1px solid #000;padding:5px;font-weight:700;';
@@ -502,18 +511,18 @@ function huaroConstruirG1Html(datos) {
         (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
 
         const dias = (f.caudalPorDia || []).map(c =>
-            `<td style="${td}">${(c || 0).toFixed(2)}</td>`).join('');
+            `<td style="${td}">${_huaroFmtNum(c || 0)}</td>`).join('');
         const obs = f.nPendientes > 0
-            ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
+            ? `Pendientes: ${f.nPendientes} usuario(s) / ${_huaroFmtNum(f.areaPendienteHa)} ha` : '';
         body += `
         <tr>
             <td style="${tdL}">${_huaroEsc(HUARO_COMISION_NOMBRE)}</td>
             <td style="${tdL}font-weight:600;">${_huaroEsc(f.bocatoma)}</td>
             <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
-            <td style="${td}">${f.volumenTotalM3.toFixed(2)}</td>
-            <td style="${td}">${f.areaProgramadaHa.toFixed(2)}</td>
-            <td style="${td}">${f.tiempoTotalH.toFixed(1)}</td>
+            <td style="${td}">${_huaroFmtNum(f.volumenTotalM3)}</td>
+            <td style="${td}">${_huaroFmtNum(f.areaProgramadaHa)}</td>
+            <td style="${td}">${_huaroFmtNum(f.tiempoTotalH)}</td>
             <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
             <td style="${td}">${f.periodoInicioHora || '04:00'}</td>
             <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
@@ -522,7 +531,7 @@ function huaroConstruirG1Html(datos) {
             <td style="${tdL}">${_huaroEsc(obs)}</td>
         </tr>`;
     });
-    const totDias = tDia.map(c => `<td style="${td}${totalBg}font-weight:700;">${(c || 0).toFixed(2)}</td>`).join('');
+    const totDias = tDia.map(c => `<td style="${td}${totalBg}font-weight:700;">${_huaroFmtNum(c || 0)}</td>`).join('');
 
     return `
     <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:2px;">
@@ -544,7 +553,7 @@ function huaroConstruirG1Html(datos) {
                 <th rowspan="2" style="${th}">SUB SECTOR<br>HIDRÁULICO</th>
                 <th rowspan="2" style="${th}">NOMBRE DE LA BOCATOMA<br>O TOMA DIRECTA EN LA<br>FUENTE NATURAL O<br>INFRAESTRUCTURA<br>HIDRÁULICA MAYOR</th>
                 <th rowspan="2" style="${th}">NOMBRE DEL CANAL<br>DE DERIVACIÓN</th>
-                <th rowspan="2" style="${th}">N°<br>USUARIOS</th>
+                <th rowspan="2" style="${th}">N° DE<br>USUARIOS</th>
                 <th rowspan="2" style="${th}">VOLUMEN DE<br>AGUA<br>PROGRAMADO<br>(m³)</th>
                 <th rowspan="2" style="${th}">ÁREA BAJO<br>RIEGO ATENDER<br>(Ha)</th>
                 <th rowspan="2" style="${th}">TIEMPO DE<br>OPERACIÓN DEL<br>CANAL (HORAS)</th>
@@ -555,7 +564,7 @@ function huaroConstruirG1Html(datos) {
             <tr style="background:#E6E6E6;color:#000;">
                 <th style="${th2}">INICIO</th><th style="${th2}">HORA</th>
                 <th style="${th2}">TÉRMINO</th><th style="${th2}">HORA</th>
-                ${[1, 2, 3, 4, 5, 6, 7].map(n => `<th style="${th2}">${n}</th>`).join('')}
+                ${[0, 1, 2, 3, 4, 5, 6].map(i => `<th style="${th2}">${_huaroDiaDelMes(datos.semanaInicioISO, i)}</th>`).join('')}
             </tr>
         </thead>
         <tbody>
@@ -563,9 +572,9 @@ function huaroConstruirG1Html(datos) {
             <tr style="${totalBg}font-weight:bold;">
                 <td style="${td}${totalBg}" colspan="3">TOTAL</td>
                 <td style="${td}${totalBg}">${tU}</td>
-                <td style="${td}${totalBg}">${tVol.toFixed(2)}</td>
-                <td style="${td}${totalBg}">${tArea.toFixed(2)}</td>
-                <td style="${td}${totalBg}">${tTiempoMax.toFixed(1)}</td>
+                <td style="${td}${totalBg}">${_huaroFmtNum(tVol)}</td>
+                <td style="${td}${totalBg}">${_huaroFmtNum(tArea)}</td>
+                <td style="${td}${totalBg}">${_huaroFmtNum(tTiempoMax)}</td>
                 <td style="${td}${totalBg}">-</td><td style="${td}${totalBg}">-</td>
                 <td style="${td}${totalBg}">-</td><td style="${td}${totalBg}">-</td>
                 ${totDias}
@@ -854,7 +863,7 @@ if (typeof window !== 'undefined') {
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG1Html, huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
-        _huaroDiaDelMes,
+        _huaroDiaDelMes, _huaroFmtNum,
         huaroDocumentoImprimible,
     };
 }
@@ -867,7 +876,7 @@ if (typeof module !== 'undefined' && module.exports) {
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG1Html, huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
-        _huaroDiaDelMes,
+        _huaroDiaDelMes, _huaroFmtNum,
         huaroDocumentoImprimible,
     };
 }
