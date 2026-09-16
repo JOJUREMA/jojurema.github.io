@@ -3685,6 +3685,89 @@ const COMISIONES = {
         }
         function _huaroGuardarPda(o) { localStorage.setItem(_huaroKeyPda(o.semanaInicio), JSON.stringify(o)); }
         function _huaroUnion(a, b) { const s = new Set(a || []); (b || []).forEach(x => s.add(x)); return Array.from(s); }
+
+        // Historial de semanas con PDA guardado — el PDA de Huaro vive solo en
+        // localStorage de ESTE navegador (sin sincronización a Supabase, a
+        // diferencia del resto del sistema), así que "semanas ya trabajadas" no
+        // es algo que se pueda consultar de otro dispositivo: recorre las claves
+        // 'cusshmi_huaro_pda__YYYY-MM-DD' que ya existan acá y arma un resumen
+        // por semana (bocatomas, usuarios, área, volumen), más reciente primero.
+        function _huaroListarSemanasGuardadas() {
+            const semanas = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (!key || key.indexOf('cusshmi_huaro_pda__') !== 0) continue;
+                const iso = key.slice('cusshmi_huaro_pda__'.length);
+                const pda = _huaroLeerPda(iso);
+                if (!pda) continue;
+                const bocs = Object.entries(pda.resultados || {}).filter(([, r]) => r && (r.programados || []).length > 0);
+                if (!bocs.length) continue; // semana guardada pero sin ninguna bocatoma con usuarios (ej. quedó vacía tras "Quitar")
+                let nUsuarios = 0, areaHa = 0, volumenM3 = 0;
+                bocs.forEach(([, r]) => {
+                    nUsuarios += r.agregado.nUsuarios || 0;
+                    areaHa += r.agregado.areaProgramadaHa || 0;
+                    volumenM3 += r.agregado.volumenTotalM3 || 0;
+                });
+                semanas.push({
+                    semanaInicio: pda.semanaInicio || iso,
+                    semanaFin: pda.semanaFin || _huaroSumarDiasHuaroHist(iso, 6),
+                    nBocatomas: bocs.length, nUsuarios, areaHa, volumenM3,
+                });
+            }
+            semanas.sort((a, b) => b.semanaInicio.localeCompare(a.semanaInicio));
+            return semanas;
+        }
+        function _huaroSumarDiasHuaroHist(iso, n) {
+            const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n);
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function huaroMostrarHistorial() {
+            const semanas = _huaroListarSemanasGuardadas();
+            const _fc = s => (s || '').split('-').reverse().join('/');
+            const filas = semanas.length ? semanas.map(s => `
+                <tr>
+                    <td style="padding:7px 10px;">${_fc(s.semanaInicio)} – ${_fc(s.semanaFin)}</td>
+                    <td style="padding:7px 10px;text-align:center;">${s.nBocatomas}</td>
+                    <td style="padding:7px 10px;text-align:center;">${s.nUsuarios}</td>
+                    <td style="padding:7px 10px;text-align:right;">${s.areaHa.toFixed(2)}</td>
+                    <td style="padding:7px 10px;text-align:right;">${s.volumenM3.toFixed(2)}</td>
+                    <td style="padding:7px 10px;text-align:center;">
+                        <button class="huaro-btn" style="padding:4px 10px;font-size:12px;" onclick="huaroFechaExacta('${s.semanaInicio}');cerrarModalHuaroHistorial();">👁 Ver</button>
+                    </td>
+                </tr>`).join('') : `<tr><td colspan="6" style="padding:14px;text-align:center;color:#6b7280;">Todavía no hay ninguna semana con PDA guardado en este navegador.</td></tr>`;
+
+            const modalHtml = `
+            <div id="modalHuaroHistorial" class="modal-overlay active" style="z-index:99996;">
+                <div class="modal-container" style="max-width:760px;max-height:85vh;overflow-y:auto;text-align:left;">
+                    <h3 style="margin-top:0;">🕒 Historial — Semanas trabajadas (Huaro)</h3>
+                    <p class="huaro-mini" style="margin-top:0;">Guardado en este navegador (no se sincroniza con otros dispositivos). Elige "Ver" para abrir esa semana en el PDA.</p>
+                    <div style="overflow-x:auto;">
+                        <table class="huaro-tabla" style="width:100%;">
+                            <thead><tr>
+                                <th style="text-align:left;padding:7px 10px;">Semana (Lun–Dom)</th>
+                                <th style="padding:7px 10px;">Bocatomas</th>
+                                <th style="padding:7px 10px;">Usuarios</th>
+                                <th style="padding:7px 10px;text-align:right;">Área (ha)</th>
+                                <th style="padding:7px 10px;text-align:right;">Volumen (m³)</th>
+                                <th style="padding:7px 10px;">Acción</th>
+                            </tr></thead>
+                            <tbody>${filas}</tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:16px;text-align:right;">
+                        <button class="huaro-btn sec" onclick="cerrarModalHuaroHistorial()">Cerrar</button>
+                    </div>
+                </div>
+            </div>`;
+            const div = document.createElement('div');
+            div.innerHTML = modalHtml;
+            document.body.appendChild(div.firstElementChild);
+        }
+        function cerrarModalHuaroHistorial() {
+            const m = document.getElementById('modalHuaroHistorial');
+            if (m) m.remove();
+        }
         function _huaroMesTexto(iso) {
             try { return new Date(iso + 'T00:00:00').toLocaleString('es-PE', { month: 'long', year: 'numeric' }).toUpperCase(); }
             catch (e) { return ''; }
@@ -3996,6 +4079,7 @@ const COMISIONES = {
                         <label style="font-weight:600;font-size:12px;">o fecha exacta<br>
                             <input type="date" id="huaroFechaSemana" value="${semanaISO}" onchange="huaroFechaExacta(this.value)" class="huaro-sel" style="margin-top:3px;">
                         </label>
+                        <button class="huaro-btn sec" onclick="huaroMostrarHistorial()" title="Ver todas las semanas con PDA guardado en este navegador" style="margin-top:3px;">🕒 Historial</button>
                     </div>
                     <div class="huaro-mini" style="margin-top:8px;"><b>${_semLbl}</b></div>
                 </div>
