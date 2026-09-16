@@ -4085,6 +4085,16 @@ const COMISIONES = {
                 </div>
 
                 <div class="huaro-card">
+                    <label style="font-weight:600;font-size:13px;">📤 ¿Ya tienes un Anexo G-2 generado antes (Excel), pero esta semana no aparece en el Historial?<br>
+                        <span style="font-weight:400;font-size:12px;color:#555;">Súbelo acá para generar su Anexo G-1 directamente a partir de esos datos, sin necesitar el PDA guardado en este navegador.</span>
+                    </label>
+                    <div style="margin-top:8px;">
+                        <input type="file" id="huaroInputG2ParaG1" accept=".xlsx,.xls" style="display:none;" onchange="huaroImportarG2ParaG1(event)">
+                        <button class="huaro-btn" onclick="document.getElementById('huaroInputG2ParaG1').click()">📤 Subir Anexo G-2 (Excel) y generar G-1</button>
+                    </div>
+                </div>
+
+                <div class="huaro-card">
                     <label style="font-weight:600;font-size:13px;">1) Selecciona la bocatoma a programar<br>
                         <select id="huaroBocSel" class="huaro-sel" onchange="huaroSeleccionarBoc(this.value)" style="margin-top:5px;min-width:320px;max-width:100%;">${_optBoc}</select>
                     </label>
@@ -4695,6 +4705,110 @@ const COMISIONES = {
         // Excel del G-2 (agregado por bocatoma) — misma estructura que el G-2
         // oficial: canal de derivación / toma / canal de distribución, y el
         // caudal por día LUN..DOM en m³/seg (con la SUMA en la fila TOTAL).
+        // Reconstruye los datos de un Anexo G-1 a partir de un Excel de Anexo
+        // G-2 YA GENERADO antes por este mismo sistema (_huaroExcelGOficial) —
+        // pensado para cuando esa semana no está en el Historial (PDA guardado
+        // solo en localStorage, sin respaldo en Supabase): el propio Excel del
+        // G-2 ya trae, por bocatoma, exactamente los mismos datos agregados que
+        // necesita el G-1 (N° usuarios, volumen, área, tiempo, período, caudal
+        // por día) — no hace falta reconstruir el PDA completo (usuarios
+        // individuales, campaña, etc.), solo estas filas.
+        // Busca la fila de encabezado por la columna "N° DE USUARIOS" (única,
+        // sin ambigüedad — a diferencia de "PERÍODO — HORA", que aparece dos
+        // veces) y deriva las demás columnas por su posición conocida respecto
+        // a ella, tal cual las escribe _huaroExcelGOficial.
+        function _huaroParsearG2ExcelParaG1(workbook) {
+            const normCelda = v => (v == null ? '' : v.toString()).trim().toUpperCase().replace(/\s+/g, ' ');
+            const nombreHoja = workbook.SheetNames.find(n => /ANEXO G-?2/i.test(n)) || workbook.SheetNames[0];
+            const grid = XLSX.utils.sheet_to_json(workbook.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
+
+            let filaHeader = -1, colNUsuarios = -1;
+            for (let i = 0; i < Math.min(grid.length, 20) && filaHeader < 0; i++) {
+                const fila = grid[i] || [];
+                for (let c = 0; c < fila.length; c++) {
+                    if (normCelda(fila[c]) === 'N° DE USUARIOS') { filaHeader = i; colNUsuarios = c; break; }
+                }
+            }
+            if (filaHeader < 0) throw new Error('No se reconoce el formato: no se encontró la columna "N° DE USUARIOS" del Anexo G-2.');
+
+            const col = {
+                canalDerivacion: colNUsuarios - 3, toma: colNUsuarios - 2, canalDistribucion: colNUsuarios - 1,
+                nUsuarios: colNUsuarios, volumen: colNUsuarios + 1, area: colNUsuarios + 2, tiempo: colNUsuarios + 3,
+                perInicio: colNUsuarios + 4, horaInicio: colNUsuarios + 5, perTermino: colNUsuarios + 6, horaTermino: colNUsuarios + 7,
+                dia0: colNUsuarios + 8, observaciones: colNUsuarios + 15,
+            };
+
+            // "Semana:" está en alguna fila anterior al encabezado, columna A
+            // (el valor real, por el merge de celdas del exportador, queda en
+            // la columna B de esa misma fila).
+            let semanaInicioISO = '', semanaFinISO = '';
+            for (let i = 0; i < filaHeader; i++) {
+                const fila = grid[i] || [];
+                if (normCelda(fila[0]) === 'SEMANA:') {
+                    const m = (fila[1] || '').toString().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s*AL\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+                    if (m) {
+                        semanaInicioISO = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+                        semanaFinISO = m[6] + '-' + m[5].padStart(2, '0') + '-' + m[4].padStart(2, '0');
+                    }
+                    break;
+                }
+            }
+
+            const fechaISOdesde = (txt) => {
+                const m = (txt || '').toString().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                return m ? (m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0')) : '';
+            };
+            const filas = [];
+            for (let i = filaHeader + 1; i < grid.length; i++) {
+                const fila = grid[i] || [];
+                const bocatoma = (fila[col.toma] || '').toString().trim();
+                const marcaFilaVacia = !bocatoma && !(fila[col.canalDerivacion] || '').toString().trim();
+                if (marcaFilaVacia) continue;
+                if (normCelda(fila[col.canalDerivacion]) === 'TOTAL' || normCelda(fila[col.toma]) === 'TOTAL') break;
+
+                const obsTxt = (fila[col.observaciones] || '').toString();
+                const mPend = obsTxt.match(/Pendientes:\s*(\d+)\s*usuario\(s\)\s*\/\s*([\d.,]+)\s*ha/i);
+                filas.push({
+                    bocatoma,
+                    nUsuarios: parseInt(fila[col.nUsuarios], 10) || 0,
+                    volumenTotalM3: parseFloat(fila[col.volumen]) || 0,
+                    areaProgramadaHa: parseFloat(fila[col.area]) || 0,
+                    tiempoTotalH: parseFloat(fila[col.tiempo]) || 0,
+                    periodoInicioISO: fechaISOdesde(fila[col.perInicio]) || semanaInicioISO,
+                    periodoInicioHora: (fila[col.horaInicio] || '04:00').toString(),
+                    periodoFinISO: fechaISOdesde(fila[col.perTermino]) || semanaFinISO,
+                    periodoFinHora: (fila[col.horaTermino] || '20:00').toString(),
+                    caudalPorDia: Array.from({ length: 7 }, (_, d) => parseFloat(fila[col.dia0 + d]) || 0),
+                    nPendientes: mPend ? parseInt(mPend[1], 10) : 0,
+                    areaPendienteHa: mPend ? parseFloat(mPend[2].replace(',', '.')) : 0,
+                });
+            }
+            if (!filas.length) throw new Error('No se encontró ninguna fila de bocatoma con datos en el Excel.');
+
+            return {
+                semanaInicioISO, semanaFinISO,
+                mesTexto: semanaInicioISO ? _huaroMesTexto(semanaInicioISO) : '',
+                filas,
+            };
+        }
+
+        async function huaroImportarG2ParaG1(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            try {
+                const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                const datos = _huaroParsearG2ExcelParaG1(wb);
+                const html = HuaroCore.huaroConstruirG1Html(datos);
+                _huaroPanelAnexo('Anexo G-1 — Huaro (desde Excel importado)', html,
+                    () => _huaroImprimir('Anexo G1', html, 'landscape'),
+                    () => _huaroExcelG1Oficial(datos));
+            } catch (e) {
+                alert('No se pudo generar el Anexo G-1 desde ese Excel: ' + (e.message || e));
+            } finally {
+                event.target.value = '';
+            }
+        }
+
         async function _huaroExcelG1Oficial(datos) {
             const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = [
