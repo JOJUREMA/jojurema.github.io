@@ -474,6 +474,106 @@ function _huaroDiaDelMes(semanaInicioISO, idx) {
     return d.getDate();
 }
 
+// ── ANEXO G-1 ──
+// Formato G-1: Programación de Distribución del Agua a Nivel de Canales de
+// Derivación (R.J. N° 0155-2022-ANA, Anexo G) — un nivel por ENCIMA del G-2:
+// en Huaro cada bocatoma capta directo de la Quebrada Huaro por su propio
+// canal de derivación (huaroCanalBocatoma), así que tiene la misma
+// granularidad por bocatoma que el G-2 — mismo `datos.filas` (agregado por
+// bocatoma), solo cambian las columnas mostradas (sin "Toma"/"Canal de
+// Distribución", que no aplican a este nivel) y los días van numerados 1-7
+// (no abreviatura+fecha, así los pide el formato oficial de este anexo).
+// datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
+function huaroConstruirG1Html(datos) {
+    const th = 'border:1px solid #000;padding:5px;font-weight:700;';
+    const th2 = 'border:1px solid #000;padding:4px;font-weight:700;font-size:9px;';
+    const td = 'border:1px solid #000;padding:5px;color:#000;text-align:center;';
+    const tdL = 'border:1px solid #000;padding:5px;color:#000;text-align:left;';
+    const totalBg = 'background:#00B0F0;color:#000;';
+    const perTxt = 'DEL ' + _huaroFechaCorta(datos.semanaInicioISO) + ' AL ' + _huaroFechaCorta(datos.semanaFinISO);
+
+    let body = '';
+    let tU = 0, tVol = 0, tArea = 0, tTiempoMax = 0;
+    const tDia = new Array(HUARO_DIAS_SEMANA).fill(0);
+
+    (datos.filas || []).forEach(f => {
+        tU += f.nUsuarios; tVol += f.volumenTotalM3; tArea += f.areaProgramadaHa;
+        tTiempoMax = Math.max(tTiempoMax, f.tiempoTotalH);
+        (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
+
+        const dias = (f.caudalPorDia || []).map(c =>
+            `<td style="${td}">${(c || 0).toFixed(2)}</td>`).join('');
+        const obs = f.nPendientes > 0
+            ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
+        body += `
+        <tr>
+            <td style="${tdL}font-weight:600;">${_huaroEsc(f.bocatoma)}</td>
+            <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
+            <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
+            <td style="${td}">${f.volumenTotalM3.toFixed(2)}</td>
+            <td style="${td}">${f.areaProgramadaHa.toFixed(2)}</td>
+            <td style="${td}">${f.tiempoTotalH.toFixed(1)}</td>
+            <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
+            <td style="${td}">${f.periodoInicioHora || '04:00'}</td>
+            <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
+            <td style="${td}">${f.periodoFinHora || '20:00'}</td>
+            ${dias}
+            <td style="${tdL}">${_huaroEsc(obs)}</td>
+        </tr>`;
+    });
+    const totDias = tDia.map(c => `<td style="${td}${totalBg}font-weight:700;">${(c || 0).toFixed(2)}</td>`).join('');
+
+    return `
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:2px;">
+        ANEXO G:&nbsp;&nbsp;PROGRAMA DE DISTRIBUCION DE AGUA EN LOS SECTORES HIDRAULICOS
+    </div>
+    <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:12px;margin-bottom:8px;">
+        Formato G-1:&nbsp;&nbsp;Programación de Distribución del Agua a Nivel de Canales de Derivación
+    </div>
+    <div style="font-family:Arial,sans-serif;color:#000;font-size:10px;line-height:1.7;margin:6px 0 10px;">
+        <div><strong>AAA</strong>&nbsp;&nbsp;${HUARO_AAA}</div>
+        <div><strong>ALA</strong>&nbsp;&nbsp;${HUARO_ALA}</div>
+        <div><strong>Sector Hidráulico</strong>&nbsp;&nbsp;${HUARO_JUNTA}</div>
+        <div><strong style="color:#C00000;">Periodo</strong>&nbsp;&nbsp;<span style="color:#C00000;">${perTxt}</span></div>
+    </div>
+    <div style="overflow-x:auto;margin-top:10px;">
+    <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;min-width:1100px;width:100%;">
+        <thead>
+            <tr style="background:#E6E6E6;color:#000;">
+                <th rowspan="2" style="${th}">NOMBRE DE LA BOCATOMA<br>O TOMA DIRECTA EN LA<br>FUENTE NATURAL O<br>INFRAESTRUCTURA<br>HIDRÁULICA MAYOR</th>
+                <th rowspan="2" style="${th}">NOMBRE DEL CANAL<br>DE DERIVACIÓN</th>
+                <th rowspan="2" style="${th}">N°<br>USUARIOS</th>
+                <th rowspan="2" style="${th}">VOLUMEN DE<br>AGUA<br>PROGRAMADO<br>(m³)</th>
+                <th rowspan="2" style="${th}">ÁREA BAJO<br>RIEGO ATENDER<br>(Ha)</th>
+                <th rowspan="2" style="${th}">TIEMPO DE<br>OPERACIÓN DEL<br>CANAL (HORAS)</th>
+                <th colspan="4" style="${th}">PERÍODO</th>
+                <th colspan="7" style="${th}">CAUDAL PROGRAMADO POR DÍAS (l/seg)</th>
+                <th rowspan="2" style="${th}">OBSERVACIONES</th>
+            </tr>
+            <tr style="background:#E6E6E6;color:#000;">
+                <th style="${th2}">INICIO</th><th style="${th2}">HORA</th>
+                <th style="${th2}">TÉRMINO</th><th style="${th2}">HORA</th>
+                ${[1, 2, 3, 4, 5, 6, 7].map(n => `<th style="${th2}">${n}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
+            ${body}
+            <tr style="${totalBg}font-weight:bold;">
+                <td style="${td}${totalBg}" colspan="2">TOTAL</td>
+                <td style="${td}${totalBg}">${tU}</td>
+                <td style="${td}${totalBg}">${tVol.toFixed(2)}</td>
+                <td style="${td}${totalBg}">${tArea.toFixed(2)}</td>
+                <td style="${td}${totalBg}">${tTiempoMax.toFixed(1)}</td>
+                <td style="${td}${totalBg}">-</td><td style="${td}${totalBg}">-</td>
+                <td style="${td}${totalBg}">-</td><td style="${td}${totalBg}">-</td>
+                ${totDias}
+                <td style="${td}${totalBg}">-</td>
+            </tr>
+        </tbody>
+    </table>
+    </div>`;
+}
+
 // ── ANEXO G-2 ──
 // datos: { semanaInicioISO, semanaFinISO, mesTexto, filas: [agregado por bocatoma] }
 function huaroConstruirG2Html(datos) {
@@ -751,7 +851,7 @@ if (typeof window !== 'undefined') {
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
-        huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
+        huaroConstruirG1Html, huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         _huaroDiaDelMes,
         huaroDocumentoImprimible,
     };
@@ -764,7 +864,7 @@ if (typeof module !== 'undefined' && module.exports) {
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
-        huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
+        huaroConstruirG1Html, huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
         _huaroDiaDelMes,
         huaroDocumentoImprimible,
     };

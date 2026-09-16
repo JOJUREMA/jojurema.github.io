@@ -3967,12 +3967,13 @@ const COMISIONES = {
                     <div id="huaroResumenTexto"></div>
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 (canales de derivación)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2 (toda la semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
                         <button class="huaro-btn sec" onclick="huaroBorrarTodasProgramadas()" ${hayAnexos ? '' : 'disabled'} style="margin-left:auto;">🗑 Borrar todas</button>
                     </div>
-                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-2</b> se guarda y reúne <b>todas</b> las bocatomas programadas esta semana. El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
+                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-1</b> y el <b>Anexo G-2</b> reúnen <b>todas</b> las bocatomas programadas esta semana (en Huaro cada bocatoma es su propio canal de derivación, así que ambos anexos muestran las mismas filas con columnas distintas). El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
                 </div>`;
 
             ca.innerHTML = `
@@ -4470,6 +4471,20 @@ const COMISIONES = {
             };
         }
 
+        // G-1 = mismo nivel de agregación que el G-2 (en Huaro cada bocatoma
+        // capta directo de la Quebrada Huaro por su propio canal de
+        // derivación, así que "por canal de derivación" y "por bocatoma"
+        // son lo mismo) — se reusa _huaroDatosG2() tal cual, solo cambia
+        // cómo se renderiza (huaroConstruirG1Html).
+        function huaroMostrarG1() {
+            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const datos = _huaroDatosG2();
+            const html = HuaroCore.huaroConstruirG1Html(datos);
+            _huaroPanelAnexo('Anexo G-1 — Huaro', html,
+                () => _huaroImprimir('Anexo G1', html, 'landscape'),
+                () => _huaroExcelG1Oficial(datos));
+        }
+
         function huaroMostrarG2() {
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const datos = _huaroDatosG2();
@@ -4596,6 +4611,67 @@ const COMISIONES = {
         // Excel del G-2 (agregado por bocatoma) — misma estructura que el G-2
         // oficial: canal de derivación / toma / canal de distribución, y el
         // caudal por día LUN..DOM en m³/seg (con la SUMA en la fila TOTAL).
+        async function _huaroExcelG1Oficial(datos) {
+            const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
+            const heads = [
+                'NOMBRE DE LA BOCATOMA O TOMA DIRECTA EN LA FUENTE NATURAL O INFRAESTRUCTURA HIDRÁULICA MAYOR',
+                'NOMBRE DEL CANAL DE DERIVACIÓN',
+                'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO ATENDER (Ha)',
+                'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
+                'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
+                '1', '2', '3', '4', '5', '6', '7',
+                'OBSERVACIONES',
+            ];
+            const wb = new ExcelJS.Workbook();
+            const ws = wb.addWorksheet('Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            ws.columns = heads.map((h, i) => (i === 0 || i === 1 || i === heads.length - 1) ? { width: 24 } : { width: 12 });
+
+            const poner = (fila, et, val) => {
+                ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
+                ws.mergeCells(fila, 2, fila, heads.length);
+                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
+            };
+            ws.mergeCells(1, 1, 1, heads.length);
+            ws.getCell(1, 1).value = 'ANEXO G: PROGRAMA DE DISTRIBUCION DE AGUA EN LOS SECTORES HIDRAULICOS';
+            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
+            ws.mergeCells(2, 1, 2, heads.length);
+            ws.getCell(2, 1).value = 'Formato G-1: Programación de Distribución del Agua a Nivel de Canales de Derivación';
+            ws.getCell(2, 1).font = { bold: true, size: 11 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
+            poner(4, 'AAA:', HuaroCore.HUARO_AAA);
+            poner(5, 'ALA:', HuaroCore.HUARO_ALA);
+            poner(6, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
+            poner(7, 'Periodo:', per);
+            let r = 9;
+            const alinear = (c, i) => {
+                c.alignment = { horizontal: (i <= 1 || i === heads.length - 1) ? 'left' : 'center', vertical: 'middle' };
+            };
+            heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
+            r++;
+
+            let tU = 0, tV = 0, tA = 0, tHmax = 0;
+            const tDia = new Array(7).fill(0);
+            datos.filas.forEach(f => {
+                tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa;
+                tHmax = Math.max(tHmax, f.tiempoTotalH);
+                (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
+                const vals = [
+                    f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
+                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
+                    (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
+                    (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
+                    ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)),
+                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
+                ];
+                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
+                r++;
+            });
+            const totalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
+            const tot = ['TOTAL', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
+                ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
+            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; c.fill = totalFill; _huaroBorde(c); alinear(c, i); });
+            await _descargarWorkbook(wb, 'Anexo G1.xlsx');
+        }
+
         async function _huaroExcelGOficial(datos, formato) {
             const semTxt = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const _abv = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'];
