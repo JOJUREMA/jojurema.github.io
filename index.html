@@ -4812,45 +4812,66 @@ const COMISIONES = {
         async function _huaroExcelG1Oficial(datos) {
             const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const diasHeads = [0, 1, 2, 3, 4, 5, 6].map((i) => HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i));
-            const heads = [
-                'SUB SECTOR HIDRÁULICO',
-                'NOMBRE DE LA BOCATOMA O TOMA DIRECTA EN LA FUENTE NATURAL O INFRAESTRUCTURA HIDRÁULICA MAYOR',
-                'NOMBRE DEL CANAL DE DERIVACIÓN',
-                'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO ATENDER (Ha)',
-                'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
-                'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
-                ...diasHeads,
-                'OBSERVACIONES',
-            ];
-            // Columnas numéricas (0-based en `heads`) que llevan hasta 2 decimales
-            // y separador de miles por coma — todas las numéricas EXCEPTO "N° DE
-            // USUARIOS" (índice 3), que es un conteo entero.
+            const NCOLS = 19; // 7 (Sub Sector..Tiempo) + 4 (Período) + 7 (días) + 1 (Observaciones)
+            // Columnas numéricas (0-based, contra las 19 columnas de arriba) que
+            // llevan hasta 2 decimales y separador de miles por coma — todas las
+            // numéricas EXCEPTO "N° DE USUARIOS" (índice 3), que es un conteo entero.
             const COLS_NUM_2DEC = new Set([4, 5, 6, 11, 12, 13, 14, 15, 16, 17]);
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
-            ws.columns = heads.map((h, i) => (i === 0 || i === 1 || i === 2 || i === heads.length - 1) ? { width: 24 } : { width: 12 });
+            ws.columns = Array.from({ length: NCOLS }, (_, i) => (i === 0 || i === 1 || i === 2 || i === NCOLS - 1) ? { width: 24 } : { width: 12 });
 
             const poner = (fila, et, val) => {
                 ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
-                ws.mergeCells(fila, 2, fila, heads.length);
+                ws.mergeCells(fila, 2, fila, NCOLS);
                 ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
             };
-            ws.mergeCells(1, 1, 1, heads.length);
+            ws.mergeCells(1, 1, 1, NCOLS);
             ws.getCell(1, 1).value = 'ANEXO G: PROGRAMA DE DISTRIBUCION DE AGUA EN LOS SECTORES HIDRAULICOS';
             ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
-            ws.mergeCells(2, 1, 2, heads.length);
+            ws.mergeCells(2, 1, 2, NCOLS);
             ws.getCell(2, 1).value = 'Formato G-1: Programación de Distribución del Agua a Nivel de Canales de Derivación';
             ws.getCell(2, 1).font = { bold: true, size: 11 }; ws.getCell(2, 1).alignment = { horizontal: 'center' };
             poner(4, 'AAA:', HuaroCore.HUARO_AAA);
             poner(5, 'ALA:', HuaroCore.HUARO_ALA);
             poner(6, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
             poner(7, 'Periodo:', per);
-            let r = 9;
             const alinear = (c, i) => {
-                c.alignment = { horizontal: (i <= 2 || i === heads.length - 1) ? 'left' : 'center', vertical: 'middle' };
+                c.alignment = { horizontal: (i <= 2 || i === NCOLS - 1) ? 'left' : 'center', vertical: 'middle' };
             };
-            heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
-            r++;
+
+            // ── Encabezado de tabla en 2 niveles (igual a la ventana inicial/
+            // impresión: huaroConstruirG1Html) — "PERÍODO" y "CAUDAL PROGRAMADO
+            // POR DÍAS" son un solo encabezado que abarca sus 4/7 sub-columnas,
+            // no un texto repetido en cada columna. ──
+            const filaH1 = 9, filaH2 = 10;
+            const colsRowspan = [
+                [1, 'SUB SECTOR\nHIDRÁULICO'],
+                [2, 'NOMBRE DE LA BOCATOMA O TOMA\nDIRECTA EN LA FUENTE NATURAL O\nINFRAESTRUCTURA HIDRÁULICA MAYOR'],
+                [3, 'NOMBRE DEL CANAL\nDE DERIVACIÓN'],
+                [4, 'N° DE\nUSUARIOS'],
+                [5, 'VOLUMEN DE AGUA\nPROGRAMADO (m³)'],
+                [6, 'ÁREA BAJO RIEGO\nATENDER (Ha)'],
+                [7, 'TIEMPO DE OPERACIÓN\nDEL CANAL (HORAS)'],
+            ];
+            colsRowspan.forEach(([col, texto]) => {
+                ws.mergeCells(filaH1, col, filaH2, col);
+                const c = ws.getCell(filaH1, col); c.value = texto; _huaroEstiloEnc(c);
+            });
+            ws.mergeCells(filaH1, 8, filaH1, 11);
+            const cPeriodo = ws.getCell(filaH1, 8); cPeriodo.value = 'PERÍODO'; _huaroEstiloEnc(cPeriodo);
+            ws.mergeCells(filaH1, 12, filaH1, 18);
+            const cCaudal = ws.getCell(filaH1, 12); cCaudal.value = 'CAUDAL PROGRAMADO POR DÍAS (l/seg)'; _huaroEstiloEnc(cCaudal);
+            ws.mergeCells(filaH1, 19, filaH2, 19);
+            const cObs = ws.getCell(filaH1, 19); cObs.value = 'OBSERVACIONES'; _huaroEstiloEnc(cObs);
+            [[8, 'INICIO'], [9, 'HORA'], [10, 'TÉRMINO'], [11, 'HORA']].forEach(([col, texto]) => {
+                const c = ws.getCell(filaH2, col); c.value = texto; _huaroEstiloEnc(c);
+            });
+            diasHeads.forEach((d, i) => {
+                const c = ws.getCell(filaH2, 12 + i); c.value = d; _huaroEstiloEnc(c);
+            });
+            [filaH1, filaH2].forEach((rr) => ws.getRow(rr).height = 32);
+            let r = filaH2 + 1;
 
             let tU = 0, tV = 0, tA = 0, tHmax = 0;
             const tDia = new Array(7).fill(0);
