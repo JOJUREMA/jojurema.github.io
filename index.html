@@ -4812,6 +4812,7 @@ const COMISIONES = {
         async function _huaroExcelG1Oficial(datos) {
             const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = [
+                'SUB SECTOR HIDRÁULICO',
                 'NOMBRE DE LA BOCATOMA O TOMA DIRECTA EN LA FUENTE NATURAL O INFRAESTRUCTURA HIDRÁULICA MAYOR',
                 'NOMBRE DEL CANAL DE DERIVACIÓN',
                 'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO ATENDER (Ha)',
@@ -4822,7 +4823,7 @@ const COMISIONES = {
             ];
             const wb = new ExcelJS.Workbook();
             const ws = wb.addWorksheet('Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
-            ws.columns = heads.map((h, i) => (i === 0 || i === 1 || i === heads.length - 1) ? { width: 24 } : { width: 12 });
+            ws.columns = heads.map((h, i) => (i === 0 || i === 1 || i === 2 || i === heads.length - 1) ? { width: 24 } : { width: 12 });
 
             const poner = (fila, et, val) => {
                 ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
@@ -4841,7 +4842,7 @@ const COMISIONES = {
             poner(7, 'Periodo:', per);
             let r = 9;
             const alinear = (c, i) => {
-                c.alignment = { horizontal: (i <= 1 || i === heads.length - 1) ? 'left' : 'center', vertical: 'middle' };
+                c.alignment = { horizontal: (i <= 2 || i === heads.length - 1) ? 'left' : 'center', vertical: 'middle' };
             };
             heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
             r++;
@@ -4853,7 +4854,7 @@ const COMISIONES = {
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
-                    f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
+                    HuaroCore.HUARO_COMISION_NOMBRE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
                     (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
@@ -4864,7 +4865,7 @@ const COMISIONES = {
                 r++;
             });
             const totalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
-            const tot = ['TOTAL', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
+            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
             tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; c.fill = totalFill; _huaroBorde(c); alinear(c, i); });
             await _descargarWorkbook(wb, 'Anexo G1.xlsx');

@@ -507,6 +507,7 @@ function huaroConstruirG1Html(datos) {
             ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
         body += `
         <tr>
+            <td style="${tdL}">${_huaroEsc(HUARO_COMISION_NOMBRE)}</td>
             <td style="${tdL}font-weight:600;">${_huaroEsc(f.bocatoma)}</td>
             <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
@@ -540,6 +541,7 @@ function huaroConstruirG1Html(datos) {
     <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10px;min-width:1100px;width:100%;">
         <thead>
             <tr style="background:#E6E6E6;color:#000;">
+                <th rowspan="2" style="${th}">SUB SECTOR<br>HIDRÁULICO</th>
                 <th rowspan="2" style="${th}">NOMBRE DE LA BOCATOMA<br>O TOMA DIRECTA EN LA<br>FUENTE NATURAL O<br>INFRAESTRUCTURA<br>HIDRÁULICA MAYOR</th>
                 <th rowspan="2" style="${th}">NOMBRE DEL CANAL<br>DE DERIVACIÓN</th>
                 <th rowspan="2" style="${th}">N°<br>USUARIOS</th>
@@ -559,7 +561,7 @@ function huaroConstruirG1Html(datos) {
         <tbody>
             ${body}
             <tr style="${totalBg}font-weight:bold;">
-                <td style="${td}${totalBg}" colspan="2">TOTAL</td>
+                <td style="${td}${totalBg}" colspan="3">TOTAL</td>
                 <td style="${td}${totalBg}">${tU}</td>
                 <td style="${td}${totalBg}">${tVol.toFixed(2)}</td>
                 <td style="${td}${totalBg}">${tArea.toFixed(2)}</td>
