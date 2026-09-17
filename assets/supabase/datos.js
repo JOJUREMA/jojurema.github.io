@@ -2287,7 +2287,7 @@
         while (true) {
             const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
                 (client) => client.from('padron_oficial_a1')
-                    .select('numero_orden, apellidos_nombres, tipo_documento, numero_documento, departamento, provincia, distrito, localidad, unidad_catastral, area_total_ha, area_bajo_riego_ha, sub_sector_hidraulico, numero_resolucion, clase_derecho, tipo_uso, volumen_m3, canal_derivacion, fuente_agua, cut_expediente, toma_nombre, origen, observacion')
+                    .select('numero_orden, apellidos_nombres, tipo_documento, numero_documento, departamento, provincia, distrito, localidad, unidad_catastral, area_total_ha, area_bajo_riego_ha, sub_sector_hidraulico, numero_resolucion, clase_derecho, tipo_uso, volumen_m3, canal_derivacion, fuente_agua, cut_expediente, toma_nombre, origen, observacion, vertices_utm, poligono_actualizado_en')
                     .eq('comision_id', comisionId)
                     .order('origen', { ascending: true })
                     .order('toma_nombre', { ascending: true, nullsFirst: false })
@@ -2401,6 +2401,35 @@
             actualizado_por: usuarioId,
         };
 
+        const { data, error } = await client.from('padron_oficial_a1')
+            .update(cambios)
+            .eq('comision_id', comisionId)
+            .eq('unidad_catastral', datos.unidadCatastral)
+            .select('id');
+        if (error) return { ok: false, error: error.message };
+        return { ok: true, actualizado: (data || []).length > 0 };
+    }
+
+    // Polígono propio de un usuario del Padrón A-1, editado/creado a mano
+    // desde "Padrón CUSSHMI" (Generar Plano) — independiente del predio del
+    // KML del bloque de riego (que solo es un respaldo cuando este campo
+    // está vacío) y de formato_a2_levantamiento (los 93 observados de ANA,
+    // tabla aparte). `verticesUtm`: arreglo de {easting,northing,lat,lon,
+    // orden} o null para borrar el polígono guardado y volver a depender
+    // del respaldo del KML. Requiere unidad_catastral (clave con la que se
+    // ubica la fila, igual que actualizarPadronOficialA1DesdeRegistro).
+    async function guardarPoligonoPadronOficialA1(datos) {
+        if (!datos || !datos.comisionKey || !datos.unidadCatastral) return { ok: false, error: 'Faltan datos obligatorios (comisión / unidad catastral).' };
+        const comisionId = await resolverComisionId(datos.comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + datos.comisionKey + '" no existe en Supabase.' };
+
+        let client;
+        try { client = window.CusshmiSupabase.getClient(); } catch (e) { return { ok: false, error: e.message }; }
+
+        const cambios = {
+            vertices_utm: Array.isArray(datos.verticesUtm) && datos.verticesUtm.length >= 3 ? datos.verticesUtm : null,
+            poligono_actualizado_en: new Date().toISOString(),
+        };
         const { data, error } = await client.from('padron_oficial_a1')
             .update(cambios)
             .eq('comision_id', comisionId)
@@ -2997,6 +3026,7 @@
         reasignarUsuarioCanal,
         incorporarUsuarioNuevoAPadronOficialA1,
         actualizarPadronOficialA1DesdeRegistro,
+        guardarPoligonoPadronOficialA1,
         guardarFormatoA2LevantamientoRegistros,
         obtenerAvanceFormatoA2LevantamientoPorToma,
         obtenerAvanceFormatoA2LevantamientoDetallado,

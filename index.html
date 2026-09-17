@@ -6556,28 +6556,39 @@ const COMISIONES = {
                 let usuarioResaltado = null;
                 if (esUnaToma && usuarioElegido !== 'TODOS') {
                     const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
-                    let verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
-                    if (verticesUtm.length < 3) {
-                        const predioPropio = predios.find((p) => _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(usuarioElegido));
-                        if (predioPropio && Array.isArray(predioPropio.coordenadas) && predioPropio.coordenadas.length >= 3) {
-                            verticesUtm = predioPropio.coordenadas.map(([lon, lat]) => latLonAUtm17S(lat, lon));
-                        }
-                    }
-                    if (verticesUtm.length < 3) {
-                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido/importado en el Formato A-2 ni un predio propio en el KML del bloque de riego — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
-                        return;
-                    }
-                    // Fila del Padrón A-1 de este usuario (por UC, o por
-                    // nombre si no hay predio propio con UC) — para el
-                    // usuario SIN registro de Formato A-2 (registroUsuario
-                    // undefined), es la única fuente real de datos (Toma, UC,
-                    // Área, Clase de Derecho, Volumen) que existe para
-                    // mostrar en su cuadro de datos.
+                    // Fila del Padrón A-1 de este usuario (por UC del predio
+                    // propio del KML, o por nombre si no hay predio propio
+                    // con UC) — para el usuario SIN registro de Formato A-2
+                    // (registroUsuario undefined), es la única fuente real de
+                    // datos (Toma, UC, Área, Clase de Derecho, Volumen) que
+                    // existe para mostrar en su cuadro de datos, y de tener
+                    // vertices_utm PROPIO (editado/creado a mano desde
+                    // Padrón CUSSHMI — ver abrirEditorPoligonoPadronCusshmi),
+                    // también la 2da fuente de polígono, antes del KML.
                     const predioPropioUc = predios.find((p) => _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(usuarioElegido));
                     const ucUsuario = predioPropioUc ? _normUcPlanoA2(predioPropioUc.catastralKey) : '';
                     const padronA1Usuario = (ucUsuario && padronA1Rows.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucUsuario))
                         || padronA1Rows.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === _normNombrePlanoA2(usuarioElegido))
                         || null;
+
+                    // Prioridad del polígono a resaltar: 1) medido/importado
+                    // real del Formato A-2 (Levantamiento, los 93 observados);
+                    // 2) el propio, editado/creado a mano desde Padrón
+                    // CUSSHMI (padron_oficial_a1.vertices_utm — CUALQUIER
+                    // usuario, A-1 o A-2); 3) como último respaldo, el predio
+                    // del KML del bloque de riego (cruzado por nombre),
+                    // convertido de [lon,lat] a UTM.
+                    let verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
+                    if (verticesUtm.length < 3 && padronA1Usuario && Array.isArray(padronA1Usuario.vertices_utm) && padronA1Usuario.vertices_utm.length >= 3) {
+                        verticesUtm = padronA1Usuario.vertices_utm;
+                    }
+                    if (verticesUtm.length < 3 && predioPropioUc && Array.isArray(predioPropioUc.coordenadas) && predioPropioUc.coordenadas.length >= 3) {
+                        verticesUtm = predioPropioUc.coordenadas.map(([lon, lat]) => latLonAUtm17S(lat, lon));
+                    }
+                    if (verticesUtm.length < 3) {
+                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido/importado en el Formato A-2, ni un polígono propio guardado, ni un predio en el KML del bloque de riego — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o crea/edita su polígono desde "📐 Editar/Crear polígono" en Padrón CUSSHMI.');
+                        return;
+                    }
                     usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario, padronA1: padronA1Usuario, tomaConsultada: tomaNombre };
                 }
 
@@ -10993,7 +11004,8 @@ const COMISIONES = {
                     ? `<button onclick="_guardarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">💾 Guardar</button>
                        <button onclick="_cancelarEdicionFilaPadronCusshmi()" style="padding:5px 10px;background:#e2e8f0;color:#4a5568;border:none;border-radius:3px;font-size:11px;cursor:pointer;">✖ Cancelar</button>`
                     : `<button onclick="_editarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#2563a6;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">✏️ Editar</button>
-                       <button onclick="_generarPlanoUsuarioPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;">🗺️ Plano</button>`;
+                       <button onclick="_generarPlanoUsuarioPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">🗺️ Plano</button>
+                       <button onclick="abrirEditorPoligonoPadronCusshmi(${idx})" style="padding:5px 10px;background:${f.vertices_utm && f.vertices_utm.length >= 3 ? '#7d3c98' : '#b35900'};color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;" title="${f.vertices_utm && f.vertices_utm.length >= 3 ? 'Editar el polígono propio ya guardado' : 'Crear el polígono propio de este usuario (adoptando el predio del KML o dibujándolo a mano)'}">${f.vertices_utm && f.vertices_utm.length >= 3 ? '📐 Editar polígono' : '➕ Crear polígono'}</button>`;
                 return `
                     <tr data-idx="${idx}">
                         <td style="padding:7px;text-align:center;">${idx + 1}</td>
@@ -11119,6 +11131,244 @@ const COMISIONES = {
             }
             selectUsuario.value = fila.apellidos_nombres;
             await _generarPlanoPrediosA2();
+        }
+
+        // ══ Editor de Polígono — Padrón CUSSHMI (cualquier usuario, A-1 o
+        // A-2, no solo los 93 observados) ══ Mismo patrón de interacción
+        // que el editor de Usuarios Observados ("Ver bloque de riego": clic
+        // para poner vértices, arrastrar para ajustar, clic en el primer
+        // vértice para cerrar, clic en un predio del KML del bloque para
+        // adoptar su forma) — pero guarda en padron_oficial_a1.vertices_utm
+        // (CusshmiDatos.guardarPoligonoPadronOficialA1), NO en
+        // formato_a2_levantamiento — funciona para cualquier fila del
+        // Padrón A-1, tenga o no un registro de Formato A-2.
+        let _mapaEditorPoligonoPadronCusshmi = null; // instancia Leaflet — se crea UNA vez y se reutiliza entre aperturas
+        let _editorPoligonoPadronCusshmi = null; // { fila, vertices, capaPoligono, marcadores, capaBloqueRiego, bloqueRiegoVisible }
+
+        function _construirEditorPoligonoPadronCusshmiSiHaceFalta() {
+            if (document.getElementById('modalEditorPoligonoPadronCusshmi')) return;
+            const html = `
+                <div id="modalEditorPoligonoPadronCusshmi" style="position:fixed;inset:0;z-index:99999;background:#001830;display:none;flex-direction:column;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#003876;color:#fff;flex-wrap:wrap;gap:8px;">
+                        <button id="btnCerrarEditorPoligonoPadronCusshmi" style="padding:7px 12px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">✕ Cerrar sin guardar</button>
+                        <span id="tituloEditorPoligonoPadronCusshmi" style="font-weight:600;font-size:13px;"></span>
+                        <button id="btnGuardarEditorPoligonoPadronCusshmi" style="padding:7px 12px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">💾 Guardar Polígono</button>
+                    </div>
+                    <div id="mapaEditorPoligonoPadronCusshmi" style="flex:1;"></div>
+                    <div style="background:#00234d;color:#fff;padding:10px 16px;display:flex;flex-direction:column;gap:8px;">
+                        <div id="estadoEditorPoligonoPadronCusshmi" style="font-size:12px;color:#cfe0f5;"></div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button id="btnBloqueRiegoEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗺️ Ver bloque de riego (clic en un predio para adoptarlo)</button>
+                            <button id="btnDeshacerEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">↩️ Deshacer último punto</button>
+                            <button id="btnBorrarEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:#8b2c2c;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗑️ Borrar polígono</button>
+                        </div>
+                    </div>
+                </div>`;
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            document.body.appendChild(div.firstElementChild);
+
+            document.getElementById('btnCerrarEditorPoligonoPadronCusshmi').addEventListener('click', _cerrarEditorPoligonoPadronCusshmi);
+            document.getElementById('btnGuardarEditorPoligonoPadronCusshmi').addEventListener('click', _guardarEditorPoligonoPadronCusshmi);
+            document.getElementById('btnDeshacerEditorPoligonoPadronCusshmi').addEventListener('click', () => {
+                if (!_editorPoligonoPadronCusshmi || _editorPoligonoPadronCusshmi.vertices.length === 0) return;
+                _editorPoligonoPadronCusshmi.vertices.pop();
+                _redibujarEditorPoligonoPadronCusshmi();
+            });
+            document.getElementById('btnBorrarEditorPoligonoPadronCusshmi').addEventListener('click', () => {
+                if (!_editorPoligonoPadronCusshmi) return;
+                if (!confirm('¿Borrar todos los puntos del polígono en edición?')) return;
+                _editorPoligonoPadronCusshmi.vertices = [];
+                _redibujarEditorPoligonoPadronCusshmi();
+            });
+            document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi').addEventListener('click', _toggleBloqueRiegoEditorPoligonoPadronCusshmi);
+        }
+
+        function _iniciarMapaEditorPoligonoPadronCusshmiSiHaceFalta() {
+            if (_mapaEditorPoligonoPadronCusshmi) { setTimeout(() => _mapaEditorPoligonoPadronCusshmi.invalidateSize(), 50); return; }
+            _mapaEditorPoligonoPadronCusshmi = L.map('mapaEditorPoligonoPadronCusshmi', { preferCanvas: true }).setView([-4.9, -80.6], 14);
+            // Google Satellite en vez de Esri (mismo criterio que el editor de Usuarios Observados).
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google', subdomains: ['0', '1', '2', '3'], maxZoom: 20,
+            }).addTo(_mapaEditorPoligonoPadronCusshmi);
+            _mapaEditorPoligonoPadronCusshmi.on('click', (e) => {
+                if (!_editorPoligonoPadronCusshmi) return;
+                _editorPoligonoPadronCusshmi.vertices.push(_construirVerticePoligonoPadronCusshmi(e.latlng.lat, e.latlng.lng));
+                _redibujarEditorPoligonoPadronCusshmi();
+            });
+        }
+
+        function _construirVerticePoligonoPadronCusshmi(lat, lon) {
+            const utm = latLonAUtm17S(lat, lon);
+            return { easting: utm.easting, northing: utm.northing, lat, lon };
+        }
+
+        function _iconoEditorPoligonoPadronCusshmi(letra) {
+            return L.divIcon({
+                html: '<div style="display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:#b35900;color:#fff;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.4);">' + letra + '</div>',
+                className: '', iconSize: [26, 26], iconAnchor: [13, 13],
+            });
+        }
+
+        async function abrirEditorPoligonoPadronCusshmi(idx) {
+            const fila = _padronCusshmiFilasVista[idx];
+            if (!fila) return;
+            if (!fila.toma_nombre) { alert('Este usuario no tiene Toma asignada en el Padrón A-1 — no se puede ubicar su bloque de riego para editar el polígono.'); return; }
+            if (!fila.unidad_catastral) { alert('Este usuario no tiene Unidad Catastral registrada — es la clave con la que se guarda su polígono, no se puede continuar.'); return; }
+
+            _construirEditorPoligonoPadronCusshmiSiHaceFalta();
+            // Limpia las capas de una edición previa (el mapa Leaflet se
+            // reutiliza entre aperturas, ver _iniciarMapaEditorPoligonoPadronCusshmiSiHaceFalta).
+            if (_editorPoligonoPadronCusshmi && _mapaEditorPoligonoPadronCusshmi) {
+                if (_editorPoligonoPadronCusshmi.capaPoligono) _mapaEditorPoligonoPadronCusshmi.removeLayer(_editorPoligonoPadronCusshmi.capaPoligono);
+                _editorPoligonoPadronCusshmi.marcadores.forEach((m) => _mapaEditorPoligonoPadronCusshmi.removeLayer(m));
+                if (_editorPoligonoPadronCusshmi.capaBloqueRiego) _mapaEditorPoligonoPadronCusshmi.removeLayer(_editorPoligonoPadronCusshmi.capaBloqueRiego);
+            }
+
+            const verticesIniciales = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3
+                ? fila.vertices_utm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((v) => ({ easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon }))
+                : [];
+            _editorPoligonoPadronCusshmi = { fila, vertices: verticesIniciales, capaPoligono: null, marcadores: [], capaBloqueRiego: null, bloqueRiegoVisible: false };
+
+            document.getElementById('tituloEditorPoligonoPadronCusshmi').textContent = '📐 Polígono — ' + fila.apellidos_nombres;
+            const btnBloque = document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi');
+            if (btnBloque) btnBloque.textContent = '🗺️ Ver bloque de riego (clic en un predio para adoptarlo)';
+            const modal = document.getElementById('modalEditorPoligonoPadronCusshmi');
+            modal.style.display = 'flex';
+            _iniciarMapaEditorPoligonoPadronCusshmiSiHaceFalta();
+
+            if (verticesIniciales.length >= 3) {
+                const centroide = calcularCentroidePoligono(verticesIniciales);
+                if (centroide) {
+                    const latlon = utm17SALatLon(centroide.easting, centroide.northing);
+                    _mapaEditorPoligonoPadronCusshmi.setView([latlon.lat, latlon.lon], 17);
+                }
+            } else {
+                // Sin polígono propio todavía — centra en el predio del KML del
+                // bloque que coincide por nombre/UC (si existe), para no
+                // arrancar en un punto cualquiera del mapa.
+                const predios = await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(fila.toma_nombre);
+                const propio = predios.find((p) => _normUcPlanoA2(p.catastralKey) === _normUcPlanoA2(fila.unidad_catastral) || _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(fila.apellidos_nombres));
+                if (propio && propio.coordenadas && propio.coordenadas.length) {
+                    const [lon, lat] = propio.coordenadas[0];
+                    _mapaEditorPoligonoPadronCusshmi.setView([lat, lon], 17);
+                }
+            }
+            _redibujarEditorPoligonoPadronCusshmi();
+        }
+
+        function _redibujarEditorPoligonoPadronCusshmi() {
+            const estado = _editorPoligonoPadronCusshmi;
+            if (!estado || !_mapaEditorPoligonoPadronCusshmi) return;
+            setTimeout(() => _mapaEditorPoligonoPadronCusshmi.invalidateSize(), 50);
+            if (estado.capaPoligono) { _mapaEditorPoligonoPadronCusshmi.removeLayer(estado.capaPoligono); estado.capaPoligono = null; }
+            estado.marcadores.forEach((m) => _mapaEditorPoligonoPadronCusshmi.removeLayer(m));
+            estado.marcadores = [];
+
+            const latlngs = estado.vertices.map((v) => [v.lat, v.lon]);
+            if (latlngs.length >= 3) {
+                estado.capaPoligono = L.polygon(latlngs, { color: '#b35900', fillColor: '#ff8c00', fillOpacity: 0.35, weight: 2 }).addTo(_mapaEditorPoligonoPadronCusshmi);
+            } else if (latlngs.length === 2) {
+                estado.capaPoligono = L.polyline(latlngs, { color: '#b35900', weight: 2 }).addTo(_mapaEditorPoligonoPadronCusshmi);
+            }
+            estado.vertices.forEach((v, idx) => {
+                const marcador = L.marker([v.lat, v.lon], { draggable: true, icon: _iconoEditorPoligonoPadronCusshmi(String(idx + 1)) }).addTo(_mapaEditorPoligonoPadronCusshmi);
+                marcador.on('dragend', (e) => {
+                    const ll = e.target.getLatLng();
+                    const utm = latLonAUtm17S(ll.lat, ll.lng);
+                    v.lat = ll.lat; v.lon = ll.lng; v.easting = utm.easting; v.northing = utm.northing;
+                    if (estado.capaPoligono) estado.capaPoligono.setLatLngs(estado.vertices.map((vv) => [vv.lat, vv.lon]));
+                });
+                // Tocar el PRIMER vértice con ya al menos 3 puestos no hace nada
+                // especial (a diferencia del editor de Observados) — acá "cerrar"
+                // es automático en cuanto hay 3+ puntos, no hace falta un gesto
+                // aparte; el polígono ya se ve cerrado en el mapa.
+                estado.marcadores.push(marcador);
+            });
+            _actualizarEstadoEditorPoligonoPadronCusshmi();
+        }
+
+        function _actualizarEstadoEditorPoligonoPadronCusshmi() {
+            const estado = _editorPoligonoPadronCusshmi;
+            const el = document.getElementById('estadoEditorPoligonoPadronCusshmi');
+            if (!estado || !el) return;
+            if (estado.vertices.length === 0) {
+                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para adoptar el predio de este usuario con un clic.';
+            } else if (estado.vertices.length < 3) {
+                el.textContent = estado.vertices.length + ' punto(s) — hacen falta al menos 3 para formar un polígono.';
+            } else {
+                const areaHa = (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(estado.vertices) : 0;
+                el.textContent = estado.vertices.length + ' vértices — Área: ' + areaHa.toFixed(2) + ' ha. Puedes arrastrar los puntos para ajustar, o tocar el mapa para agregar más.';
+            }
+        }
+
+        async function _toggleBloqueRiegoEditorPoligonoPadronCusshmi() {
+            const estado = _editorPoligonoPadronCusshmi;
+            const btn = document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi');
+            if (!estado) return;
+            if (estado.bloqueRiegoVisible) {
+                if (estado.capaBloqueRiego) { _mapaEditorPoligonoPadronCusshmi.removeLayer(estado.capaBloqueRiego); estado.capaBloqueRiego = null; }
+                estado.bloqueRiegoVisible = false;
+                if (btn) btn.textContent = '🗺️ Ver bloque de riego (clic en un predio para adoptarlo)';
+                return;
+            }
+            const predios = await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(estado.fila.toma_nombre);
+            if (!predios.length) { alert('No hay predios mapeados (KML) para la toma "' + estado.fila.toma_nombre + '".'); return; }
+            const capas = predios.map((p) => {
+                const latlngs = p.coordenadas.map((par) => [par[1], par[0]]);
+                const poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.25, interactive: true });
+                poligono.on('click', () => _adoptarPoligonoBloqueRiegoPadronCusshmi(p));
+                poligono.on('mouseover', () => poligono.setStyle({ weight: 3.5 }));
+                poligono.on('mouseout', () => poligono.setStyle({ weight: 1.5 }));
+                poligono.bindTooltip(nombreUsuarioPlanoA2(p.usuario) + (p.catastralKey ? (' — UC ' + p.catastralKey) : ''), { sticky: true });
+                return poligono;
+            });
+            estado.capaBloqueRiego = L.layerGroup(capas).addTo(_mapaEditorPoligonoPadronCusshmi);
+            estado.bloqueRiegoVisible = true;
+            if (btn) btn.textContent = '🗺️ Ocultar bloque de riego (' + predios.length + ' predios)';
+        }
+
+        function _adoptarPoligonoBloqueRiegoPadronCusshmi(p) {
+            const estado = _editorPoligonoPadronCusshmi;
+            if (!estado) return;
+            const nombrePredio = nombreUsuarioPlanoA2(p.usuario);
+            const yaTenia = estado.vertices.length >= 3;
+            const mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
+                ' del bloque de riego para ' + estado.fila.apellidos_nombres + '?' +
+                (yaTenia ? '\n\n⚠️ Ya hay un polígono en edición — se reemplazará por el del predio elegido.' : '');
+            if (!confirm(mensaje)) return;
+            estado.vertices = p.coordenadas.map((par) => {
+                const utm = latLonAUtm17S(par[1], par[0]);
+                return { easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0] };
+            });
+            _redibujarEditorPoligonoPadronCusshmi();
+        }
+
+        async function _guardarEditorPoligonoPadronCusshmi() {
+            const estado = _editorPoligonoPadronCusshmi;
+            if (!estado) return;
+            if (estado.vertices.length > 0 && estado.vertices.length < 3) {
+                alert('El polígono necesita al menos 3 vértices — agrega más puntos o usa "🗑️ Borrar polígono" para dejarlo vacío.');
+                return;
+            }
+            const verticesParaGuardar = estado.vertices.length >= 3
+                ? estado.vertices.map((v, i) => ({ orden: i + 1, easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon }))
+                : null;
+            const resultado = await CusshmiDatos.guardarPoligonoPadronOficialA1({
+                comisionKey: _padronCusshmiEstado.comisionKey,
+                unidadCatastral: estado.fila.unidad_catastral,
+                verticesUtm: verticesParaGuardar,
+            });
+            if (!resultado.ok) { alert('No se pudo guardar el polígono: ' + (resultado.error || 'error desconocido')); return; }
+            if (!resultado.actualizado) { alert('No se encontró la fila a actualizar (Unidad Catastral no coincide).'); return; }
+            estado.fila.vertices_utm = verticesParaGuardar;
+            _cerrarEditorPoligonoPadronCusshmi();
+            _aplicarFiltrosPadronCusshmi();
+        }
+
+        function _cerrarEditorPoligonoPadronCusshmi() {
+            const modal = document.getElementById('modalEditorPoligonoPadronCusshmi');
+            if (modal) modal.style.display = 'none';
         }
 
         async function _generarYDescargarFormatoA1Esc(filas, sufijo) {
