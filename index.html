@@ -6559,7 +6559,7 @@ const COMISIONES = {
                     const padronA1Usuario = (ucUsuario && padronA1Rows.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucUsuario))
                         || padronA1Rows.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === _normNombrePlanoA2(usuarioElegido))
                         || null;
-                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario, padronA1: padronA1Usuario };
+                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario, padronA1: padronA1Usuario, tomaConsultada: tomaNombre };
                 }
 
                 // Candidatos a "Usuarios Observados A2" (TODOS los usuarios
@@ -7273,23 +7273,10 @@ const COMISIONES = {
                 // la UC (o se omite) si el nombre completo no entra sin
                 // salirse del polígono, a diferencia de una etiqueta propia
                 // acá que forzaría el nombre completo sí o sí y en un
-                // predio angosto terminaba saliéndose por arriba/abajo. Acá
-                // solo queda el marcador del centroide, que sí tiene que
-                // verse siempre sin importar cuán chico sea el predio.
-                const centroideUsuario = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
-                const centroUsuarioPx = centroideUsuario ? proyector.proyectar(centroideUsuario.easting, centroideUsuario.northing) : puntosUsuarioPx[0];
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(centroUsuarioPx[0], centroUsuarioPx[1], 16, 0, Math.PI * 2);
-                ctx.fillStyle = '#ff8c00';
-                ctx.fill();
-                ctx.lineWidth = 4;
-                ctx.strokeStyle = '#ffffff';
-                ctx.stroke();
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#b35900';
-                ctx.stroke();
-                ctx.restore();
+                // predio angosto terminaba saliéndose por arriba/abajo.
+                // Sin marcador de centroide acá — a pedido explícito, el
+                // relleno naranja ya lo distingue de sobra, un círculo
+                // encima era redundante.
             }
 
             // Colección compartida de rectángulos ya ocupados por una
@@ -7634,7 +7621,7 @@ const COMISIONES = {
                 titulo = 'DATOS DEL USUARIO (PADRÓN A-1)';
                 filas = [
                     ['Apellidos y Nombres', usuarioResaltado.nombre],
-                    ['Toma', p1.toma_nombre || '—'],
+                    ['Toma', p1.toma_nombre || usuarioResaltado.tomaConsultada || '—'],
                     ['Unidad Catastral', p1.unidad_catastral || '—'],
                     ['Área Total (Padrón A-1)', p1.area_total_ha != null ? (p1.area_total_ha + ' ha') : '—'],
                     ['Área Bajo Riego (Padrón A-1)', p1.area_bajo_riego_ha != null ? (p1.area_bajo_riego_ha + ' ha') : '—'],
@@ -7876,13 +7863,13 @@ const COMISIONES = {
                 if (v.northing < bboxZoom.minNorthing) bboxZoom.minNorthing = v.northing;
                 if (v.northing > bboxZoom.maxNorthing) bboxZoom.maxNorthing = v.northing;
             });
-            // Colchón más chico (antes 12%) — más zoom real al polígono,
-            // para que sus vértices/lados se noten mejor — a pedido
-            // explícito. El desplazamiento de las medidas de lado es en
-            // píxeles fijos (no un % del bbox), así que sigue despejando el
-            // polígono igual de bien aunque haya menos aire alrededor.
-            const colchonZoomE = (bboxZoom.maxEasting - bboxZoom.minEasting) * 0.07 || 5;
-            const colchonZoomN = (bboxZoom.maxNorthing - bboxZoom.minNorthing) * 0.07 || 5;
+            // Colchón chico (antes 12%, luego 7%) — más zoom real al
+            // polígono, para que sus vértices/lados se noten mejor — a
+            // pedido explícito. El desplazamiento de las medidas de lado es
+            // en píxeles fijos (no un % del bbox), así que sigue despejando
+            // el polígono igual de bien e incluso mejor (más px/metro).
+            const colchonZoomE = (bboxZoom.maxEasting - bboxZoom.minEasting) * 0.03 || 5;
+            const colchonZoomN = (bboxZoom.maxNorthing - bboxZoom.minNorthing) * 0.03 || 5;
             bboxZoom.minEasting -= colchonZoomE; bboxZoom.maxEasting += colchonZoomE;
             bboxZoom.minNorthing -= colchonZoomN; bboxZoom.maxNorthing += colchonZoomN;
 
