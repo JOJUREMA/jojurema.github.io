@@ -1457,7 +1457,7 @@
                 📋 Formato A-1
             </button>
 
-            <button class="btn btn-primary" id="btnAbrirFormatoA2Menu" onclick="abrirModalFormatoA2Menu()" style="width: 100%; margin-top: 12px;" title="Levantamiento de Observaciones (Formato A-2): sincronizar, ver/editar registros, exportar, polígonos KML y avance">
+            <button class="btn btn-primary" id="btnAbrirFormatoA2Menu" onclick="abrirModalFormatoA2Eleccion()" style="width: 100%; margin-top: 12px;" title="Formato A-2: usuarios observados (Levantamiento en campo) o el filtro de usuarios con Permiso/sin Licencia del Padrón A-1">
                 🗂️ Formato A-2
             </button>
 
@@ -1505,6 +1505,23 @@
             </button>
 
             <button class="btn btn-secondary" onclick="cerrarModalFormatoA2Menu()" style="width: 100%; margin-top: 12px;">
+                ❌ Cerrar
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL FORMATO A-2 — ELECCIÓN (Observados vs. filtro del A-1) -->
+    <div id="modalFormatoA2Eleccion" class="modal-overlay">
+        <div class="modal-container" style="text-align: center; padding: 30px; max-width: 480px;">
+            <h3>🗂️ Formato A-2</h3>
+            <p class="info-text" style="text-align:left;">Elige qué Formato A-2 quieres ver:</p>
+            <button class="btn btn-primary" onclick="cerrarModalFormatoA2Eleccion(); abrirModalFormatoA2Menu();" style="width: 100%;" title="El Excel de cumplimiento puntual con los usuarios que ANA observó, verificados/completados en campo — el flujo que ya se venía trabajando">
+                🗂️ A-2 — Usuarios Observados (Levantamiento en campo)
+            </button>
+            <button class="btn btn-primary" onclick="cerrarModalFormatoA2Eleccion(); mostrarPanelFormatoA1Esc('A2_FILTRO');" style="width: 100%; margin-top: 12px;" title="Usuarios del Padrón A-1 con Permiso, o sin una Licencia/derecho formal confirmado — no jala datos de los usuarios observados">
+                📋 A-2 — Con Permiso o sin Licencia (filtro del A-1)
+            </button>
+            <button class="btn btn-secondary" onclick="cerrarModalFormatoA2Eleccion()" style="width: 100%; margin-top: 12px;">
                 ❌ Cerrar
             </button>
         </div>
@@ -10126,9 +10143,30 @@ const COMISIONES = {
         // (ya existentes) para las 3 exportaciones — mismo layout de hoja que
         // ya usaba "Exportar Formatos A-1/A-2", solo que ahora también se
         // puede acotar por Bloque o por Toma antes de generar el archivo.
-        let _formatoA1EstadoEsc = { filasTodas: [], comisionKey: null, comisionNombre: '' };
+        //
+        // `modo` reutiliza este mismo panel para el filtro "Formato A-2 — sin
+        // Licencia": mismo Padrón A-1, mismas columnas/exportación, pero
+        // acotado a filas con Permiso o sin Licencia (ver
+        // _esFormatoA1ConPermisoOSinLicencia debajo). No toca ni lee la
+        // tabla de usuarios observados del Formato A-2 (Levantamiento).
+        let _formatoA1EstadoEsc = { filasTodas: [], comisionKey: null, comisionNombre: '', modo: 'A1' };
 
-        async function mostrarPanelFormatoA1Esc() {
+        // "Tiene Permiso, o no tiene Licencia formalizada" — a pedido
+        // explícito del usuario, DISTINTO del criterio "verde" del Plano de
+        // Predios (_tieneDerechoFormalPlanoA2, que trata Permiso y Licencia
+        // como equivalentes para efectos de esa clasificación). Acá el
+        // corte es más fino: solo `clase_derecho` = "LICENCIA" exacto queda
+        // FUERA de este filtro — Permiso, "Sin Derecho", vacío o cualquier
+        // otro valor SÍ entran.
+        function _esFormatoA1ConPermisoOSinLicencia(fila) {
+            if (!fila || fila.origen !== 'ana_a1') return false;
+            const clase = (fila.clase_derecho || '').toString().trim().toUpperCase();
+            return clase !== 'LICENCIA';
+        }
+
+        async function mostrarPanelFormatoA1Esc(modo) {
+            modo = modo === 'A2_FILTRO' ? 'A2_FILTRO' : 'A1';
+            const esFiltroSinLicencia = modo === 'A2_FILTRO';
             const comisionKey = localStorage.getItem('cusshmi_comision');
             if (!comisionKey) { alert('Selecciona una comisión primero.'); return; }
             if (!window.CusshmiDatos) { alert('No hay conexión con Supabase. Intenta de nuevo en un momento.'); return; }
@@ -10136,11 +10174,18 @@ const COMISIONES = {
             const existente = document.getElementById('modalFormatoA1Esc');
             if (existente) existente.remove();
 
+            const tituloModal = esFiltroSinLicencia
+                ? '📋 Formato A-2 — Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)'
+                : '📋 Formato A-1';
+            const descModal = esFiltroSinLicencia
+                ? 'Usuarios del Padrón A-1 con Permiso, o sin una Licencia/derecho formal confirmado — no incluye a los usuarios observados del Formato A-2 (Levantamiento en campo).'
+                : 'Usuarios con derecho vigente (Padrón oficial A-1, ANA).';
+
             const modalHtml = `
                 <div id="modalFormatoA1Esc" class="modal-overlay active" style="z-index:99998;background:rgba(0,20,50,0.85);">
                     <div class="modal-container" style="max-width:1100px;max-height:90vh;overflow-y:auto;">
-                        <h3>📋 Formato A-1 — ${COMISIONES[comisionKey]?.nombre || comisionKey}</h3>
-                        <p style="font-size:12px;color:#666;margin-top:-6px;">Usuarios con derecho vigente (Padrón oficial A-1, ANA).</p>
+                        <h3>${tituloModal} — ${COMISIONES[comisionKey]?.nombre || comisionKey}</h3>
+                        <p style="font-size:12px;color:#666;margin-top:-6px;">${descModal}</p>
                         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
                             <div style="min-width:180px;">
                                 <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Bloque de Riego</label>
@@ -10188,11 +10233,15 @@ const COMISIONES = {
                 contenedor.innerHTML = `<div style="text-align:center;color:#c0392b;padding:20px;">No se pudo cargar el padrón: ${resultado.error || 'error desconocido'}</div>`;
                 return;
             }
-            const filasA1 = (resultado.resultados || []).filter((f) => f.origen === 'ana_a1');
+            const filasA1Completas = (resultado.resultados || []).filter((f) => f.origen === 'ana_a1');
+            const filasA1 = esFiltroSinLicencia
+                ? filasA1Completas.filter(_esFormatoA1ConPermisoOSinLicencia)
+                : filasA1Completas;
             _formatoA1EstadoEsc = {
                 filasTodas: filasA1,
                 comisionKey,
                 comisionNombre: (COMISIONES[comisionKey] && COMISIONES[comisionKey].nombre) || comisionKey,
+                modo,
             };
 
             // Bloques únicos derivados de las tomas presentes — una toma puede
@@ -10240,7 +10289,9 @@ const COMISIONES = {
             if (!contenedor) return;
             const filasTodas = _formatoA1EstadoEsc.filasTodas || [];
             if (filasTodas.length === 0) {
-                contenedor.innerHTML = '<div style="text-align:center;color:#888;padding:20px;">No hay usuarios en el Formato A-1 sincronizados todavía para esta comisión.</div>';
+                contenedor.innerHTML = _formatoA1EstadoEsc.modo === 'A2_FILTRO'
+                    ? '<div style="text-align:center;color:#888;padding:20px;">No hay usuarios con Permiso o sin Licencia en el Padrón A-1 de esta comisión.</div>'
+                    : '<div style="text-align:center;color:#888;padding:20px;">No hay usuarios en el Formato A-1 sincronizados todavía para esta comisión.</div>';
                 return;
             }
             const bloqueSel = (document.getElementById('selectBloqueFormatoA1Esc') || {}).value || 'TODOS';
@@ -10342,7 +10393,8 @@ const COMISIONES = {
                 const fecha = new Date().toISOString().split('T')[0];
                 const wb = new ExcelJS.Workbook();
                 construirHojaFormatoA1(wb, filas, _formatoA1EstadoEsc.comisionNombre);
-                const nombreArchivo = `Formato_A1_${sufijo}_${_formatoA1EstadoEsc.comisionKey}_${fecha}.xlsx`.replace(/\s+/g, '_');
+                const prefijo = _formatoA1EstadoEsc.modo === 'A2_FILTRO' ? 'Formato_A2_SinLicencia' : 'Formato_A1';
+                const nombreArchivo = `${prefijo}_${sufijo}_${_formatoA1EstadoEsc.comisionKey}_${fecha}.xlsx`.replace(/\s+/g, '_');
                 await _descargarWorkbook(wb, nombreArchivo);
             } catch (e) {
                 console.error('Error al exportar Formato A-1:', e);
@@ -12607,6 +12659,21 @@ function abrirModalFormatoA2Menu() {
 
 function cerrarModalFormatoA2Menu() {
     const modal = document.getElementById('modalFormatoA2Menu');
+    if (modal) modal.classList.remove('active');
+}
+
+// Elección entre los 2 "Formato A-2": los usuarios observados del
+// Levantamiento en campo (modalFormatoA2Menu, ya existente) y el filtro de
+// usuarios con Permiso/sin Licencia del Padrón A-1 (mostrarPanelFormatoA1Esc
+// con modo 'A2_FILTRO') — este último no lee ni depende de la tabla de
+// usuarios observados.
+function abrirModalFormatoA2Eleccion() {
+    const modal = document.getElementById('modalFormatoA2Eleccion');
+    if (modal) modal.classList.add('active');
+}
+
+function cerrarModalFormatoA2Eleccion() {
+    const modal = document.getElementById('modalFormatoA2Eleccion');
     if (modal) modal.classList.remove('active');
 }
 
