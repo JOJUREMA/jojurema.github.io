@@ -7268,19 +7268,16 @@ const COMISIONES = {
                 ctx.setLineDash([]);
                 ctx.stroke();
 
-                // Nombre del usuario sobre su propio polígono — a diferencia de
-                // las etiquetas de predios/canales de más abajo, esta NUNCA se
-                // oculta por falta de espacio (fuente mínima 9px): es el único
-                // predio de todo el plano, tiene que verse sí o sí.
-                const verticesLatLon = verticesOrdenados.map((v) => [v.lat, v.lon]);
-                const medidaUsuario = medirEtiquetaPlanoA2(verticesLatLon, true, proyector.proyectar);
+                // El nombre de este predio lo pone la etiqueta NORMAL de
+                // predios (sección 6b, más abajo) — esa sí compacta a solo
+                // la UC (o se omite) si el nombre completo no entra sin
+                // salirse del polígono, a diferencia de una etiqueta propia
+                // acá que forzaría el nombre completo sí o sí y en un
+                // predio angosto terminaba saliéndose por arriba/abajo. Acá
+                // solo queda el marcador del centroide, que sí tiene que
+                // verse siempre sin importar cuán chico sea el predio.
                 const centroideUsuario = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
                 const centroUsuarioPx = centroideUsuario ? proyector.proyectar(centroideUsuario.easting, centroideUsuario.northing) : puntosUsuarioPx[0];
-
-                // Marcador en el centroide — visible SIEMPRE, sin importar
-                // qué tan chico sea el predio frente al resto del plano (un
-                // predio de 0.7 ha en una toma de varios km² puede quedar
-                // minúsculo aunque su relleno ya sea naranja opaco).
                 ctx.save();
                 ctx.beginPath();
                 ctx.arc(centroUsuarioPx[0], centroUsuarioPx[1], 16, 0, Math.PI * 2);
@@ -7292,33 +7289,6 @@ const COMISIONES = {
                 ctx.lineWidth = 2;
                 ctx.strokeStyle = '#b35900';
                 ctx.stroke();
-                ctx.restore();
-                let fuenteUsuario = medidaUsuario.longitudPx > 0
-                    ? calcularFuenteParaAncho(medidaUsuario.longitudPx, 1, Math.max(usuarioResaltado.nombre.length, 1))
-                    : 12;
-                fuenteUsuario = Math.max(9, Math.min(fuenteUsuario, 20));
-                // Partido en 2 líneas (nunca a mitad de palabra) si el nombre
-                // es largo — mismo criterio y umbral ya usado para los
-                // predios normales, más estético que forzar una sola línea
-                // muy angosta sobre el polígono resaltado.
-                let lineasNombreUsuario = [usuarioResaltado.nombre];
-                if (usuarioResaltado.nombre.length > 24) {
-                    const partesNombreUsuario = partirNombreEnDosLineas(usuarioResaltado.nombre);
-                    if (partesNombreUsuario[1]) lineasNombreUsuario = partesNombreUsuario;
-                }
-                ctx.save();
-                ctx.translate(centroUsuarioPx[0], centroUsuarioPx[1]);
-                ctx.rotate(medidaUsuario.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
-                ctx.font = '700 ' + fuenteUsuario.toFixed(1) + 'px Arial, sans-serif';
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#5a2d00';
-                if (lineasNombreUsuario.length === 1) {
-                    ctx.fillText(lineasNombreUsuario[0], 0, 0);
-                } else {
-                    const alturaLineaUsuario = fuenteUsuario * 1.15;
-                    const offsetInicialUsuario = -((lineasNombreUsuario.length - 1) * alturaLineaUsuario) / 2;
-                    lineasNombreUsuario.forEach((linea, i) => ctx.fillText(linea, 0, offsetInicialUsuario + i * alturaLineaUsuario));
-                }
                 ctx.restore();
             }
 
@@ -7427,22 +7397,18 @@ const COMISIONES = {
             // quepa, con un techo bajo — apunta a la densidad de texto del
             // plano de referencia (predios etiquetados con letra chica y
             // pareja, sin pisarse entre vecinos).
-            // El predio del usuario resaltado (sección 5.5) YA lleva su
-            // propio rótulo, girado a lo largo de su polígono — sin este
-            // filtro, ese MISMO predio (que también está en `predios`, el
-            // KML del bloque) recibía ADEMÁS su etiqueta normal (horizontal,
-            // nombre+UC) acá, duplicando el nombre en el plano — a pedido
-            // explícito de que solo quede el rótulo más chico (el rotado a
-            // lo largo del polígono), no el horizontal/perpendicular.
-            const nombreResaltadoNorm = usuarioResaltado ? _normNombrePlanoA2(usuarioResaltado.nombre) : null;
-            const medidasPredios = predios
-                .filter((p) => !nombreResaltadoNorm || _normNombrePlanoA2(p.usuario) !== nombreResaltadoNorm)
-                .map((p) => {
-                    const uc = (p.catastralKey || '').toString();
-                    const nombre = nombreUsuarioPlanoA2(p.usuario);
-                    const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
-                    return { p, uc, nombre, medida };
-                }).filter((m) => m.medida.longitudPx >= 12);
+            // El predio del usuario resaltado (sección 5.5) ya NO dibuja su
+            // propio nombre por separado (se sacó de ahí — para un predio
+            // angosto, forzar el nombre completo terminaba saliéndose de su
+            // polígono) — su ÚNICA etiqueta de nombre es esta, la normal de
+            // predios, que si no entra se compacta a solo la UC o se omite
+            // en vez de desbordarse.
+            const medidasPredios = predios.map((p) => {
+                const uc = (p.catastralKey || '').toString();
+                const nombre = nombreUsuarioPlanoA2(p.usuario);
+                const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
+                return { p, uc, nombre, medida };
+            }).filter((m) => m.medida.longitudPx >= 12);
             const fuentesNaturales = medidasPredios.map((m) => {
                 const textoBase = m.uc ? ('UC ' + m.uc) : m.nombre;
                 return calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
@@ -7910,8 +7876,13 @@ const COMISIONES = {
                 if (v.northing < bboxZoom.minNorthing) bboxZoom.minNorthing = v.northing;
                 if (v.northing > bboxZoom.maxNorthing) bboxZoom.maxNorthing = v.northing;
             });
-            const colchonZoomE = (bboxZoom.maxEasting - bboxZoom.minEasting) * 0.12 || 5;
-            const colchonZoomN = (bboxZoom.maxNorthing - bboxZoom.minNorthing) * 0.12 || 5;
+            // Colchón más chico (antes 12%) — más zoom real al polígono,
+            // para que sus vértices/lados se noten mejor — a pedido
+            // explícito. El desplazamiento de las medidas de lado es en
+            // píxeles fijos (no un % del bbox), así que sigue despejando el
+            // polígono igual de bien aunque haya menos aire alrededor.
+            const colchonZoomE = (bboxZoom.maxEasting - bboxZoom.minEasting) * 0.07 || 5;
+            const colchonZoomN = (bboxZoom.maxNorthing - bboxZoom.minNorthing) * 0.07 || 5;
             bboxZoom.minEasting -= colchonZoomE; bboxZoom.maxEasting += colchonZoomE;
             bboxZoom.minNorthing -= colchonZoomN; bboxZoom.maxNorthing += colchonZoomN;
 
@@ -7980,9 +7951,19 @@ const COMISIONES = {
                 if (distM < 0.5) continue; // 2 vértices casi coincidentes: nada que rotular
                 const p1 = puntosPxZoom[i], p2 = puntosPxZoom[(i + 1) % puntosPxZoom.length];
                 const midX = (p1[0] + p2[0]) / 2, midY = (p1[1] + p2[1]) / 2;
-                let dx = midX - centroPxZoom[0], dy = midY - centroPxZoom[1];
-                const normLongitud = Math.sqrt(dx * dx + dy * dy) || 1;
-                dx /= normLongitud; dy /= normLongitud;
+                // Normal PERPENDICULAR al propio lado (no "hacia afuera del
+                // centroide") — en un polígono angosto/alargado, la
+                // dirección centroide→punto-medio no siempre es
+                // perpendicular al lado, y la medida terminaba pisando el
+                // relleno en vez de quedar limpiamente afuera. Se calcula la
+                // perpendicular real del lado y se elige el sentido (de los
+                // 2 posibles) que se aleja del centroide.
+                const edgeDx = p2[0] - p1[0], edgeDy = p2[1] - p1[1];
+                const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy) || 1;
+                let dx = -edgeDy / edgeLen, dy = edgeDx / edgeLen;
+                const distNormalPositiva = Math.hypot((midX + dx) - centroPxZoom[0], (midY + dy) - centroPxZoom[1]);
+                const distNormalNegativa = Math.hypot((midX - dx) - centroPxZoom[0], (midY - dy) - centroPxZoom[1]);
+                if (distNormalNegativa > distNormalPositiva) { dx = -dx; dy = -dy; }
                 let angulo = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
                 if (angulo > Math.PI / 2 || angulo < -Math.PI / 2) angulo += Math.PI; // nunca al revés
                 const texto = Math.round(distM) + ' m';
