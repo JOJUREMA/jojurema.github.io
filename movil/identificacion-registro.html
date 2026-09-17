@@ -210,7 +210,6 @@
 
         <!-- ── Pantalla 2: selección de toma ── -->
         <div id="vistaTomas" style="width:100%; display:flex; flex-direction:column; align-items:center;">
-            <button class="boton" id="btnVerSolicitudes" style="max-width:420px; display:none; margin-bottom:14px; background:#c0392b;">🔔 Solicitudes de edición pendientes</button>
             <div class="estado-busqueda" id="estadoTomas">Cargando tomas…</div>
             <div class="resultados" id="listaTomas"></div>
         </div>
@@ -386,7 +385,7 @@
 
         <!-- ── Pantalla admin: solicitudes de edición pendientes ── -->
         <div id="vistaSolicitudes" style="display:none; width:100%; flex-direction:column; align-items:center;">
-            <button class="boton-secundario" id="btnVolverATomasDesdeSolicitudes" style="max-width:420px;">← Volver a las tomas</button>
+            <button class="boton-secundario" id="btnVolverATomasDesdeSolicitudes" style="max-width:420px;">← Volver a Padrón CUSSHMI</button>
             <h1 style="margin-top:14px; font-size:16px;">Solicitudes de edición pendientes</h1>
 
             <div class="estado-busqueda" id="estadoSolicitudes"></div>
@@ -406,6 +405,11 @@
         <div id="vistaPadronCusshmi" style="display:none; width:100%; flex-direction:column; align-items:center;">
             <button class="boton-secundario" id="btnVolverEleccionDesdePadronCusshmi" style="max-width:420px;">← Volver</button>
             <h1 style="margin-top:14px; font-size:16px;">📊 Padrón CUSSHMI</h1>
+
+            <!-- Solo admin, y solo si hay alguna pendiente (ver
+                 actualizarBotonSolicitudes) — portado desde el antiguo
+                 Formato A-1 (Pantalla 2), mismo botón/función, sin cambios. -->
+            <button class="boton" id="btnVerSolicitudes" style="max-width:420px; display:none; margin-bottom:14px; background:#c0392b;">🔔 Solicitudes de edición pendientes</button>
 
             <div class="campo" style="width:100%; max-width:420px;">
                 <label for="selectVistaPadronCusshmiMovil">Ver</label>
@@ -794,7 +798,7 @@
         }
 
         async function mostrarVistaSolicitudes() {
-            document.getElementById('vistaTomas').style.display = 'none';
+            document.getElementById('vistaPadronCusshmi').style.display = 'none';
             document.getElementById('vistaSolicitudes').style.display = 'flex';
             await renderizarListaSolicitudes();
         }
@@ -862,7 +866,11 @@
         }
 
         document.getElementById('btnVerSolicitudes').addEventListener('click', mostrarVistaSolicitudes);
-        document.getElementById('btnVolverATomasDesdeSolicitudes').addEventListener('click', mostrarVistaTomas);
+        document.getElementById('btnVolverATomasDesdeSolicitudes').addEventListener('click', function () {
+            document.getElementById('vistaSolicitudes').style.display = 'none';
+            document.getElementById('vistaPadronCusshmi').style.display = 'flex';
+            _renderListaPadronCusshmiMovil();
+        });
 
         // ═══ Pantalla 3 — búsqueda de usuario ═══
         async function abrirToma(tomaNombre) {
@@ -2780,6 +2788,7 @@
             document.getElementById('vistaPadronCusshmi').style.display = 'flex';
             document.getElementById('selectVistaPadronCusshmiMovil').value = 'CON_LICENCIA';
             document.getElementById('inputBuscarPadronCusshmiMovil').value = '';
+            if (esAdmin) actualizarBotonSolicitudes();
             var elEstado = document.getElementById('estadoPadronCusshmiMovil');
             var elLista = document.getElementById('listaPadronCusshmiMovil');
             elLista.innerHTML = '';
