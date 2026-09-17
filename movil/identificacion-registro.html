@@ -49,9 +49,15 @@
             flex-shrink: 0;
         }
         .editor-poligono-header { color: #ffffff; font-weight: 700; font-size: 13px; }
-        .editor-poligono-footer { flex-direction: column; gap: 6px; }
+        /* max-height + scroll: por más controles que tenga un editor en un
+           momento dado (ej. predio seleccionado + modo edición), el footer
+           nunca debe poder comerse casi toda la pantalla — el mapa (flex:1)
+           siempre se queda con el resto. */
+        .editor-poligono-footer { flex-direction: column; gap: 6px; max-height: 38vh; overflow-y: auto; }
         .editor-poligono-footer .estado-busqueda { color: #ffffff; opacity: 0.85; }
         .editor-poligono-mapa { flex: 1; min-height: 0; }
+        .editor-poligono-fila-botones { display: flex; gap: 8px; width: 100%; }
+        .editor-poligono-fila-botones > button { flex: 1; max-width: none; }
         .marcador-vertice-editor {
             background: #8e44ad;
             color: #ffffff;
@@ -471,19 +477,29 @@
             </div>
             <div id="mapaEditorPoligonoPadronCusshmiMovil" class="editor-poligono-mapa"></div>
             <div class="editor-poligono-footer">
-                <div class="estado-busqueda" id="estadoEditorPoligonoPadronCusshmiMovil" style="max-width:none;"></div>
-                <button class="boton" id="btnToggleEdicionPoligonoPadronCusshmiMovil" style="max-width:none; background:#c8a84b; color:#1a1a1a;">🔒 Bloqueado — toca para Editar</button>
-                <button class="boton-secundario" id="btnBloqueRiegoEditorPoligonoPadronCusshmiMovil" style="max-width:none;">🗺️ Ver bloque de riego (toca un predio para ver sus datos)</button>
-                <div id="infoPredioSeleccionadoPadronCusshmiMovil" style="display:none; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px; color:#fff; font-size:12px; text-align:left;">
-                    <div id="textoInfoPredioSeleccionadoPadronCusshmiMovil" style="margin-bottom:8px; line-height:1.5;"></div>
-                    <div style="display:flex; gap:8px;">
-                        <button class="boton" id="btnUsarPredioSeleccionadoPadronCusshmiMovil" style="max-width:none; flex:1;">✅ Usar este polígono</button>
-                        <button class="boton-secundario" id="btnCancelarPredioSeleccionadoPadronCusshmiMovil" style="max-width:none; flex:1;">✕ Cancelar</button>
+                <div class="estado-busqueda" id="estadoEditorPoligonoPadronCusshmiMovil" style="max-width:none; margin:0;"></div>
+                <div class="editor-poligono-fila-botones">
+                    <button class="boton" id="btnToggleEdicionPoligonoPadronCusshmiMovil" style="background:#c8a84b; color:#1a1a1a;">🔒 Bloqueado</button>
+                    <button class="boton-secundario" id="btnBloqueRiegoEditorPoligonoPadronCusshmiMovil">🗺️ Bloque de riego</button>
+                </div>
+                <div id="infoPredioSeleccionadoPadronCusshmiMovil" style="display:none; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:8px 10px; color:#fff; font-size:12px; text-align:left;">
+                    <div id="textoInfoPredioSeleccionadoPadronCusshmiMovil" style="margin-bottom:6px; line-height:1.4;"></div>
+                    <div class="editor-poligono-fila-botones">
+                        <button class="boton" id="btnUsarPredioSeleccionadoPadronCusshmiMovil">✅ Usar este polígono</button>
+                        <button class="boton-secundario" id="btnCancelarPredioSeleccionadoPadronCusshmiMovil">✕ Cancelar</button>
                     </div>
                 </div>
-                <button class="boton-secundario" id="btnFijarVerticeGpsPadronCusshmiMovil" style="max-width:none;" disabled>📍 Agregar vértice con mi ubicación (GPS)</button>
-                <button class="boton-secundario" id="btnDeshacerEditorPoligonoPadronCusshmiMovil" style="max-width:none;" disabled>↩️ Deshacer último punto</button>
-                <button class="boton-secundario" id="btnBorrarEditorPoligonoPadronCusshmiMovil" style="max-width:none; background:#8b2c2c; color:#fff;" disabled>🗑️ Borrar polígono</button>
+                <!-- Solo visible en modo "✏️ Editar" — mientras está bloqueado
+                     no tiene sentido mostrar controles que no hacen nada, y
+                     además le quitan alto útil al mapa en el caso más común
+                     (solo consultar un predio, ver captura del usuario). -->
+                <div id="controlesEdicionPoligonoPadronCusshmiMovil" style="display:none; flex-direction:column; gap:6px; width:100%;">
+                    <button class="boton-secundario" id="btnFijarVerticeGpsPadronCusshmiMovil" style="max-width:none;" disabled>📍 Agregar vértice con mi ubicación (GPS)</button>
+                    <div class="editor-poligono-fila-botones">
+                        <button class="boton-secundario" id="btnDeshacerEditorPoligonoPadronCusshmiMovil">↩️ Deshacer</button>
+                        <button class="boton-secundario" id="btnBorrarEditorPoligonoPadronCusshmiMovil" style="background:#8b2c2c; color:#fff;">🗑️ Borrar</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -2869,7 +2885,7 @@
             editorPoligonoPadronCusshmiMovil = { fila: fila, vertices: verticesIniciales, capaPoligono: null, marcadores: [], capaBloqueRiego: null, bloqueRiegoVisible: false };
 
             document.getElementById('tituloEditorPoligonoPadronCusshmiMovil').textContent = '📐 ' + fila.apellidos_nombres;
-            document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)';
+            document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').textContent = '🗺️ Bloque de riego';
             _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'flex';
@@ -2951,9 +2967,10 @@
         function _fijarBloqueoEdicionPoligonoPadronCusshmiMovil(bloqueado) {
             editorPoligonoPadronCusshmiMovilBloqueado = bloqueado;
             var btn = document.getElementById('btnToggleEdicionPoligonoPadronCusshmiMovil');
-            btn.textContent = bloqueado ? '🔒 Bloqueado — toca para Editar' : '✏️ Editando — toca para Bloquear';
+            btn.textContent = bloqueado ? '🔒 Bloqueado' : '✏️ Editando';
             btn.style.background = bloqueado ? '#c8a84b' : '#1a6e3c';
             btn.style.color = bloqueado ? '#1a1a1a' : '#fff';
+            document.getElementById('controlesEdicionPoligonoPadronCusshmiMovil').style.display = bloqueado ? 'none' : 'flex';
             document.getElementById('btnDeshacerEditorPoligonoPadronCusshmiMovil').disabled = bloqueado;
             document.getElementById('btnBorrarEditorPoligonoPadronCusshmiMovil').disabled = bloqueado;
             document.getElementById('btnFijarVerticeGpsPadronCusshmiMovil').disabled = bloqueado || !posicionGpsEditorPoligonoPadronCusshmiMovilActual;
@@ -2993,13 +3010,13 @@
             if (estado.bloqueRiegoVisible) {
                 if (estado.capaBloqueRiego) { mapaEditorPoligonoPadronCusshmiMovil.removeLayer(estado.capaBloqueRiego); estado.capaBloqueRiego = null; }
                 estado.bloqueRiegoVisible = false;
-                btn.textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)';
+                btn.textContent = '🗺️ Bloque de riego';
                 _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
                 return;
             }
             btn.textContent = '🗺️ Cargando…';
             var predios = await obtenerPrediosBloqueRiegoA2(estado.fila.toma_nombre);
-            if (!predios.length) { alert('No hay predios mapeados (KML) para la toma "' + estado.fila.toma_nombre + '".'); btn.textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)'; return; }
+            if (!predios.length) { alert('No hay predios mapeados (KML) para la toma "' + estado.fila.toma_nombre + '".'); btn.textContent = '🗺️ Bloque de riego'; return; }
             var capas = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; }).map(function (p) {
                 var latlngs = p.coordenadas.map(function (par) { return [par[1], par[0]]; });
                 var poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.25, interactive: true });
@@ -3017,7 +3034,7 @@
             });
             estado.capaBloqueRiego = L.layerGroup(capas).addTo(mapaEditorPoligonoPadronCusshmiMovil);
             estado.bloqueRiegoVisible = true;
-            btn.textContent = '🗺️ Ocultar bloque de riego (' + capas.length + ' predios)';
+            btn.textContent = '🗺️ Ocultar (' + capas.length + ')';
         }
         document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').addEventListener('click', _toggleBloqueRiegoEditorPoligonoPadronCusshmiMovil);
 
