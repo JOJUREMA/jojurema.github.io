@@ -6548,7 +6548,18 @@ const COMISIONES = {
                         alert('"' + usuarioElegido + '" todavía no tiene un polígono medido/importado en el Formato A-2 ni un predio propio en el KML del bloque de riego — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
                         return;
                     }
-                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario };
+                    // Fila del Padrón A-1 de este usuario (por UC, o por
+                    // nombre si no hay predio propio con UC) — para el
+                    // usuario SIN registro de Formato A-2 (registroUsuario
+                    // undefined), es la única fuente real de datos (Toma, UC,
+                    // Área, Clase de Derecho, Volumen) que existe para
+                    // mostrar en su cuadro de datos.
+                    const predioPropioUc = predios.find((p) => _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(usuarioElegido));
+                    const ucUsuario = predioPropioUc ? _normUcPlanoA2(predioPropioUc.catastralKey) : '';
+                    const padronA1Usuario = (ucUsuario && padronA1Rows.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucUsuario))
+                        || padronA1Rows.find((f) => _normNombrePlanoA2(f.apellidos_nombres) === _normNombrePlanoA2(usuarioElegido))
+                        || null;
+                    usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario, padronA1: padronA1Usuario };
                 }
 
                 // Candidatos a "Usuarios Observados A2" (TODOS los usuarios
@@ -7534,11 +7545,18 @@ const COMISIONES = {
                 const altoDatos = _dibujarCuadroDatosUsuarioPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
                 yCajaDatos += altoDatos + 12;
 
-                const centroidePredio = (typeof calcularCentroidePoligono === 'function')
-                    ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
-                    : null;
-                const altoCentroide = _dibujarCuadroCentroidePlanoA2(ctx, xCajaDatos, yCajaDatos, centroidePredio, ANCHO_CAJA_DATOS);
-                yCajaDatos += altoCentroide + 12;
+                // La caja de centroide APARTE solo tiene sentido para un
+                // usuario Observado del Formato A-2 (registro real) — para
+                // un usuario del Padrón A-1 (sin registro), el centroide ya
+                // va FUNDIDO dentro de _dibujarCuadroDatosUsuarioPlanoA2, así
+                // que esta segunda caja se omite (evita repetir el dato).
+                if (usuarioResaltado.registro) {
+                    const centroidePredio = (typeof calcularCentroidePoligono === 'function')
+                        ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                        : null;
+                    const altoCentroide = _dibujarCuadroCentroidePlanoA2(ctx, xCajaDatos, yCajaDatos, centroidePredio, ANCHO_CAJA_DATOS);
+                    yCajaDatos += altoCentroide + 12;
+                }
 
                 _dibujarZoomPoligonoObservadoPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
             }
@@ -7573,23 +7591,54 @@ const COMISIONES = {
                 const t = (texto || '').toString();
                 return t.length > max ? (t.slice(0, max - 1) + '…') : t;
             }
-            const areaVerificadaTotal = _valorCampoFormatoA2Plano(registro, 'areaTotalVerificadaHa', true);
-            const areaVerificadaBajoRiego = _valorCampoFormatoA2Plano(registro, 'areaBajoRiegoVerificadaHa', true);
-            // Las coordenadas del centroide van en su PROPIA caja aparte
-            // (_dibujarCuadroCentroidePlanoA2, dibujada justo debajo), no
-            // mezcladas en esta lista — a pedido explícito.
-            const filas = [
-                ['Apellidos y Nombres', usuarioResaltado.nombre],
-                ['Unidad Catastral', _valorCampoFormatoA2Plano(registro, 'unidadCatastral', false) || '—'],
-                ['Toma', registro.toma_nombre || '—'],
-                ['Área del polígono medido', areaPoligonoHa ? (areaPoligonoHa.toFixed(2) + ' ha') : '—'],
-                ['Área Total Verificada', areaVerificadaTotal ? (areaVerificadaTotal + ' ha') : '—'],
-                ['Área Bajo Riego Verificada', areaVerificadaBajoRiego ? (areaVerificadaBajoRiego + ' ha') : '—'],
-                ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
-                ['Se ubica en el bloque', _valorCampoFormatoA2Plano(registro, 'seUbicaBloque', false) || '—'],
-                ['Cultivo', _valorCampoFormatoA2Plano(registro, 'cultivo1', true) || '—'],
-                ['Observaciones', truncar(_valorCampoFormatoA2Plano(registro, 'observaciones', false), 42) || '—'],
-            ];
+
+            // Un usuario SIN registro de Formato A-2 (Levantamiento) —
+            // ej. elegido desde Padrón CUSSHMI, con o sin Licencia — no
+            // tiene nada que mostrar en los campos de arriba (estado,
+            // cultivo, observaciones…: todos saldrían "—"). Para ese caso
+            // se arma un cuadro simplificado con los datos que SÍ existen
+            // (los del Padrón A-1) y el centroide FUNDIDO en la misma caja
+            // — a pedido explícito, ya no hace falta la caja de "Datos del
+            // predio (Formato A-2)" completa ni la caja de centroide aparte.
+            let titulo, filas;
+            if (!usuarioResaltado.registro) {
+                const p1 = usuarioResaltado.padronA1 || {};
+                const centroide = (typeof calcularCentroidePoligono === 'function')
+                    ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                    : null;
+                titulo = 'DATOS DEL USUARIO (PADRÓN A-1)';
+                filas = [
+                    ['Apellidos y Nombres', usuarioResaltado.nombre],
+                    ['Toma', p1.toma_nombre || '—'],
+                    ['Unidad Catastral', p1.unidad_catastral || '—'],
+                    ['Área Total (Padrón A-1)', p1.area_total_ha != null ? (p1.area_total_ha + ' ha') : '—'],
+                    ['Área Bajo Riego (Padrón A-1)', p1.area_bajo_riego_ha != null ? (p1.area_bajo_riego_ha + ' ha') : '—'],
+                    ['Clase de Derecho', p1.clase_derecho || '—'],
+                    ['Volumen (m³)', p1.volumen_m3 != null ? p1.volumen_m3 : '—'],
+                    ['Área del polígono', areaPoligonoHa ? (areaPoligonoHa.toFixed(2) + ' ha') : '—'],
+                    ['Este (Centroide)', centroide ? (Math.round(centroide.easting) + ' m') : '—'],
+                    ['Norte (Centroide)', centroide ? (Math.round(centroide.northing) + ' m') : '—'],
+                ];
+            } else {
+                const areaVerificadaTotal = _valorCampoFormatoA2Plano(registro, 'areaTotalVerificadaHa', true);
+                const areaVerificadaBajoRiego = _valorCampoFormatoA2Plano(registro, 'areaBajoRiegoVerificadaHa', true);
+                titulo = 'DATOS DEL PREDIO (FORMATO A-2)';
+                // Las coordenadas del centroide van en su PROPIA caja aparte
+                // (_dibujarCuadroCentroidePlanoA2, dibujada justo debajo), no
+                // mezcladas en esta lista — a pedido explícito.
+                filas = [
+                    ['Apellidos y Nombres', usuarioResaltado.nombre],
+                    ['Unidad Catastral', _valorCampoFormatoA2Plano(registro, 'unidadCatastral', false) || '—'],
+                    ['Toma', registro.toma_nombre || '—'],
+                    ['Área del polígono medido', areaPoligonoHa ? (areaPoligonoHa.toFixed(2) + ' ha') : '—'],
+                    ['Área Total Verificada', areaVerificadaTotal ? (areaVerificadaTotal + ' ha') : '—'],
+                    ['Área Bajo Riego Verificada', areaVerificadaBajoRiego ? (areaVerificadaBajoRiego + ' ha') : '—'],
+                    ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
+                    ['Se ubica en el bloque', _valorCampoFormatoA2Plano(registro, 'seUbicaBloque', false) || '—'],
+                    ['Cultivo', _valorCampoFormatoA2Plano(registro, 'cultivo1', true) || '—'],
+                    ['Observaciones', truncar(_valorCampoFormatoA2Plano(registro, 'observaciones', false), 42) || '—'],
+                ];
+            }
 
             const ALTO_FILA = 26;
             const altoTotal = (filas.length + 1) * ALTO_FILA + 16;
@@ -7603,7 +7652,7 @@ const COMISIONES = {
             let y = y0 + 12;
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
             ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
-            ctx.fillText('DATOS DEL PREDIO (FORMATO A-2)', x0 + 12, y + ALTO_FILA / 2 - 6);
+            ctx.fillText(titulo, x0 + 12, y + ALTO_FILA / 2 - 6);
             y += ALTO_FILA;
             filas.forEach(([etiqueta, valor]) => {
                 const yCentro = y + ALTO_FILA / 2 - 6;
