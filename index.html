@@ -7938,12 +7938,41 @@ const COMISIONES = {
                 : null;
             const centroPxZoom = centroideZoom ? proyectorZoom.proyectar(centroideZoom.easting, centroideZoom.northing) : [areaAncho / 2, areaAlto / 2];
 
+            // Número de cada vértice (1, 2, 3…, en el mismo orden del
+            // polígono) — un círculo chico con el número, en el propio
+            // vértice. Se dibujan ANTES que las medidas de los lados y se
+            // registran como "ocupados" para que ninguna medida les caiga
+            // encima — un polígono con muchos vértices juntos (como este)
+            // necesita el radio chico para no pisarse entre sí.
+            const RADIO_VERTICE = 7;
+            ctx.font = '700 9px Arial, sans-serif';
+            const ocupadosZoom = [];
+            puntosPxZoom.forEach((pt) => {
+                ocupadosZoom.push({ x0: pt[0] - RADIO_VERTICE, y0: pt[1] - RADIO_VERTICE, x1: pt[0] + RADIO_VERTICE, y1: pt[1] + RADIO_VERTICE });
+            });
+            puntosPxZoom.forEach((pt, i) => {
+                ctx.beginPath();
+                ctx.arc(pt[0], pt[1], RADIO_VERTICE, 0, Math.PI * 2);
+                ctx.fillStyle = '#b35900';
+                ctx.fill();
+                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(String(i + 1), pt[0], pt[1]);
+            });
+
             // Medida de cada lado (metros UTM reales) — por FUERA del
             // polígono (no sobre la línea), desplazada desde el punto medio
-            // del lado en dirección opuesta al centroide, con una "píldora"
-            // blanca detrás para que se lea sobre cualquier fondo.
-            const OFFSET_MEDIDA_PX = 16;
-            ctx.font = '700 11px Arial, sans-serif';
+            // del lado en dirección opuesta al centroide. Cuando el
+            // polígono tiene muchos vértices juntos (lados cortos, como
+            // este), el desplazamiento base puede no alcanzar para no
+            // pisar un número de vértice o una medida vecina — se prueban
+            // desplazamientos crecientes hasta que no choque con nada ya
+            // colocado (nunca se omite del todo, solo se aleja más).
+            ctx.font = '700 10px Arial, sans-serif';
+            const GAP_MEDIDA_ZOOM = -1;
             for (let i = 0; i < verticesOrdenados.length; i++) {
                 const v1 = verticesOrdenados[i];
                 const v2 = verticesOrdenados[(i + 1) % verticesOrdenados.length];
@@ -7954,38 +7983,32 @@ const COMISIONES = {
                 let dx = midX - centroPxZoom[0], dy = midY - centroPxZoom[1];
                 const normLongitud = Math.sqrt(dx * dx + dy * dy) || 1;
                 dx /= normLongitud; dy /= normLongitud;
-                const labelX = midX + dx * OFFSET_MEDIDA_PX, labelY = midY + dy * OFFSET_MEDIDA_PX;
                 let angulo = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
                 if (angulo > Math.PI / 2 || angulo < -Math.PI / 2) angulo += Math.PI; // nunca al revés
                 const texto = Math.round(distM) + ' m';
                 const anchoTexto = ctx.measureText(texto).width;
+                const anchoPildora = anchoTexto + 5, altoPildora = 13;
+
+                let labelX, labelY, bbox;
+                const OFFSETS_A_PROBAR = [14, 19, 24, 30, 36];
+                for (let j = 0; j < OFFSETS_A_PROBAR.length; j++) {
+                    labelX = midX + dx * OFFSETS_A_PROBAR[j];
+                    labelY = midY + dy * OFFSETS_A_PROBAR[j];
+                    bbox = _bboxTextoRotadoPlanoA2(labelX, labelY, anchoPildora, altoPildora, angulo);
+                    if (!_colisionaConOcupadosPlanoA2(bbox, ocupadosZoom, GAP_MEDIDA_ZOOM) || j === OFFSETS_A_PROBAR.length - 1) break;
+                }
+                ocupadosZoom.push(bbox);
+
                 ctx.save();
                 ctx.translate(labelX, labelY);
                 ctx.rotate(angulo);
-                ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillRect(-anchoTexto / 2 - 3, -8, anchoTexto + 6, 16);
+                ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                ctx.fillRect(-anchoPildora / 2, -altoPildora / 2, anchoPildora, altoPildora);
                 ctx.fillStyle = '#5a2d00';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                 ctx.fillText(texto, 0, 0);
                 ctx.restore();
             }
-
-            // Número de cada vértice (1, 2, 3…, en el mismo orden del
-            // polígono) — un círculo chico con el número, en el propio
-            // vértice.
-            ctx.font = '700 11px Arial, sans-serif';
-            puntosPxZoom.forEach((pt, i) => {
-                ctx.beginPath();
-                ctx.arc(pt[0], pt[1], 10, 0, Math.PI * 2);
-                ctx.fillStyle = '#b35900';
-                ctx.fill();
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#ffffff';
-                ctx.stroke();
-                ctx.fillStyle = '#ffffff';
-                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(String(i + 1), pt[0], pt[1]);
-            });
             const areaHaZoom = (typeof calcularAreaPoligonoHa === 'function')
                 ? calcularAreaPoligonoHa(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
                 : 0;
