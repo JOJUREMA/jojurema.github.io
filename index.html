@@ -7563,7 +7563,32 @@ const COMISIONES = {
             //    la práctica solo una de las 2 primeras (resaltado vs. tabla
             //    de observados) suele estar activa a la vez).
             const ANCHO_CAJA_DATOS = 460;
-            const xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
+            // Las cajas de datos van por defecto en la esquina superior
+            // derecha, pero si el polígono resaltado cae en la mitad
+            // derecha del mapa, se pasan a la esquina superior izquierda —
+            // a pedido explícito de que los cuadros no "pisen" el polígono
+            // que están describiendo. Abajo siempre queda libre para la
+            // leyenda (izquierda) y la escala (derecha), así que solo se
+            // elige entre las 2 esquinas de arriba.
+            let xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
+            let cajasALaIzquierda = false;
+            if (usuarioResaltado) {
+                const centroideParaUbicar = (typeof calcularCentroidePoligono === 'function')
+                    ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                    : null;
+                if (centroideParaUbicar) {
+                    const centroPxParaUbicar = proyector.proyectar(centroideParaUbicar.easting, centroideParaUbicar.northing);
+                    if (centroPxParaUbicar[0] > ANCHO / 2) {
+                        xCajaDatos = MARGEN + 15;
+                        cajasALaIzquierda = true;
+                    }
+                }
+            }
+            // Flecha de norte en la esquina superior OPUESTA a las cajas de
+            // datos — así nunca las tapa ni la tapan, sea cual sea la
+            // esquina que les tocó.
+            _dibujarNorteFlechaPlanoA2(ctx, cajasALaIzquierda ? (ANCHO - MARGEN - 15 - 70) : (MARGEN + 15), MARGEN + 15);
+
             let yCajaDatos = MARGEN + 15;
             if (usuarioResaltado) {
                 const altoDatos = _dibujarCuadroDatosUsuarioPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
@@ -7898,6 +7923,33 @@ const COMISIONES = {
             ctx.setLineDash([]);
             ctx.stroke();
 
+            // Medida de cada lado (metros UTM reales) — a pedido explícito,
+            // sobre el punto medio de cada lado del polígono, con una
+            // "píldora" blanca detrás para que se lea sobre el relleno
+            // naranja o el fondo satelital/blanco de más allá.
+            ctx.font = '700 11px Arial, sans-serif';
+            for (let i = 0; i < verticesOrdenados.length; i++) {
+                const v1 = verticesOrdenados[i];
+                const v2 = verticesOrdenados[(i + 1) % verticesOrdenados.length];
+                const distM = Math.sqrt(Math.pow(v2.easting - v1.easting, 2) + Math.pow(v2.northing - v1.northing, 2));
+                if (distM < 0.5) continue; // 2 vértices casi coincidentes: nada que rotular
+                const p1 = puntosPxZoom[i], p2 = puntosPxZoom[(i + 1) % puntosPxZoom.length];
+                const midX = (p1[0] + p2[0]) / 2, midY = (p1[1] + p2[1]) / 2;
+                let angulo = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
+                if (angulo > Math.PI / 2 || angulo < -Math.PI / 2) angulo += Math.PI; // nunca al revés
+                const texto = Math.round(distM) + ' m';
+                const anchoTexto = ctx.measureText(texto).width;
+                ctx.save();
+                ctx.translate(midX, midY);
+                ctx.rotate(angulo);
+                ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                ctx.fillRect(-anchoTexto / 2 - 3, -8, anchoTexto + 6, 16);
+                ctx.fillStyle = '#5a2d00';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(texto, 0, 0);
+                ctx.restore();
+            }
+
             const centroideZoom = (typeof calcularCentroidePoligono === 'function')
                 ? calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
                 : null;
@@ -8007,6 +8059,37 @@ const COMISIONES = {
             ctx.lineWidth = 1;
             ctx.strokeRect(margen, margen, ancho - margen * 2, alto - margen * 2);
             ctx.restore();
+        }
+
+        // Flecha de norte — el plano ya está orientado norte-arriba (misma
+        // proyección UTM de siempre, sin rotación), así que basta una
+        // flecha fija apuntando hacia arriba con "N", dentro de un
+        // recuadro chico a juego con las demás cajas del plano (leyenda,
+        // escala, datos). A pedido explícito del usuario.
+        function _dibujarNorteFlechaPlanoA2(ctx, x0, y0) {
+            const ANCHO_CAJA = 64, ALTO_CAJA = 84;
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, ANCHO_CAJA, ALTO_CAJA);
+            ctx.strokeRect(x0, y0, ANCHO_CAJA, ALTO_CAJA);
+
+            const cx = x0 + ANCHO_CAJA / 2;
+            const yPuntaFlecha = y0 + 12, yBaseFlecha = y0 + 52, yMuescaFlecha = yBaseFlecha - 9;
+            ctx.beginPath();
+            ctx.moveTo(cx, yPuntaFlecha);
+            ctx.lineTo(cx + 11, yBaseFlecha);
+            ctx.lineTo(cx, yMuescaFlecha);
+            ctx.lineTo(cx - 11, yBaseFlecha);
+            ctx.closePath();
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fill();
+
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.font = '700 17px Arial, sans-serif'; ctx.fillStyle = '#000000';
+            ctx.fillText('N', cx, y0 + ALTO_CAJA - 15);
+            ctx.restore();
+            return { ancho: ANCHO_CAJA, alto: ALTO_CAJA };
         }
 
         function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, usuarioResaltado, usuariosObservadosA2, categoriasDerechoPresentes) {
