@@ -1437,28 +1437,24 @@
         </div>
     </div>
 
-    <!-- MODAL IDENTIFICACIÓN Y REGISTRO (PADRÓN A-1/A-2 OFICIAL DE ANA) -->
+    <!-- MODAL IDENTIFICACIÓN Y REGISTRO (PADRÓN OFICIAL DE ANA) -->
     <div id="modalPadronA1" class="modal-overlay">
         <div class="modal-container" style="text-align: center; padding: 30px; max-width: 480px;">
-            <h3>🧾 Identificación y Registro — Padrón A-1 (ANA)</h3>
+            <h3>🧾 Identificación y Registro — Padrón (ANA)</h3>
             <p class="info-text" style="text-align:left;">
-                Este padrón oficial (A-1/A-2) es <strong>independiente</strong> del Excel TOMAS.xlsx
+                Este padrón oficial es <strong>independiente</strong> del Excel TOMAS.xlsx
                 que usas para programar el PDA — son complementarios, no se pisan entre sí.
                 El Excel de programación del PDA sigue funcionando con total normalidad,
                 sin verse afectado por lo que hagas aquí.
             </p>
 
             <button class="btn btn-primary" id="btnSincronizarPadronA1" onclick="document.getElementById('inputPadronOficialA1').click()" style="width: 100%;" title="Sube el Formato A-1 oficial de ANA (DNI, área, resolución, clase de derecho, volumen) para que 'Identificación y registro' autocomplete esos datos">
-                📡 Sincronizar Padrón A-1 (ANA)
+                📡 Sincronizar Padrón (ANA)
             </button>
             <input type="file" id="inputPadronOficialA1" accept=".xlsx" style="display:none;" onchange="importarPadronOficialA1(event)">
 
-            <button class="btn btn-primary" id="btnAbrirFormatoA1" onclick="mostrarPanelFormatoA1Esc()" style="width: 100%; margin-top: 12px;" title="Lista de usuarios del Formato A-1 (con derecho vigente), filtrable por Bloque de Riego, Toma y usuario, con exportación por Bloque, por Toma o General">
-                📋 Formato A-1
-            </button>
-
-            <button class="btn btn-primary" id="btnAbrirFormatoA2Menu" onclick="abrirModalFormatoA2Eleccion()" style="width: 100%; margin-top: 12px;" title="Formato A-2: usuarios observados (Levantamiento en campo) o el filtro de usuarios con Permiso/sin Licencia del Padrón A-1">
-                🗂️ Formato A-2
+            <button class="btn btn-primary" id="btnAbrirPadronCusshmi" onclick="mostrarPanelPadronCusshmi()" style="width: 100%; margin-top: 12px;" title="Usuarios con Licencia/derecho (Formato A-1) o sin Licencia/derecho (Formato A-2) — edición de datos y generación de plano por usuario">
+                📋 Padrón CUSSHMI
             </button>
 
             <button class="btn btn-secondary" onclick="cerrarModalPadronA1()" style="width: 100%; margin-top: 12px;">
@@ -6530,13 +6526,26 @@ const COMISIONES = {
                 // polígono medido/importado del Formato A-2 de ESE usuario —
                 // "tal cual" el KML del bloque de riego sigue mostrando TODOS
                 // los predios sin cambios; esto es un resaltado adicional
-                // encima, no un reemplazo.
+                // encima, no un reemplazo. Si el usuario no tiene un polígono
+                // propio medido/importado (ej. un usuario del Padrón A-1 que
+                // nunca pasó por el Levantamiento de Observaciones A-2), se
+                // usa como respaldo su PROPIO predio del KML del bloque de
+                // riego (cruzado por nombre) — convertido de [lon,lat] a UTM
+                // con el mismo conversor que ya usa el resto del plano — para
+                // que "Generar Plano" funcione también desde el Padrón
+                // CUSSHMI (Formato A-1/A-2 por filtro).
                 let usuarioResaltado = null;
                 if (esUnaToma && usuarioElegido !== 'TODOS') {
                     const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
-                    const verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
+                    let verticesUtm = registroUsuario && Array.isArray(registroUsuario.vertices_utm) ? registroUsuario.vertices_utm : [];
                     if (verticesUtm.length < 3) {
-                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido o importado en el Formato A-2 — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
+                        const predioPropio = predios.find((p) => _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(usuarioElegido));
+                        if (predioPropio && Array.isArray(predioPropio.coordenadas) && predioPropio.coordenadas.length >= 3) {
+                            verticesUtm = predioPropio.coordenadas.map(([lon, lat]) => latLonAUtm17S(lat, lon));
+                        }
+                    }
+                    if (verticesUtm.length < 3) {
+                        alert('"' + usuarioElegido + '" todavía no tiene un polígono medido/importado en el Formato A-2 ni un predio propio en el KML del bloque de riego — no hay nada que resaltar. Genera el plano general (Usuario: Todos), o mide/importa su polígono primero.');
                         return;
                     }
                     usuarioResaltado = { nombre: usuarioElegido, verticesUtm, registro: registroUsuario };
@@ -10384,6 +10393,249 @@ const COMISIONES = {
 
         function _exportarFormatoA1GeneralEsc() {
             _generarYDescargarFormatoA1Esc(_formatoA1EstadoEsc.filasTodas || [], 'General');
+        }
+
+        // ══ Padrón CUSSHMI — con Licencia/derecho (Formato A-1) o sin
+        // Licencia/derecho (Formato A-2), ambos sobre el MISMO Padrón A-1,
+        // editables fila por fila (con resaltado de campos vacíos) más un
+        // botón para generar el plano individual de cada usuario. Sustituye
+        // a los antiguos botones separados "Formato A-1"/"Formato A-2" en el
+        // modal de Identificación y Registro, a pedido explícito del
+        // usuario. La rama "sin Licencia/derecho" además da acceso, TAL
+        // CUAL sin tocarlo, al flujo existente de los 93 Usuarios
+        // Observados del Levantamiento en campo (modalFormatoA2Menu).
+        let _padronCusshmiEstado = { filasTodas: [], comisionKey: null, comisionNombre: '' };
+        let _padronCusshmiFilasVista = [];
+        let _padronCusshmiEditandoIdx = null;
+
+        async function mostrarPanelPadronCusshmi() {
+            const comisionKey = localStorage.getItem('cusshmi_comision');
+            if (!comisionKey) { alert('Selecciona una comisión primero.'); return; }
+            if (!window.CusshmiDatos) { alert('No hay conexión con Supabase. Intenta de nuevo en un momento.'); return; }
+
+            const existente = document.getElementById('modalPadronCusshmi');
+            if (existente) existente.remove();
+
+            const comisionNombre = (COMISIONES[comisionKey] && COMISIONES[comisionKey].nombre) || comisionKey;
+            const modalHtml = `
+                <div id="modalPadronCusshmi" class="modal-overlay active" style="z-index:99998;background:rgba(0,20,50,0.85);">
+                    <div class="modal-container" style="max-width:1200px;max-height:90vh;overflow-y:auto;">
+                        <h3>📋 Padrón ${escapeHtml(comisionNombre)}</h3>
+                        <div style="min-width:280px;max-width:460px;margin-bottom:14px;text-align:left;">
+                            <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Ver</label>
+                            <select id="selectVistaPadronCusshmi" onchange="_cambiarVistaPadronCusshmi()" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-weight:600;">
+                                <option value="CON_LICENCIA">1. Usuarios con licencia/derecho (Formato A-1)</option>
+                                <option value="SIN_LICENCIA">2. Usuarios sin licencia/sin derecho (Formato A-2)</option>
+                            </select>
+                        </div>
+                        <div id="contenidoPadronCusshmi">
+                            <div style="text-align:center;color:#888;padding:20px;">Cargando…</div>
+                        </div>
+                        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+                            <button onclick="document.getElementById('modalPadronCusshmi').remove()" style="padding:9px 18px;background:#003876;color:white;border:none;border-radius:4px;font-weight:600;font-size:13px;cursor:pointer;margin-left:auto;">
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+
+            const div = document.createElement('div');
+            div.innerHTML = modalHtml;
+            document.body.appendChild(div.firstElementChild);
+
+            const contenedor = document.getElementById('contenidoPadronCusshmi');
+            const resultado = await CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey);
+            if (!resultado.ok) {
+                contenedor.innerHTML = `<div style="text-align:center;color:#c0392b;padding:20px;">No se pudo cargar el padrón: ${resultado.error || 'error desconocido'}</div>`;
+                return;
+            }
+            _padronCusshmiEstado = {
+                filasTodas: (resultado.resultados || []).filter((f) => f.origen === 'ana_a1'),
+                comisionKey,
+                comisionNombre,
+            };
+            _padronCusshmiEditandoIdx = null;
+            _renderVistaPadronCusshmi();
+        }
+
+        function _cambiarVistaPadronCusshmi() {
+            _padronCusshmiEditandoIdx = null;
+            _renderVistaPadronCusshmi();
+        }
+
+        function _renderVistaPadronCusshmi() {
+            const contenedor = document.getElementById('contenidoPadronCusshmi');
+            if (!contenedor) return;
+            const vista = (document.getElementById('selectVistaPadronCusshmi') || {}).value || 'CON_LICENCIA';
+            const filasTodas = _padronCusshmiEstado.filasTodas || [];
+
+            if (vista === 'CON_LICENCIA') {
+                const filas = filasTodas.filter((f) => (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA');
+                contenedor.innerHTML = _htmlTablaEditablePadronCusshmi(filas, 'No hay usuarios con Licencia/derecho en el Padrón A-1 de esta comisión.');
+            } else {
+                const filas = filasTodas.filter(_esFormatoA1ConPermisoOSinLicencia);
+                contenedor.innerHTML = `
+                    <div style="background:#f0f4fa;border:1px solid #c8d6ea;border-radius:6px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;text-align:left;">
+                        <div style="font-size:12px;color:#333;">
+                            <strong>🗂️ Usuarios Observados (Levantamiento en campo)</strong><br>
+                            El flujo ya existente de sincronizar/ver-editar/exportar/importar polígonos — se conserva tal cual está.
+                        </div>
+                        <button onclick="abrirModalFormatoA2Menu()" style="padding:8px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">Abrir →</button>
+                    </div>
+                    <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;"><strong>📋 Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)</strong></p>
+                    ${_htmlTablaEditablePadronCusshmi(filas, 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1 de esta comisión.')}`;
+            }
+        }
+
+        // Tabla editable compartida por las 2 vistas de Padrón CUSSHMI — cada
+        // fila puede pasar a modo edición (inputs) con "✏️ Editar", guardarse
+        // con "💾 Guardar" (persiste vía CusshmiDatos.actualizarPadronOficialA1
+        // DesdeRegistro, por Unidad Catastral) o generar el plano individual
+        // de ese usuario con "🗺️ Plano". Los campos vacíos se resaltan en
+        // amarillo — no solo al no coincidir "LICENCIA" exacto, sino
+        // cualquier dato faltante del Padrón A-1 (área, volumen, toma, etc.).
+        function _htmlTablaEditablePadronCusshmi(filas, mensajeVacio) {
+            _padronCusshmiFilasVista = filas || [];
+            if (!_padronCusshmiFilasVista.length) {
+                return `<div style="text-align:center;color:#888;padding:20px;">${mensajeVacio}</div>`;
+            }
+            const campoVacio = (v) => v === null || v === undefined || (typeof v === 'string' && !v.trim()) || v === '';
+            const filasHtml = _padronCusshmiFilasVista.map((f, idx) => {
+                const bloque = (typeof obtenerBloqueDeToma === 'function' && f.toma_nombre) ? obtenerBloqueDeToma(f.toma_nombre) : '—';
+                const editando = _padronCusshmiEditandoIdx === idx;
+                const celda = (campo, valor, tipo) => {
+                    const vacio = campoVacio(valor);
+                    const fondo = vacio ? 'background:#fff3cd;' : '';
+                    if (editando) {
+                        return `<td style="padding:6px;${fondo}"><input type="${tipo || 'text'}" data-campo="${campo}" value="${escapeHtml(valor != null ? valor : '')}" style="width:100%;box-sizing:border-box;padding:4px;border:1px solid #999;border-radius:3px;font-size:12px;"></td>`;
+                    }
+                    return `<td style="padding:7px;text-align:center;${fondo}">${vacio ? '<em style="color:#a86b00;">falta</em>' : escapeHtml(String(valor))}</td>`;
+                };
+                const acciones = editando
+                    ? `<button onclick="_guardarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">💾 Guardar</button>
+                       <button onclick="_cambiarVistaPadronCusshmi()" style="padding:5px 10px;background:#e2e8f0;color:#4a5568;border:none;border-radius:3px;font-size:11px;cursor:pointer;">✖ Cancelar</button>`
+                    : `<button onclick="_editarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#2563a6;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">✏️ Editar</button>
+                       <button onclick="_generarPlanoUsuarioPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;">🗺️ Plano</button>`;
+                return `
+                    <tr data-idx="${idx}">
+                        <td style="padding:7px;text-align:center;">${idx + 1}</td>
+                        ${celda('apellidos_nombres', f.apellidos_nombres)}
+                        ${celda('toma_nombre', f.toma_nombre)}
+                        <td style="padding:7px;text-align:center;">${escapeHtml(bloque)}</td>
+                        <td style="padding:7px;text-align:center;">${escapeHtml(f.unidad_catastral || '-')}</td>
+                        ${celda('area_total_ha', f.area_total_ha, 'number')}
+                        ${celda('area_bajo_riego_ha', f.area_bajo_riego_ha, 'number')}
+                        ${celda('clase_derecho', f.clase_derecho)}
+                        ${celda('volumen_m3', f.volumen_m3, 'number')}
+                        <td style="padding:7px;text-align:center;white-space:nowrap;">${acciones}</td>
+                    </tr>`;
+            }).join('');
+
+            return `
+                <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;">Mostrando ${_padronCusshmiFilasVista.length} usuario(s). Los campos resaltados en amarillo están sin completar.</p>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                        <thead>
+                            <tr style="background:#003876;color:white;">
+                                <th style="padding:7px;">N°</th>
+                                <th style="padding:7px;">Usuario</th>
+                                <th style="padding:7px;">Toma</th>
+                                <th style="padding:7px;">Bloque</th>
+                                <th style="padding:7px;">U. Catastral</th>
+                                <th style="padding:7px;">Área Total (ha)</th>
+                                <th style="padding:7px;">Área Bajo Riego (ha)</th>
+                                <th style="padding:7px;">Clase de Derecho</th>
+                                <th style="padding:7px;">Volumen (m³)</th>
+                                <th style="padding:7px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>${filasHtml}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        function _editarFilaPadronCusshmi(idx) {
+            _padronCusshmiEditandoIdx = idx;
+            _renderVistaPadronCusshmi();
+        }
+
+        async function _guardarFilaPadronCusshmi(idx) {
+            const fila = _padronCusshmiFilasVista[idx];
+            if (!fila) return;
+            if (!fila.unidad_catastral) {
+                alert('Este usuario no tiene Unidad Catastral registrada en el Padrón A-1 — no se puede guardar la edición (es la clave con la que se ubica su fila).');
+                return;
+            }
+            const tr = document.querySelector('#contenidoPadronCusshmi tr[data-idx="' + idx + '"]');
+            if (!tr) return;
+            const leer = (campo) => { const el = tr.querySelector('[data-campo="' + campo + '"]'); return el ? el.value : undefined; };
+            const nuevo = {
+                comisionKey: _padronCusshmiEstado.comisionKey,
+                unidadCatastral: fila.unidad_catastral,
+                apellidosNombres: (leer('apellidos_nombres') || '').trim() || fila.apellidos_nombres,
+                tomaNombre: (leer('toma_nombre') || '').trim() || null,
+                areaTotalHa: leer('area_total_ha'),
+                areaBajoRiegoHa: leer('area_bajo_riego_ha'),
+                claseDerecho: (leer('clase_derecho') || '').trim() || null,
+                volumenM3Anio: leer('volumen_m3'),
+                // Se pasan tal cual los campos que esta tabla no muestra, para
+                // no borrarlos — actualizarPadronOficialA1DesdeRegistro
+                // reescribe TODOS los campos que recibe, incluidos los que no
+                // se tocan acá.
+                tipoDocumento: fila.tipo_documento,
+                numeroDocumento: fila.numero_documento,
+                numeroResolucion: fila.numero_resolucion,
+                tipoUso: fila.tipo_uso,
+            };
+            const resultado = await CusshmiDatos.actualizarPadronOficialA1DesdeRegistro(nuevo);
+            if (!resultado.ok) { alert('No se pudo guardar: ' + (resultado.error || 'error desconocido')); return; }
+            if (!resultado.actualizado) { alert('No se encontró la fila a actualizar (Unidad Catastral no coincide).'); return; }
+            fila.apellidos_nombres = nuevo.apellidosNombres;
+            fila.toma_nombre = nuevo.tomaNombre;
+            fila.area_total_ha = nuevo.areaTotalHa !== '' ? parseFloat(nuevo.areaTotalHa) : null;
+            fila.area_bajo_riego_ha = nuevo.areaBajoRiegoHa !== '' ? parseFloat(nuevo.areaBajoRiegoHa) : null;
+            fila.clase_derecho = nuevo.claseDerecho;
+            fila.volumen_m3 = nuevo.volumenM3Anio !== '' ? parseFloat(nuevo.volumenM3Anio) : null;
+            _padronCusshmiEditandoIdx = null;
+            _renderVistaPadronCusshmi();
+        }
+
+        // Genera el plano individual de un usuario del Padrón CUSSHMI
+        // reutilizando TAL CUAL el pipeline del Plano de Predios A2
+        // (abrirModalPlanoPrediosA2 + _generarPlanoPrediosA2) — a diferencia
+        // de un Usuario Observado del Formato A-2, este usuario no aparece
+        // en el selector (que solo lista observados con polígono), así que
+        // se le agrega una opción temporal con su nombre exacto antes de
+        // generar. _generarPlanoPrediosA2 ya sabe resaltar su propio predio
+        // del KML del bloque de riego cuando no tiene un polígono medido/
+        // importado del Formato A-2 (ver el resaltado con respaldo agregado
+        // ahí mismo).
+        async function _generarPlanoUsuarioPadronCusshmi(idx) {
+            const fila = _padronCusshmiFilasVista[idx];
+            if (!fila) return;
+            if (!fila.toma_nombre) { alert('Este usuario no tiene Toma asignada en el Padrón A-1 — no se puede generar su plano.'); return; }
+            const modalPadron = document.getElementById('modalPadronCusshmi');
+            if (modalPadron) modalPadron.classList.remove('active');
+            abrirModalPlanoPrediosA2();
+            const radioToma = document.querySelector('input[name="ambitoPlanoA2"][value="toma"]');
+            if (radioToma) { radioToma.checked = true; _cambiarAmbitoPlanoA2(); }
+            const selectToma = document.getElementById('selectTomaPlanoA2');
+            if (!Array.from(selectToma.options).some((o) => o.value === fila.toma_nombre)) {
+                alert('La toma "' + fila.toma_nombre + '" de este usuario no está en la lista de tomas del Plano de Predios.');
+                return;
+            }
+            selectToma.value = fila.toma_nombre;
+            await _actualizarSelectorUsuarioPlanoA2();
+            const selectUsuario = document.getElementById('selectUsuarioPlanoA2');
+            let opt = Array.from(selectUsuario.options).find((o) => o.value === fila.apellidos_nombres);
+            if (!opt) {
+                opt = document.createElement('option');
+                opt.value = fila.apellidos_nombres;
+                opt.textContent = fila.apellidos_nombres;
+                selectUsuario.appendChild(opt);
+            }
+            selectUsuario.value = fila.apellidos_nombres;
+            await _generarPlanoPrediosA2();
         }
 
         async function _generarYDescargarFormatoA1Esc(filas, sufijo) {
