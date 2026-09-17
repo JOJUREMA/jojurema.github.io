@@ -7254,7 +7254,14 @@ const COMISIONES = {
                 ctx.lineWidth = 10;
                 ctx.setLineDash([]);
                 ctx.stroke();
-                ctx.fillStyle = 'rgba(155,89,182,0.35)';
+                // Relleno OPACO (no semitransparente) — el predio ya viene
+                // pintado por debajo con su color de Derecho (sección 3:
+                // verde, amarillo, rojo o morado según categoría); un
+                // relleno traslucido se MEZCLABA con ese color de fondo y
+                // salía un gris/oliva apagado que no se distinguía como
+                // "resaltado". Sólido, siempre se ve igual sin importar la
+                // categoría del predio debajo.
+                ctx.fillStyle = '#c39bd3';
                 ctx.fill();
                 ctx.strokeStyle = '#8e44ad';
                 ctx.lineWidth = 6;
@@ -7649,6 +7656,25 @@ const COMISIONES = {
             ctx.fillRect(x0, y0, anchoCaja, altoTotal);
             ctx.strokeRect(x0, y0, anchoCaja, altoTotal);
 
+            const X_VALOR = x0 + 230;
+            const anchoValorDisponible = x0 + anchoCaja - 12 - X_VALOR;
+            // Recorta el VALOR al ancho real disponible (con "…"), midiendo
+            // con el mismo font ya puesto en ctx — a diferencia de un límite
+            // fijo de caracteres, esto funciona igual de bien para un nombre
+            // angosto ("JOSE LUIS") que para uno ancho en mayúsculas con
+            // muchas "W"/"M" — antes un nombre largo se salía del cuadro
+            // (ver "Apellidos y Nombres").
+            function truncarAlAncho(texto, anchoMax) {
+                const t = (texto || '').toString();
+                if (ctx.measureText(t).width <= anchoMax) return t;
+                let lo = 0, hi = t.length;
+                while (lo < hi) {
+                    const mid = Math.ceil((lo + hi) / 2);
+                    if (ctx.measureText(t.slice(0, mid) + '…').width <= anchoMax) lo = mid; else hi = mid - 1;
+                }
+                return lo > 0 ? (t.slice(0, lo) + '…') : '…';
+            }
+
             let y = y0 + 12;
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
             ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
@@ -7661,7 +7687,7 @@ const COMISIONES = {
                 ctx.fillText(etiqueta + ':', x0 + 12, yCentro);
                 ctx.font = '700 13px Arial, sans-serif';
                 ctx.fillStyle = '#000000';
-                ctx.fillText(String(valor), x0 + 230, yCentro);
+                ctx.fillText(truncarAlAncho(valor, anchoValorDisponible), X_VALOR, yCentro);
                 y += ALTO_FILA;
             });
             ctx.restore();
