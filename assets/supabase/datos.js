@@ -2400,6 +2400,11 @@
             toma_nombre: datos.tomaNombre || null,
             actualizado_por: usuarioId,
         };
+        // `observacion` solo se toca si el llamador la envía explícitamente
+        // (móvil, ficha de Padrón CUSSHMI) — así una llamada que no la
+        // conoce (ej. la tabla editable de escritorio) nunca la borra sin
+        // querer.
+        if (datos.observacion !== undefined) cambios.observacion = datos.observacion || null;
 
         const { data, error } = await client.from('padron_oficial_a1')
             .update(cambios)

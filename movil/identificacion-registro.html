@@ -448,11 +448,15 @@
                     <label for="campoVolumenPadronCusshmiMovil">Volumen (m³)</label>
                     <input type="number" step="0.01" id="campoVolumenPadronCusshmiMovil">
                 </div>
+                <div class="campo">
+                    <label for="campoObservacionPadronCusshmiMovil">Observaciones</label>
+                    <textarea id="campoObservacionPadronCusshmiMovil" placeholder="Notas de campo…"></textarea>
+                </div>
             </div>
 
             <div class="estado-busqueda" id="estadoFichaPadronCusshmiMovil"></div>
             <button class="boton" id="btnGuardarFichaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">💾 Guardar</button>
-            <button class="boton-secundario" id="btnPoligonoFichaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">➕ Crear Polígono</button>
+            <button class="boton-secundario" id="btnPoligonoFichaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">📐 Crear/Editar Polígono</button>
         </div>
 
         <!-- ── Padrón CUSSHMI: editor de polígono a pantalla completa — mismo
@@ -468,6 +472,7 @@
             <div id="mapaEditorPoligonoPadronCusshmiMovil" class="editor-poligono-mapa"></div>
             <div class="editor-poligono-footer">
                 <div class="estado-busqueda" id="estadoEditorPoligonoPadronCusshmiMovil" style="max-width:none;"></div>
+                <button class="boton" id="btnToggleEdicionPoligonoPadronCusshmiMovil" style="max-width:none; background:#c8a84b; color:#1a1a1a;">🔒 Bloqueado — toca para Editar</button>
                 <button class="boton-secundario" id="btnBloqueRiegoEditorPoligonoPadronCusshmiMovil" style="max-width:none;">🗺️ Ver bloque de riego (toca un predio para ver sus datos)</button>
                 <div id="infoPredioSeleccionadoPadronCusshmiMovil" style="display:none; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px; color:#fff; font-size:12px; text-align:left;">
                     <div id="textoInfoPredioSeleccionadoPadronCusshmiMovil" style="margin-bottom:8px; line-height:1.5;"></div>
@@ -476,8 +481,9 @@
                         <button class="boton-secundario" id="btnCancelarPredioSeleccionadoPadronCusshmiMovil" style="max-width:none; flex:1;">✕ Cancelar</button>
                     </div>
                 </div>
-                <button class="boton-secundario" id="btnDeshacerEditorPoligonoPadronCusshmiMovil" style="max-width:none;">↩️ Deshacer último punto</button>
-                <button class="boton-secundario" id="btnBorrarEditorPoligonoPadronCusshmiMovil" style="max-width:none; background:#8b2c2c; color:#fff;">🗑️ Borrar polígono</button>
+                <button class="boton-secundario" id="btnFijarVerticeGpsPadronCusshmiMovil" style="max-width:none;" disabled>📍 Agregar vértice con mi ubicación (GPS)</button>
+                <button class="boton-secundario" id="btnDeshacerEditorPoligonoPadronCusshmiMovil" style="max-width:none;" disabled>↩️ Deshacer último punto</button>
+                <button class="boton-secundario" id="btnBorrarEditorPoligonoPadronCusshmiMovil" style="max-width:none; background:#8b2c2c; color:#fff;" disabled>🗑️ Borrar polígono</button>
             </div>
         </div>
 
@@ -2645,6 +2651,14 @@
         var editorPoligonoPadronCusshmiMovil = null; // {fila, vertices, capaPoligono, marcadores, capaBloqueRiego, bloqueRiegoVisible}
         var predioSeleccionadoPadronCusshmiMovil = null; // predio del KML tocado en "Ver bloque de riego", pendiente de "Usar este polígono"
         var capaPredioSeleccionadoPadronCusshmiMovil = null; // su capa Leaflet, para restaurar el estilo al deseleccionar
+        // Arranca BLOQUEADO cada vez que se abre el editor — así se puede
+        // tocar el mapa/los predios del bloque de riego para solo consultar
+        // (ver el punto 2 más abajo) sin crear vértices sin querer; hay que
+        // tocar "✏️ Editar" a propósito para empezar a modificar el polígono.
+        var editorPoligonoPadronCusshmiMovilBloqueado = true;
+        var watchIdEditorPoligonoPadronCusshmiMovil = null;
+        var marcadorGpsEditorPoligonoPadronCusshmiMovil = null;
+        var posicionGpsEditorPoligonoPadronCusshmiMovilActual = null; // {easting, northing, lat, lon}
 
         // "Tiene Permiso, o no tiene Licencia formalizada" — mismo criterio
         // exacto que _esFormatoA1ConPermisoOSinLicencia de escritorio.
@@ -2745,9 +2759,8 @@
             document.getElementById('campoAreaBajoRiegoPadronCusshmiMovil').value = fila.area_bajo_riego_ha != null ? fila.area_bajo_riego_ha : '';
             document.getElementById('campoClaseDerechoPadronCusshmiMovil').value = fila.clase_derecho || '';
             document.getElementById('campoVolumenPadronCusshmiMovil').value = fila.volumen_m3 != null ? fila.volumen_m3 : '';
+            document.getElementById('campoObservacionPadronCusshmiMovil').value = fila.observacion || '';
             document.getElementById('estadoFichaPadronCusshmiMovil').textContent = '';
-            var tienePoligono = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3;
-            document.getElementById('btnPoligonoFichaPadronCusshmiMovil').textContent = tienePoligono ? '📐 Editar Polígono' : '➕ Crear Polígono';
         }
         document.getElementById('btnVolverListaDesdeFichaPadronCusshmi').addEventListener('click', function () {
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
@@ -2773,6 +2786,10 @@
                 areaBajoRiegoHa: document.getElementById('campoAreaBajoRiegoPadronCusshmiMovil').value,
                 claseDerecho: (document.getElementById('campoClaseDerechoPadronCusshmiMovil').value || '').trim() || null,
                 volumenM3Anio: document.getElementById('campoVolumenPadronCusshmiMovil').value,
+                // observacion: solo se envía si CusshmiDatos.actualizarPadronOficialA1DesdeRegistro
+                // ya sabe aplicarla (guard en datos.js) — así una versión
+                // vieja de datos.js no rompe el resto del guardado.
+                observacion: (document.getElementById('campoObservacionPadronCusshmiMovil').value || '').trim() || null,
                 // Se pasan tal cual — actualizarPadronOficialA1DesdeRegistro
                 // reescribe TODOS los campos recibidos, incluidos los que
                 // esta ficha no muestra, para no borrarlos.
@@ -2790,6 +2807,7 @@
             fila.area_bajo_riego_ha = nuevo.areaBajoRiegoHa !== '' ? parseFloat(nuevo.areaBajoRiegoHa) : null;
             fila.clase_derecho = nuevo.claseDerecho;
             fila.volumen_m3 = nuevo.volumenM3Anio !== '' ? parseFloat(nuevo.volumenM3Anio) : null;
+            fila.observacion = nuevo.observacion;
             document.getElementById('tituloFichaPadronCusshmiMovil').textContent = fila.apellidos_nombres;
             elEstado.textContent = '✅ Guardado.';
         });
@@ -2814,7 +2832,7 @@
                 attribution: 'Imágenes © Google', subdomains: ['0', '1', '2', '3'], maxZoom: 20,
             }).addTo(mapaEditorPoligonoPadronCusshmiMovil);
             mapaEditorPoligonoPadronCusshmiMovil.on('click', function (e) {
-                if (!editorPoligonoPadronCusshmiMovil) return;
+                if (!editorPoligonoPadronCusshmiMovil || editorPoligonoPadronCusshmiMovilBloqueado) return;
                 editorPoligonoPadronCusshmiMovil.vertices.push(_construirVerticePoligonoPadronCusshmiMovil(e.latlng.lat, e.latlng.lng));
                 _redibujarEditorPoligonoPadronCusshmiMovil();
             });
@@ -2857,6 +2875,18 @@
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'flex';
             _iniciarMapaEditorPoligonoPadronCusshmiMovilSiHaceFalta();
 
+            posicionGpsEditorPoligonoPadronCusshmiMovilActual = null;
+            watchIdEditorPoligonoPadronCusshmiMovil = iniciarSeguimientoGpsA2(function (pos) {
+                posicionGpsEditorPoligonoPadronCusshmiMovilActual = latLonAUtm17S(pos.coords.latitude, pos.coords.longitude);
+                posicionGpsEditorPoligonoPadronCusshmiMovilActual.lat = pos.coords.latitude;
+                posicionGpsEditorPoligonoPadronCusshmiMovilActual.lon = pos.coords.longitude;
+                document.getElementById('btnFijarVerticeGpsPadronCusshmiMovil').disabled = editorPoligonoPadronCusshmiMovilBloqueado;
+                if (marcadorGpsEditorPoligonoPadronCusshmiMovil) mapaEditorPoligonoPadronCusshmiMovil.removeLayer(marcadorGpsEditorPoligonoPadronCusshmiMovil);
+                marcadorGpsEditorPoligonoPadronCusshmiMovil = L.circleMarker([pos.coords.latitude, pos.coords.longitude], {
+                    radius: 8, color: '#ffffff', weight: 2, fillColor: '#2563eb', fillOpacity: 0.9,
+                }).addTo(mapaEditorPoligonoPadronCusshmiMovil).bindTooltip('Tu ubicación (±' + Math.round(pos.coords.accuracy) + ' m)');
+            }, function () { /* sin GPS no pasa nada — el botón se queda deshabilitado */ });
+
             if (verticesIniciales.length >= 3) {
                 var centroide = calcularCentroidePoligono(verticesIniciales);
                 if (centroide) {
@@ -2866,7 +2896,7 @@
             } else if (propio && propio.coordenadas && propio.coordenadas.length) {
                 mapaEditorPoligonoPadronCusshmiMovil.setView([propio.coordenadas[0][1], propio.coordenadas[0][0]], 17);
             }
-            _redibujarEditorPoligonoPadronCusshmiMovil();
+            _fijarBloqueoEdicionPoligonoPadronCusshmiMovil(true); // también redibuja, ya con la vista final del mapa
         }
         document.getElementById('btnPoligonoFichaPadronCusshmiMovil').addEventListener('click', _abrirEditorPoligonoPadronCusshmiMovil);
 
@@ -2885,7 +2915,7 @@
                 estado.capaPoligono = L.polyline(latlngs, { color: '#b35900', weight: 2 }).addTo(mapaEditorPoligonoPadronCusshmiMovil);
             }
             estado.vertices.forEach(function (v, idx) {
-                var marcador = L.marker([v.lat, v.lon], { draggable: true, icon: _iconoEditorPoligonoPadronCusshmiMovil(String(idx + 1)) }).addTo(mapaEditorPoligonoPadronCusshmiMovil);
+                var marcador = L.marker([v.lat, v.lon], { draggable: !editorPoligonoPadronCusshmiMovilBloqueado, icon: _iconoEditorPoligonoPadronCusshmiMovil(String(idx + 1)) }).addTo(mapaEditorPoligonoPadronCusshmiMovil);
                 marcador.on('dragend', function (e) {
                     var ll = e.target.getLatLng();
                     var utm = latLonAUtm17S(ll.lat, ll.lng);
@@ -2901,8 +2931,10 @@
             var estado = editorPoligonoPadronCusshmiMovil;
             var el = document.getElementById('estadoEditorPoligonoPadronCusshmiMovil');
             if (!estado || !el) return;
-            if (estado.vertices.length === 0) {
-                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para ver y adoptar el predio de este usuario.';
+            if (editorPoligonoPadronCusshmiMovilBloqueado) {
+                el.textContent = '🔒 Solo consulta — toca "✏️ Editar" para poder tocar el mapa/agregar vértices.';
+            } else if (estado.vertices.length === 0) {
+                el.textContent = 'Toca el mapa para poner el primer vértice, o usa el GPS / "Ver bloque de riego" para adoptar el predio de este usuario.';
             } else if (estado.vertices.length < 3) {
                 el.textContent = estado.vertices.length + ' punto(s) — hacen falta al menos 3 para formar un polígono.';
             } else {
@@ -2911,13 +2943,44 @@
             }
         }
 
+        // Botón "🔒 Bloqueado / ✏️ Editar" — al abrir el editor siempre
+        // arranca bloqueado (ver _abrirEditorPoligonoPadronCusshmiMovil), así
+        // se puede tocar el mapa y los predios del bloque de riego para solo
+        // CONSULTAR (ver quién es cada predio) sin crear vértices por
+        // accidente; tocar este botón habilita recién la edición real.
+        function _fijarBloqueoEdicionPoligonoPadronCusshmiMovil(bloqueado) {
+            editorPoligonoPadronCusshmiMovilBloqueado = bloqueado;
+            var btn = document.getElementById('btnToggleEdicionPoligonoPadronCusshmiMovil');
+            btn.textContent = bloqueado ? '🔒 Bloqueado — toca para Editar' : '✏️ Editando — toca para Bloquear';
+            btn.style.background = bloqueado ? '#c8a84b' : '#1a6e3c';
+            btn.style.color = bloqueado ? '#1a1a1a' : '#fff';
+            document.getElementById('btnDeshacerEditorPoligonoPadronCusshmiMovil').disabled = bloqueado;
+            document.getElementById('btnBorrarEditorPoligonoPadronCusshmiMovil').disabled = bloqueado;
+            document.getElementById('btnFijarVerticeGpsPadronCusshmiMovil').disabled = bloqueado || !posicionGpsEditorPoligonoPadronCusshmiMovilActual;
+            if (editorPoligonoPadronCusshmiMovil) _redibujarEditorPoligonoPadronCusshmiMovil(); // re-crea los marcadores (des)arrastrables
+        }
+        document.getElementById('btnToggleEdicionPoligonoPadronCusshmiMovil').addEventListener('click', function () {
+            _fijarBloqueoEdicionPoligonoPadronCusshmiMovil(!editorPoligonoPadronCusshmiMovilBloqueado);
+        });
+
+        document.getElementById('btnFijarVerticeGpsPadronCusshmiMovil').addEventListener('click', function () {
+            if (editorPoligonoPadronCusshmiMovilBloqueado || !posicionGpsEditorPoligonoPadronCusshmiMovilActual || !editorPoligonoPadronCusshmiMovil) return;
+            editorPoligonoPadronCusshmiMovil.vertices.push({
+                easting: posicionGpsEditorPoligonoPadronCusshmiMovilActual.easting,
+                northing: posicionGpsEditorPoligonoPadronCusshmiMovilActual.northing,
+                lat: posicionGpsEditorPoligonoPadronCusshmiMovilActual.lat,
+                lon: posicionGpsEditorPoligonoPadronCusshmiMovilActual.lon,
+            });
+            _redibujarEditorPoligonoPadronCusshmiMovil();
+        });
+
         document.getElementById('btnDeshacerEditorPoligonoPadronCusshmiMovil').addEventListener('click', function () {
-            if (!editorPoligonoPadronCusshmiMovil || editorPoligonoPadronCusshmiMovil.vertices.length === 0) return;
+            if (editorPoligonoPadronCusshmiMovilBloqueado || !editorPoligonoPadronCusshmiMovil || editorPoligonoPadronCusshmiMovil.vertices.length === 0) return;
             editorPoligonoPadronCusshmiMovil.vertices.pop();
             _redibujarEditorPoligonoPadronCusshmiMovil();
         });
         document.getElementById('btnBorrarEditorPoligonoPadronCusshmiMovil').addEventListener('click', function () {
-            if (!editorPoligonoPadronCusshmiMovil) return;
+            if (editorPoligonoPadronCusshmiMovilBloqueado || !editorPoligonoPadronCusshmiMovil) return;
             if (!confirm('¿Borrar todos los puntos del polígono en edición?')) return;
             editorPoligonoPadronCusshmiMovil.vertices = [];
             _redibujarEditorPoligonoPadronCusshmiMovil();
@@ -2940,7 +3003,15 @@
             var capas = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; }).map(function (p) {
                 var latlngs = p.coordenadas.map(function (par) { return [par[1], par[0]]; });
                 var poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.25, interactive: true });
-                poligono.on('click', function () { _seleccionarPredioBloqueRiegoPadronCusshmiMovil(p, poligono); });
+                // stopPropagation es la parte clave: sin esto, el click en el
+                // predio también le llega al mapa (Leaflet hace bubbling de
+                // los eventos de los Path por defecto) y el handler de click
+                // del mapa terminaba agregando un vértice nuevo de paso —
+                // exactamente el bug reportado ("se crea un nuevo punto").
+                poligono.on('click', function (e) {
+                    L.DomEvent.stopPropagation(e);
+                    _seleccionarPredioBloqueRiegoPadronCusshmiMovil(p, poligono);
+                });
                 poligono.bindTooltip(nombreUsuarioPlanoA2(p.usuario) + (p.catastralKey ? (' — UC ' + p.catastralKey) : ''), { sticky: true });
                 return poligono;
             });
@@ -3032,13 +3103,12 @@
 
         function _cerrarEditorPoligonoPadronCusshmiMovil() {
             _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
+            detenerSeguimientoGpsA2(watchIdEditorPoligonoPadronCusshmiMovil);
+            watchIdEditorPoligonoPadronCusshmiMovil = null;
+            marcadorGpsEditorPoligonoPadronCusshmiMovil = null;
+            posicionGpsEditorPoligonoPadronCusshmiMovilActual = null;
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
-            var fila = padronCusshmiFilaActualMovil;
-            if (fila) {
-                var tienePoligono = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3;
-                document.getElementById('btnPoligonoFichaPadronCusshmiMovil').textContent = tienePoligono ? '📐 Editar Polígono' : '➕ Crear Polígono';
-            }
         }
         document.getElementById('btnCerrarEditorPoligonoPadronCusshmiMovil').addEventListener('click', _cerrarEditorPoligonoPadronCusshmiMovil);
 
