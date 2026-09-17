@@ -7256,6 +7256,31 @@ const COMISIONES = {
                 ctx.stroke();
             });
 
+            // 3.5) Relleno de los polígonos de Usuarios "observados" del
+            //      Formato A-2 (A2-Fuera de Bloque / Sin Registro) — SIEMPRE
+            //      por debajo de los canales (sección 4, justo después), a
+            //      pedido explícito: antes se dibujaban después y un canal
+            //      que pasara por encima de uno de estos polígonos quedaba
+            //      tapado por su relleno. Su etiqueta (nombre+área) se
+            //      dibuja aparte, más abajo (sección 5.6) — ver ahí la
+            //      prioridad de espacio frente a canales/predios.
+            const _observadosA2InfoPlanoA2 = (usuariosObservadosA2 || []).map((u) => {
+                const verticesOrdenados = u.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+                const puntosPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
+                return { u, verticesOrdenados, puntosPx };
+            }).filter((info) => info.puntosPx.length >= 3);
+            _observadosA2InfoPlanoA2.forEach(({ puntosPx }) => {
+                ctx.beginPath();
+                puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
+                ctx.closePath();
+                ctx.fillStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.fill;
+                ctx.fill();
+                ctx.strokeStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.stroke;
+                ctx.lineWidth = 3;
+                ctx.setLineDash([]);
+                ctx.stroke();
+            });
+
             // 4) Canales (color real por orden). Se usa canalesParaDibujo
             //    (incluye los troncales, ej. Canal Sur) — ver arriba.
             const latlngsCanalPx = canalesParaDibujo.map((c) => c.geom.coords.map((par) => {
@@ -7331,45 +7356,21 @@ const COMISIONES = {
             const rectangulosOcupadosPlanoA2 = [];
 
             // 5.6) Usuarios "observados" del Formato A-2 (A2-Fuera de Bloque
-            //      o Sin Registro) — a diferencia del resaltado único de 5.5
-            //      (un solo usuario elegido a mano), acá se dibujan TODOS los
-            //      polígonos observados de esas 2 categorías a la vez, cada
-            //      uno con su propio polígono medido/importado del Formato
-            //      A-2 (no el predio del KML del bloque, que para estos casos
-            //      no representa su ubicación real). Rótulo simplificado —
-            //      SOLO nombre y área (ha), sin la caja de datos completa
-            //      (esa solo tiene sentido para un usuario a la vez) — las
-            //      coordenadas del centroide van aparte, en la tabla
-            //      "Centroide de Polígonos" (esquina superior derecha), no
-            //      sobre el propio polígono.
-            //
-            //      Prioridad de colocación de su etiqueta: en el ámbito
-            //      dedicado "Usuarios Observados A2" (esAmbitoObservados),
-            //      por ENCIMA de canales/predios — ver a estos usuarios es
-            //      el propósito de haber elegido esa opción. En cualquier
-            //      otro plano (toma completa, un usuario resaltado, todos
-            //      los bloques), donde este overlay es solo un dato extra
-            //      y no el foco, se dibuja DESPUÉS de los canales — antes
-            //      les ganaba el espacio incluso a la etiqueta del canal
-            //      principal, que es información más importante ahí.
-            function _dibujarObservadosA2AhoraPlanoA2() {
-            if (usuariosObservadosA2 && usuariosObservadosA2.length) {
+            //      o Sin Registro) — su POLÍGONO (relleno+borde) ya se
+            //      dibujó más arriba, justo después de la sección 3 y ANTES
+            //      que los canales (sección 4), para que un canal nunca
+            //      quede tapado por uno de estos polígonos. Acá solo falta
+            //      su ETIQUETA (nombre+área), que si compite por espacio con
+            //      canales/predios: en el ámbito dedicado "Usuarios
+            //      Observados A2" (esAmbitoObservados) va POR ENCIMA — ver a
+            //      estos usuarios es el propósito de esa opción — en
+            //      cualquier otro plano va DESPUÉS de las etiquetas de
+            //      canal (más abajo, tras la sección 6a), que son más
+            //      importantes ahí.
+            function _dibujarObservadosA2EtiquetasPlanoA2() {
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';
-                usuariosObservadosA2.forEach((u) => {
-                    const verticesOrdenados = u.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
-                    const puntosPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
-                    if (puntosPx.length < 3) return;
-                    ctx.beginPath();
-                    puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
-                    ctx.closePath();
-                    ctx.fillStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.fill;
-                    ctx.fill();
-                    ctx.strokeStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.stroke;
-                    ctx.lineWidth = 3;
-                    ctx.setLineDash([]);
-                    ctx.stroke();
-
+                _observadosA2InfoPlanoA2.forEach(({ u, verticesOrdenados, puntosPx }) => {
                     const centroide = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
                     const centroPx = centroide ? proyector.proyectar(centroide.easting, centroide.northing) : puntosPx[0];
                     const verticesLatLon = verticesOrdenados.map((v) => [v.lat, v.lon]);
@@ -7413,8 +7414,7 @@ const COMISIONES = {
                     ctx.restore();
                 });
             }
-            }
-            if (esAmbitoObservados) _dibujarObservadosA2AhoraPlanoA2();
+            if (esAmbitoObservados) _dibujarObservadosA2EtiquetasPlanoA2();
 
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
             //    paralelas a su lado/tramo más largo, con tamaño de fuente
@@ -7487,7 +7487,7 @@ const COMISIONES = {
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
                 dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, anguloRad, nombreCanal, colorLinea, fuente);
             });
-            if (!esAmbitoObservados) _dibujarObservadosA2AhoraPlanoA2();
+            if (!esAmbitoObservados) _dibujarObservadosA2EtiquetasPlanoA2();
 
             // 6b) Predios — de mayor a menor tamaño (los más grandes reclaman
             //     su espacio primero). Si el nombre+identificador completo
