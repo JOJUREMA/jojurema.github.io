@@ -462,6 +462,7 @@
 
             <div class="estado-busqueda" id="estadoFichaPadronCusshmiMovil"></div>
             <button class="boton" id="btnGuardarFichaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">💾 Guardar</button>
+            <button class="boton-secundario" id="btnFichaCompletaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">📝 Ficha completa (Formato A-1/A-2)</button>
             <button class="boton-secundario" id="btnPoligonoFichaPadronCusshmiMovil" style="max-width:420px; margin-top:10px;">📐 Crear/Editar Polígono</button>
         </div>
 
@@ -632,6 +633,11 @@
         var padronTomaActual = [];
         var registrosTomaActual = [];
         var registroActual = null; // objeto mutado por guardarRegistroIdentificacionDebounced
+        // Por qué pantalla se entró a vistaFormulario/vistaConfirmacion —
+        // 'toma' es el flujo original (Pantalla 2 → 3 → 4), 'padronCusshmi'
+        // es el nuevo (ver abrirFormularioDesdePadronCusshmi más abajo).
+        // volverABusqueda lo usa para volver al lugar correcto.
+        var origenFormularioIdentificacion = 'toma';
 
         // Padrón oficial A-1 de ANA (toda la comisión, no por toma — el
         // archivo oficial no trae toma) — se carga una sola vez por sesión
@@ -1171,6 +1177,26 @@
                 await CusshmiDatos.guardarRegistroIdentificacion(registroActual);
             }
             document.getElementById('vistaFormulario').style.display = 'none';
+            if (origenFormularioIdentificacion === 'padronCusshmi') {
+                origenFormularioIdentificacion = 'toma';
+                var fila = padronCusshmiFilaActualMovil;
+                if (fila && registroActual) {
+                    // Refleja en la ficha simple / la lista lo que se acaba de
+                    // escribir en la ficha completa — mismo objeto en memoria
+                    // que ya usan _renderListaPadronCusshmiMovil/la ficha, así
+                    // que mutarlo alcanza para que ambas pantallas queden al día
+                    // sin tener que volver a consultar Supabase.
+                    fila.apellidos_nombres = registroActual.apellidosNombres || fila.apellidos_nombres;
+                    fila.area_total_ha = registroActual.areaTotalHa !== '' ? parseFloat(registroActual.areaTotalHa) : fila.area_total_ha;
+                    fila.area_bajo_riego_ha = registroActual.areaBajoRiegoHa !== '' ? parseFloat(registroActual.areaBajoRiegoHa) : fila.area_bajo_riego_ha;
+                    fila.clase_derecho = registroActual.claseDerecho || fila.clase_derecho;
+                    fila.volumen_m3 = registroActual.volumenM3Anio !== '' ? parseFloat(registroActual.volumenM3Anio) : fila.volumen_m3;
+                    _abrirFichaPadronCusshmiMovil(fila.unidad_catastral);
+                } else {
+                    document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
+                }
+                return;
+            }
             abrirToma(tomaSeleccionada); // refresca padrón/registros para que los badges queden al día
         }
         document.getElementById('btnVolverABusqueda').addEventListener('click', volverABusqueda);
@@ -2827,6 +2853,91 @@
             document.getElementById('tituloFichaPadronCusshmiMovil').textContent = fila.apellidos_nombres;
             elEstado.textContent = '✅ Guardado.';
         });
+
+        // "📝 Ficha completa (Formato A-1/A-2)" — abre EL MISMO formulario
+        // rico (Secciones A-F: documento, riego, cultivo, derecho/CUT-canal-
+        // fuente, tipo de uso, estado del predio, observaciones de campo,
+        // más el flujo de confirmar/bloquear/solicitar edición) que usa
+        // "Formato A-1 → elegir toma → elegir usuario", a pedido explícito
+        // del usuario ("ese contenido quiero que lo tenga el Padrón
+        // CUSSHMI"). Requiere Toma (identificacion_registros se guarda por
+        // toma) — si la fila no la tiene, se pide completarla primero en la
+        // ficha simple. Si ya existe un borrador/registro de campo para este
+        // usuario en esa toma (por UC o nombre) lo reabre tal cual con
+        // abrirFormularioDesdeUsuario (mismo camino que el flujo original);
+        // si no, arma un registro nuevo DIRECTO desde la fila oficial del
+        // Padrón CUSSHMI (ya es la fuente de verdad) en vez de
+        // nuevoRegistroBase (que autocompleta buscando por UC/nombre, y acá
+        // ya se parte de esa fila encontrada).
+        async function abrirFormularioDesdePadronCusshmi() {
+            var fila = padronCusshmiFilaActualMovil;
+            if (!fila) return;
+            if (!fila.toma_nombre) {
+                alert('Este usuario no tiene Toma asignada en el Padrón A-1 — escribe una Toma en el campo "Toma" y guarda, antes de abrir la ficha completa (Formato A-1/A-2).');
+                return;
+            }
+            origenFormularioIdentificacion = 'padronCusshmi';
+            tomaSeleccionada = fila.toma_nombre;
+            document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+            document.getElementById('estadoGuardadoFormulario').textContent = 'Cargando…';
+
+            var resultadoPadron = await CusshmiDatos.cargarPadronToma(comisionKeyActual, fila.toma_nombre);
+            padronTomaActual = (resultadoPadron.ok && resultadoPadron.resultados) ? resultadoPadron.resultados : [];
+            var resultadoRegistros = await CusshmiDatos.listarRegistrosDeToma(comisionKeyActual, fila.toma_nombre);
+            registrosTomaActual = (resultadoRegistros.ok && resultadoRegistros.registros) ? resultadoRegistros.registros : [];
+
+            var ucNorm = normalizarUC(fila.unidad_catastral);
+            var nombreNorm = (fila.apellidos_nombres || '').trim().toUpperCase();
+            var registroExistente = registrosTomaActual.find(function (r) {
+                return (ucNorm && normalizarUC(r.unidad_catastral) === ucNorm) ||
+                    (nombreNorm && (r.apellidos_nombres || '').trim().toUpperCase() === nombreNorm);
+            }) || null;
+
+            if (registroExistente) {
+                await abrirFormularioDesdeUsuario(null, registroExistente);
+                return;
+            }
+
+            var padronUsuario = emparejarConPadronUsuarios(padronTomaActual, fila.unidad_catastral, fila.apellidos_nombres);
+            registroActual = {
+                id: null,
+                comisionKey: comisionKeyActual,
+                tomaNombre: fila.toma_nombre,
+                padronUsuarioId: padronUsuario ? padronUsuario.id : null,
+                apellidosNombres: fila.apellidos_nombres || '',
+                tipoDocumento: fila.tipo_documento || '',
+                numeroDocumento: fila.numero_documento || '',
+                unidadCatastral: fila.unidad_catastral || '',
+                areaTotalHa: fila.area_total_ha != null ? fila.area_total_ha : '',
+                areaBajoRiegoHa: fila.area_bajo_riego_ha != null ? fila.area_bajo_riego_ha : '',
+                tipoRiego: padronUsuario ? (padronUsuario.tipo_riego || '') : '',
+                cultivoActual: padronUsuario ? formatearCultivos(padronUsuario.cultivos) : '',
+                tieneDerecho: fila.numero_resolucion ? 'si' : '',
+                numeroResolucion: fila.numero_resolucion || '',
+                claseDerecho: fila.clase_derecho || '',
+                volumenM3Anio: fila.volumen_m3 != null ? fila.volumen_m3 : '',
+                cutExpediente: fila.cut_expediente || '',
+                tipoUso: fila.tipo_uso || 'Agrario',
+                canalDerivacion: fila.canal_derivacion || '',
+                fuenteAgua: fila.fuente_agua || '',
+                clasificacion: '',
+                estadoPredio: '',
+                observaciones: fila.observacion || '',
+                confirmado: false,
+                solicitudEdicion: false,
+                solicitudEdicionPorNombre: '',
+                solicitudEdicionEn: null,
+                _a1Encontrado: true,
+                // Ya viene del padrón oficial (no es un usuario nuevo de
+                // campo) — evita que al confirmar se lo vuelva a incorporar
+                // como origen 'campo' si terminara clasificando A-2.
+                _a1Incorporado: true,
+            };
+            pintarFormularioDesdeRegistro();
+            document.getElementById('estadoGuardadoFormulario').textContent = '';
+        }
+        document.getElementById('btnFichaCompletaPadronCusshmiMovil').addEventListener('click', abrirFormularioDesdePadronCusshmi);
 
         // ── Editor de polígono (Padrón CUSSHMI) ──────────────────────────
         function _construirVerticePoligonoPadronCusshmiMovil(lat, lon) {
