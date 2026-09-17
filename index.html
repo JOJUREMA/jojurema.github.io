@@ -6435,6 +6435,25 @@ const COMISIONES = {
                 }));
         }
 
+        // Clasificación de Derecho para el PLANO — envuelve
+        // clasificarDerechoPredioA2 (compartida, sin tocar, sigue igual
+        // para Padrón CUSSHMI y el editor "Ver bloque de riego") pero
+        // funde A2_FUERA_BLOQUE en SIN_REGISTRO: a pedido explícito, un
+        // predio del KML del bloque "Fuera de Bloque" ya NO es su propia
+        // categoría/color independiente en el plano — esos usuarios
+        // aparecen exclusivamente a través de "Usuarios Observados A2"
+        // (su propio polígono medido/importado, sección 5.6), que es la
+        // representación real de dónde están. Mostrar ADEMÁS el predio
+        // del KML en morado (que no es su ubicación real) solo generaba
+        // un ítem de leyenda sin ningún polígono reconocible como tal.
+        function _categoriaDerechoPlanoA2(predio, padronA1Rows, formatoA2Rows) {
+            const clasif = clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows);
+            if (clasif.categoria === 'A2_FUERA_BLOQUE') {
+                return { categoria: 'SIN_REGISTRO', colorInfo: DERECHO_PLANO_A2.SIN_REGISTRO, matchInfo: clasif.matchInfo };
+            }
+            return clasif;
+        }
+
         async function _generarPlanoPrediosA2() {
             const radioAmbito = document.querySelector('input[name="ambitoPlanoA2"]:checked');
             const ambito = radioAmbito ? radioAmbito.value : 'toma'; // 'toma' | 'todos' | 'observados'
@@ -6710,7 +6729,7 @@ const COMISIONES = {
             // Todo arranca activado (checked) para que el plano se vea igual
             // que antes de tener filtros; el usuario apaga lo que no quiere ver.
             const categoriasDerechoPresentes = Array.from(new Set((datosPlano.predios || []).map((p) =>
-                clasificarDerechoPredioA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria)));
+                _categoriaDerechoPlanoA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria)));
             const ORDEN_CANAL_ORDEN_PLANO_A2 = ['L1', 'L2', 'L3', 'L4', 'L5'];
             const canalesTodosPlanoA2 = (datosPlano.canales || []).concat(datosPlano.canalesTroncales || []);
             const ordenesCanalPresentes = Array.from(new Set(canalesTodosPlanoA2.map((c) => (c.campos && c.campos.ORDEN) || '')))
@@ -6718,15 +6737,15 @@ const COMISIONES = {
                 .sort((a, b) => ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(a) - ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(b));
             // Usuarios observados A2 (Fuera de Bloque / Sin Registro, ya
             // calculados en _generarPlanoPrediosA2 con su propio polígono del
-            // Formato A-2) — este checkbox solo aparece si de verdad hay
-            // alguno en esta toma, igual criterio que Derecho/canales. Pero
-            // si el plano ya está resaltando a UN usuario en particular
-            // (usuarioResaltado — botón "Generar Plano" de Padrón CUSSHMI o
-            // del selector de Usuario), arranca APAGADO por defecto: ese
-            // plano es sobre ese único usuario, no sobre el listado completo
-            // de observados de la toma (el usuario puede prenderlo a mano si
-            // igual lo quiere ver).
-            const hayObservadosA2Plano = (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
+            // Formato A-2) — este checkbox/tabla solo tiene sentido en el
+            // plano de "toda la toma", NO cuando el plano ya está resaltando
+            // a UN usuario en particular (usuarioResaltado — botón "Generar
+            // Plano" de Padrón CUSSHMI o del selector de Usuario): a pedido
+            // explícito, ni el checkbox ni la tabla de centroides se
+            // ofrecen en ese caso — antes solo arrancaba apagado, pero se
+            // podía prender a mano y la tabla terminaba pisando el cuadro
+            // de datos/el polígono resaltado.
+            const hayObservadosA2Plano = !datosPlano.usuarioResaltado && (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
 
             _previaPlanoA2Estado = {
                 datosPlano,
@@ -6899,7 +6918,7 @@ const COMISIONES = {
         // al prender/apagar un filtro.
         function _filtrarDatosParaDibujoPlanoA2(datosPlano, filtros) {
             const predios = (datosPlano.predios || []).filter((p) =>
-                filtros.derecho.has(clasificarDerechoPredioA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria));
+                filtros.derecho.has(_categoriaDerechoPlanoA2(p, datosPlano.padronA1Rows, datosPlano.formatoA2Rows).categoria));
             const ordenActivo = (c) => filtros.canalOrdenes.has((c.campos && c.campos.ORDEN) || '');
             const canales = (datosPlano.canales || []).filter(ordenActivo);
             const canalesTroncales = (datosPlano.canalesTroncales || []).filter(ordenActivo);
@@ -7216,7 +7235,7 @@ const COMISIONES = {
             // / Formato A-2 — mismo resultado, un solo cálculo.
             const categoriaPorPredioPlanoA2 = new Map();
             predios.forEach((p) => {
-                const clasif = clasificarDerechoPredioA2(p, padronA1Rows, formatoA2Rows);
+                const clasif = _categoriaDerechoPlanoA2(p, padronA1Rows, formatoA2Rows);
                 categoriasDerechoPresentes.add(clasif.categoria);
                 categoriaPorPredioPlanoA2.set(p, clasif.categoria);
                 const puntosPx = p.coordenadas.map((par) => {
