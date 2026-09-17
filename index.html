@@ -6708,7 +6708,13 @@ const COMISIONES = {
             // Usuarios observados A2 (Fuera de Bloque / Sin Registro, ya
             // calculados en _generarPlanoPrediosA2 con su propio polígono del
             // Formato A-2) — este checkbox solo aparece si de verdad hay
-            // alguno en esta toma, igual criterio que Derecho/canales.
+            // alguno en esta toma, igual criterio que Derecho/canales. Pero
+            // si el plano ya está resaltando a UN usuario en particular
+            // (usuarioResaltado — botón "Generar Plano" de Padrón CUSSHMI o
+            // del selector de Usuario), arranca APAGADO por defecto: ese
+            // plano es sobre ese único usuario, no sobre el listado completo
+            // de observados de la toma (el usuario puede prenderlo a mano si
+            // igual lo quiere ver).
             const hayObservadosA2Plano = (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
 
             _previaPlanoA2Estado = {
@@ -6718,7 +6724,7 @@ const COMISIONES = {
                 filtros: {
                     derecho: new Set(categoriasDerechoPresentes),
                     canalOrdenes: new Set(ordenesCanalPresentes),
-                    mostrarObservadosA2: hayObservadosA2Plano,
+                    mostrarObservadosA2: hayObservadosA2Plano && !datosPlano.usuarioResaltado,
                 },
             };
 
@@ -6726,7 +6732,7 @@ const COMISIONES = {
 
             const checkboxObservadosA2Html = hayObservadosA2Plano ? `
                             <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#333;cursor:pointer;">
-                                <input type="checkbox" checked onchange="_alternarFiltroObservadosA2PlanoA2(this.checked)">
+                                <input type="checkbox" ${_previaPlanoA2Estado.filtros.mostrarObservadosA2 ? 'checked' : ''} onchange="_alternarFiltroObservadosA2PlanoA2(this.checked)">
                                 <span style="width:13px;height:13px;border-radius:3px;background:rgba(155,89,182,0.30);border:1.5px solid #8e44ad;display:inline-block;"></span>
                                 📐 Usuarios Observados A2 (Fuera de Bloque / Sin Registro)
                             </label>` : '';
@@ -7226,10 +7232,21 @@ const COMISIONES = {
                 ctx.beginPath();
                 puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
                 ctx.closePath();
+                // Halo blanco detrás del contorno morado (mismo recurso ya
+                // usado para los canales, dibujarLineaConHaloPlanoA2) — sin
+                // esto el resaltado se mezclaba visualmente con predios
+                // vecinos de la misma familia de color (A2-Fuera Bloque) o
+                // con la tabla de Usuarios Observados A2, a pedido explícito
+                // del usuario de que el polígono consultado "resalte o
+                // sobresalga de los demás".
+                ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+                ctx.lineWidth = 10;
+                ctx.setLineDash([]);
+                ctx.stroke();
                 ctx.fillStyle = 'rgba(155,89,182,0.35)';
                 ctx.fill();
                 ctx.strokeStyle = '#8e44ad';
-                ctx.lineWidth = 5;
+                ctx.lineWidth = 6;
                 ctx.setLineDash([]);
                 ctx.stroke();
 
