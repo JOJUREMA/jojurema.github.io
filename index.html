@@ -6732,6 +6732,7 @@ const COMISIONES = {
                 datosPlano,
                 orientacion: datosPlano.orientacionInicial || 'horizontal',
                 bboxOverride: null,
+                zoomPoligonoAltoMult: 1,
                 filtros: {
                     derecho: new Set(categoriasDerechoPresentes),
                     canalOrdenes: new Set(ordenesCanalPresentes),
@@ -6805,6 +6806,14 @@ const COMISIONES = {
                             <span id="estadoVistaPreviaPlanoA2" style="font-size:12px;color:#666;"></span>
                         </div>
 
+                        ${datosPlano.usuarioResaltado ? `
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 14px;background:#f4f6f9;border:1px solid #dde3ea;border-radius:6px;">
+                            <label for="sliderAltoZoomPoligonoPlanoA2" style="font-size:12px;font-weight:700;color:#003876;white-space:nowrap;">📐 Alto del recuadro "Polígono (Zoom)"</label>
+                            <input type="range" id="sliderAltoZoomPoligonoPlanoA2" min="0.4" max="2.5" step="0.05" value="1"
+                                oninput="_cambiarAltoZoomPoligonoPlanoA2(this.value)" style="flex:1;max-width:260px;">
+                            <span id="valorAltoZoomPoligonoPlanoA2" style="font-size:12px;color:#666;min-width:38px;">1.00x</span>
+                        </div>` : ''}
+
                         <div id="contenedorCanvasVistaPreviaPlanoA2" style="display:flex;justify-content:center;background:#e5e5e5;border-radius:6px;padding:10px;overflow:auto;max-height:62vh;"></div>
 
                         <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
@@ -6843,6 +6852,7 @@ const COMISIONES = {
                 canalesCompletos: estado.datosPlano.canales,
                 usuariosObservadosA2: estado.filtros.mostrarObservadosA2 ? estado.datosPlano.usuariosObservadosA2Candidatos : null,
                 usuariosObservadosA2Completos: estado.datosPlano.usuariosObservadosA2Candidatos,
+                zoomPoligonoAltoMult: estado.zoomPoligonoAltoMult,
             }));
             estado.canvas = resultado.canvas;
             estado.bbox = resultado.bbox;
@@ -6918,6 +6928,19 @@ const COMISIONES = {
         function _cambiarOrientacionVistaPreviaPlanoA2(orientacion) {
             if (!_previaPlanoA2Estado) return;
             _previaPlanoA2Estado.orientacion = orientacion;
+            _regenerarVistaPreviaPlanoA2();
+        }
+
+        // Slider "Alto del recuadro Polígono (Zoom)" — a pedido explícito,
+        // para alargar/reducir a mano el recuadro (multiplica el alto ya
+        // ajustado automáticamente a la proporción real del polígono) y
+        // ver el resultado antes de imprimir.
+        function _cambiarAltoZoomPoligonoPlanoA2(valor) {
+            if (!_previaPlanoA2Estado) return;
+            const mult = parseFloat(valor) || 1;
+            _previaPlanoA2Estado.zoomPoligonoAltoMult = mult;
+            const etiqueta = document.getElementById('valorAltoZoomPoligonoPlanoA2');
+            if (etiqueta) etiqueta.textContent = mult.toFixed(2) + 'x';
             _regenerarVistaPreviaPlanoA2();
         }
 
@@ -7035,7 +7058,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null, zoomPoligonoAltoMult = 1 }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -7570,7 +7593,7 @@ const COMISIONES = {
                     yCajaDatos += altoCentroide + 12;
                 }
 
-                _dibujarZoomPoligonoObservadoPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS);
+                _dibujarZoomPoligonoObservadoPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS, zoomPoligonoAltoMult);
             }
             if (usuariosObservadosA2 && usuariosObservadosA2.length) {
                 const altoDisponibleTabla = ALTO_MAPA - MARGEN - 15 - yCajaDatos;
@@ -7838,23 +7861,7 @@ const COMISIONES = {
         // nombre del usuario (partido en 2 líneas si hace falta, mismo
         // criterio que las etiquetas de predios) y el área ("Área", no "Área
         // medida" — a pedido explícito) dentro del propio polígono.
-        function _dibujarZoomPoligonoObservadoPlanoA2(ctx, x0, y0, usuarioResaltado, anchoCaja) {
-            const ALTO_CAJA = anchoCaja; // cuadrada, mismo ancho que las cajas de arriba
-            ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.92)';
-            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
-            ctx.fillRect(x0, y0, anchoCaja, ALTO_CAJA);
-            ctx.strokeRect(x0, y0, anchoCaja, ALTO_CAJA);
-
-            const ALTO_TITULO = 34;
-            ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-            ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
-            ctx.fillText('POLÍGONO OBSERVADO (ZOOM)', x0 + 12, y0 + ALTO_TITULO / 2 + 4);
-
-            const margenInterno = 14;
-            const areaX0 = x0 + margenInterno, areaY0 = y0 + ALTO_TITULO + margenInterno;
-            const areaAncho = anchoCaja - margenInterno * 2, areaAlto = ALTO_CAJA - ALTO_TITULO - margenInterno * 2;
-
+        function _dibujarZoomPoligonoObservadoPlanoA2(ctx, x0, y0, usuarioResaltado, anchoCaja, altoMult) {
             const verticesOrdenados = usuarioResaltado.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
             const bboxZoom = { minEasting: Infinity, maxEasting: -Infinity, minNorthing: Infinity, maxNorthing: -Infinity };
             verticesOrdenados.forEach((v) => {
@@ -7872,6 +7879,41 @@ const COMISIONES = {
             const colchonZoomN = (bboxZoom.maxNorthing - bboxZoom.minNorthing) * 0.03 || 5;
             bboxZoom.minEasting -= colchonZoomE; bboxZoom.maxEasting += colchonZoomE;
             bboxZoom.minNorthing -= colchonZoomN; bboxZoom.maxNorthing += colchonZoomN;
+
+            // El recuadro ya NO es cuadrado a fuerza — su ALTO se ajusta a
+            // la proporción real del polígono (ancho fijo, para seguir
+            // alineado en columna con las demás cajas de la esquina) — así
+            // un predio angosto/alargado llena el recuadro de verdad, en
+            // vez de dejar franjas blancas enormes a los costados (el
+            // "fit" de crearProyectorUtmPlanoA2 se ajusta a la dimensión
+            // más chica, y en un cuadrado esa siempre era el ancho). Un
+            // control de la vista previa (`altoMult`) deja alargar/reducir
+            // esa proporción a mano antes de imprimir.
+            const ALTO_TITULO = 34, margenInterno = 14;
+            const areaAncho = anchoCaja - margenInterno * 2;
+            const anchoMundoZoom = Math.max(bboxZoom.maxEasting - bboxZoom.minEasting, 1);
+            const altoMundoZoom = Math.max(bboxZoom.maxNorthing - bboxZoom.minNorthing, 1);
+            // Tope de proporción 2.2 (no la real, que para un predio MUY
+            // angosto/alargado podría pasar de 6:1 y hacer un recuadro más
+            // alto que la propia hoja) — igual multiplica varias veces el
+            // zoom del antiguo cuadrado. El slider de la vista previa deja
+            // subir hasta 2.5x MÁS sobre esto si el usuario lo quiere,
+            // bajo su propio criterio de cuánto entra en la hoja.
+            const aspectoNatural = Math.max(0.35, Math.min(altoMundoZoom / anchoMundoZoom, 2.2));
+            const areaAltoSinTope = areaAncho * aspectoNatural * (Number.isFinite(altoMult) && altoMult > 0 ? altoMult : 1);
+            const areaAlto = Math.round(Math.min(areaAltoSinTope, 1350)); // tope absoluto, cabe siempre en la hoja (1754px de alto)
+            const ALTO_CAJA = ALTO_TITULO + areaAlto + margenInterno * 2;
+            const areaX0 = x0 + margenInterno, areaY0 = y0 + ALTO_TITULO + margenInterno;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, anchoCaja, ALTO_CAJA);
+            ctx.strokeRect(x0, y0, anchoCaja, ALTO_CAJA);
+            ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+            ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
+            ctx.fillText('POLÍGONO OBSERVADO (ZOOM)', x0 + 12, y0 + ALTO_TITULO / 2 + 4);
+            ctx.restore();
 
             const proyectorZoom = crearProyectorUtmPlanoA2(bboxZoom, areaAncho, areaAlto, 0);
             ctx.save();
@@ -7998,7 +8040,6 @@ const COMISIONES = {
             ctx.fillText(textoAreaZoom, centroPxZoom[0], centroPxZoom[1] + offsetInicialZoom + lineasNombreZoom.length * alturaLineaZoom);
 
             ctx.restore(); // deshace el translate/clip del área interna
-            ctx.restore(); // deshace el save() del recuadro
             return ALTO_CAJA;
         }
 
