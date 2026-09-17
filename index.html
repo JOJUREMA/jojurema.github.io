@@ -11004,8 +11004,7 @@ const COMISIONES = {
                     ? `<button onclick="_guardarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">💾 Guardar</button>
                        <button onclick="_cancelarEdicionFilaPadronCusshmi()" style="padding:5px 10px;background:#e2e8f0;color:#4a5568;border:none;border-radius:3px;font-size:11px;cursor:pointer;">✖ Cancelar</button>`
                     : `<button onclick="_editarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#2563a6;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">✏️ Editar</button>
-                       <button onclick="_generarPlanoUsuarioPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">🗺️ Plano</button>
-                       <button onclick="abrirEditorPoligonoPadronCusshmi(${idx})" style="padding:5px 10px;background:${f.vertices_utm && f.vertices_utm.length >= 3 ? '#7d3c98' : '#b35900'};color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;" title="${f.vertices_utm && f.vertices_utm.length >= 3 ? 'Editar el polígono propio ya guardado' : 'Crear el polígono propio de este usuario (adoptando el predio del KML o dibujándolo a mano)'}">${f.vertices_utm && f.vertices_utm.length >= 3 ? '📐 Editar polígono' : '➕ Crear polígono'}</button>`;
+                       <button onclick="_abrirMenuPlanoPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;">🗺️ Plano</button>`;
                 return `
                     <tr data-idx="${idx}">
                         <td style="padding:7px;text-align:center;">${idx + 1}</td>
@@ -11093,6 +11092,35 @@ const COMISIONES = {
             fila.volumen_m3 = nuevo.volumenM3Anio !== '' ? parseFloat(nuevo.volumenM3Anio) : null;
             _padronCusshmiEditandoIdx = null;
             _aplicarFiltrosPadronCusshmi();
+        }
+
+        // "🗺️ Plano" de una fila de Padrón CUSSHMI abre un pequeño menú con
+        // las 2 acciones relacionadas — a pedido explícito, "Crear/Editar
+        // Polígono" va DENTRO de la opción Plano, no como botón aparte.
+        function _abrirMenuPlanoPadronCusshmi(idx) {
+            const fila = _padronCusshmiFilasVista[idx];
+            if (!fila) return;
+            const existente = document.getElementById('modalMenuPlanoPadronCusshmi');
+            if (existente) existente.remove();
+            const tienePoligonoPropio = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3;
+            const html = `
+                <div id="modalMenuPlanoPadronCusshmi" class="modal-overlay active" style="z-index:99998;background:rgba(0,20,50,0.85);">
+                    <div class="modal-container" style="text-align:center;padding:30px;max-width:440px;">
+                        <h3>🗺️ Plano — ${escapeHtml(fila.apellidos_nombres)}</h3>
+                        <button class="btn btn-success" onclick="document.getElementById('modalMenuPlanoPadronCusshmi').remove(); _generarPlanoUsuarioPadronCusshmi(${idx});" style="width:100%;" title="Genera el plano de predios (PDF) de este usuario, resaltando su polígono">
+                            🖨️ Generar Plano (PDF)
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('modalMenuPlanoPadronCusshmi').remove(); abrirEditorPoligonoPadronCusshmi(${idx});" style="width:100%;margin-top:12px;" title="${tienePoligonoPropio ? 'Editar el polígono propio ya guardado' : 'Crear el polígono propio de este usuario (adoptando el predio del KML o dibujándolo a mano)'}">
+                            ${tienePoligonoPropio ? '📐 Editar Polígono' : '➕ Crear Polígono'}
+                        </button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('modalMenuPlanoPadronCusshmi').remove();" style="width:100%;margin-top:12px;">
+                            ❌ Cerrar
+                        </button>
+                    </div>
+                </div>`;
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            document.body.appendChild(div.firstElementChild);
         }
 
         // Genera el plano individual de un usuario del Padrón CUSSHMI
@@ -11225,9 +11253,23 @@ const COMISIONES = {
                 if (_editorPoligonoPadronCusshmi.capaBloqueRiego) _mapaEditorPoligonoPadronCusshmi.removeLayer(_editorPoligonoPadronCusshmi.capaBloqueRiego);
             }
 
-            const verticesIniciales = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3
+            let verticesIniciales = Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3
                 ? fila.vertices_utm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((v) => ({ easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon }))
                 : [];
+            // Sin polígono PROPIO guardado todavía — a pedido explícito, el
+            // editor arranca mostrando el polígono que YA se usa para este
+            // usuario (el predio del KML del bloque, cruzado por UC/nombre —
+            // el mismo respaldo que usa "Generar Plano"), editable de una,
+            // en vez de un mapa en blanco — igual que el editor de Usuarios
+            // Observados precarga el área ya existente al abrir "Medir área".
+            const predios = await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(fila.toma_nombre);
+            const propio = predios.find((p) => _normUcPlanoA2(p.catastralKey) === _normUcPlanoA2(fila.unidad_catastral) || _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(fila.apellidos_nombres));
+            if (verticesIniciales.length < 3 && propio && Array.isArray(propio.coordenadas) && propio.coordenadas.length >= 3) {
+                verticesIniciales = propio.coordenadas.map(([lon, lat]) => {
+                    const utm = latLonAUtm17S(lat, lon);
+                    return { easting: utm.easting, northing: utm.northing, lat, lon };
+                });
+            }
             _editorPoligonoPadronCusshmi = { fila, vertices: verticesIniciales, capaPoligono: null, marcadores: [], capaBloqueRiego: null, bloqueRiegoVisible: false };
 
             document.getElementById('tituloEditorPoligonoPadronCusshmi').textContent = '📐 Polígono — ' + fila.apellidos_nombres;
@@ -11243,16 +11285,11 @@ const COMISIONES = {
                     const latlon = utm17SALatLon(centroide.easting, centroide.northing);
                     _mapaEditorPoligonoPadronCusshmi.setView([latlon.lat, latlon.lon], 17);
                 }
-            } else {
-                // Sin polígono propio todavía — centra en el predio del KML del
-                // bloque que coincide por nombre/UC (si existe), para no
-                // arrancar en un punto cualquiera del mapa.
-                const predios = await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(fila.toma_nombre);
-                const propio = predios.find((p) => _normUcPlanoA2(p.catastralKey) === _normUcPlanoA2(fila.unidad_catastral) || _normNombrePlanoA2(p.usuario) === _normNombrePlanoA2(fila.apellidos_nombres));
-                if (propio && propio.coordenadas && propio.coordenadas.length) {
-                    const [lon, lat] = propio.coordenadas[0];
-                    _mapaEditorPoligonoPadronCusshmi.setView([lat, lon], 17);
-                }
+            } else if (propio && propio.coordenadas && propio.coordenadas.length) {
+                // Ni polígono propio ni predio del KML con forma válida —
+                // al menos centra donde está ubicado, si se encontró.
+                const [lon, lat] = propio.coordenadas[0];
+                _mapaEditorPoligonoPadronCusshmi.setView([lat, lon], 17);
             }
             _redibujarEditorPoligonoPadronCusshmi();
         }
