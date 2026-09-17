@@ -7243,28 +7243,28 @@ const COMISIONES = {
                 ctx.beginPath();
                 puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
                 ctx.closePath();
-                // Halo blanco detrás del contorno morado (mismo recurso ya
-                // usado para los canales, dibujarLineaConHaloPlanoA2) — sin
-                // esto el resaltado se mezclaba visualmente con predios
-                // vecinos de la misma familia de color (A2-Fuera Bloque) o
-                // con la tabla de Usuarios Observados A2, a pedido explícito
-                // del usuario de que el polígono consultado "resalte o
-                // sobresalga de los demás".
+                // Halo blanco detrás del contorno (mismo recurso ya usado
+                // para los canales, dibujarLineaConHaloPlanoA2) — sin esto
+                // el resaltado se mezclaba visualmente con predios vecinos,
+                // a pedido explícito del usuario de que el polígono
+                // consultado "resalte o sobresalga de los demás". Color
+                // NARANJA sólido — ninguna de las 4 categorías de Derecho
+                // (verde/amarillo/rojo/morado) ni los canales (café/azul/
+                // verde) usan este color, así que siempre contrasta, sea
+                // cual sea el predio o los vecinos que tenga alrededor.
                 ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-                ctx.lineWidth = 10;
+                ctx.lineWidth = 14;
                 ctx.setLineDash([]);
                 ctx.stroke();
-                // Relleno OPACO (no semitransparente) — el predio ya viene
-                // pintado por debajo con su color de Derecho (sección 3:
-                // verde, amarillo, rojo o morado según categoría); un
-                // relleno traslucido se MEZCLABA con ese color de fondo y
-                // salía un gris/oliva apagado que no se distinguía como
-                // "resaltado". Sólido, siempre se ve igual sin importar la
-                // categoría del predio debajo.
-                ctx.fillStyle = '#c39bd3';
+                // Relleno OPACO (no semitransparente) — un relleno
+                // traslúcido se MEZCLABA con el color de Derecho ya pintado
+                // debajo (sección 3) y salía un tono apagado que no se
+                // distinguía como "resaltado". Sólido, siempre se ve igual
+                // sin importar la categoría del predio debajo.
+                ctx.fillStyle = '#ff8c00';
                 ctx.fill();
-                ctx.strokeStyle = '#8e44ad';
-                ctx.lineWidth = 6;
+                ctx.strokeStyle = '#b35900';
+                ctx.lineWidth = 8;
                 ctx.setLineDash([]);
                 ctx.stroke();
 
@@ -7276,6 +7276,23 @@ const COMISIONES = {
                 const medidaUsuario = medirEtiquetaPlanoA2(verticesLatLon, true, proyector.proyectar);
                 const centroideUsuario = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
                 const centroUsuarioPx = centroideUsuario ? proyector.proyectar(centroideUsuario.easting, centroideUsuario.northing) : puntosUsuarioPx[0];
+
+                // Marcador en el centroide — visible SIEMPRE, sin importar
+                // qué tan chico sea el predio frente al resto del plano (un
+                // predio de 0.7 ha en una toma de varios km² puede quedar
+                // minúsculo aunque su relleno ya sea naranja opaco).
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(centroUsuarioPx[0], centroUsuarioPx[1], 16, 0, Math.PI * 2);
+                ctx.fillStyle = '#ff8c00';
+                ctx.fill();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#b35900';
+                ctx.stroke();
+                ctx.restore();
                 let fuenteUsuario = medidaUsuario.longitudPx > 0
                     ? calcularFuenteParaAncho(medidaUsuario.longitudPx, 1, Math.max(usuarioResaltado.nombre.length, 1))
                     : 12;
@@ -7294,7 +7311,7 @@ const COMISIONES = {
                 ctx.rotate(medidaUsuario.anguloCss * Math.PI / 180); // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
                 ctx.font = '700 ' + fuenteUsuario.toFixed(1) + 'px Arial, sans-serif';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#4a235a';
+                ctx.fillStyle = '#5a2d00';
                 if (lineasNombreUsuario.length === 1) {
                     ctx.fillText(lineasNombreUsuario[0], 0, 0);
                 } else {
@@ -7533,7 +7550,7 @@ const COMISIONES = {
             //    leyenda) — barra segmentada en vez de una razón "1:N" fija,
             //    porque sigue siendo correcta sin importar a qué tamaño de
             //    papel se termine imprimiendo el PDF.
-            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canalesParaDibujo, usuarioResaltado || (usuariosObservadosA2 && usuariosObservadosA2.length > 0), categoriasDerechoPresentes);
+            _dibujarLeyendaPlanoA2(ctx, MARGEN + 15, ALTO_MAPA - MARGEN - 15, canalesParaDibujo, usuarioResaltado, usuariosObservadosA2, categoriasDerechoPresentes);
             dibujarEscalaGraficaPlanoA2(ctx, ANCHO - MARGEN - 15, ALTO_MAPA - MARGEN - 15, metrosPorPixelPlanoA2(proyector));
 
             // 8) Cajas de la esquina superior derecha, apiladas de arriba
@@ -7648,22 +7665,16 @@ const COMISIONES = {
             }
 
             const ALTO_FILA = 26;
-            const altoTotal = (filas.length + 1) * ALTO_FILA + 16;
-
-            ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.92)';
-            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
-            ctx.fillRect(x0, y0, anchoCaja, altoTotal);
-            ctx.strokeRect(x0, y0, anchoCaja, altoTotal);
-
+            const ALTO_LINEA_EXTRA = 15; // alto que suma una 2ª línea de un valor largo
             const X_VALOR = x0 + 230;
             const anchoValorDisponible = x0 + anchoCaja - 12 - X_VALOR;
-            // Recorta el VALOR al ancho real disponible (con "…"), midiendo
-            // con el mismo font ya puesto en ctx — a diferencia de un límite
-            // fijo de caracteres, esto funciona igual de bien para un nombre
-            // angosto ("JOSE LUIS") que para uno ancho en mayúsculas con
-            // muchas "W"/"M" — antes un nombre largo se salía del cuadro
-            // (ver "Apellidos y Nombres").
+
+            ctx.save();
+            ctx.font = '700 13px Arial, sans-serif'; // mismo font con el que se mide y se dibuja el valor
+            // Recorta al ancho real disponible (con "…"), midiendo con
+            // ctx.measureText — a diferencia de un límite fijo de
+            // caracteres, funciona igual de bien para un nombre angosto que
+            // para uno ancho en mayúsculas con muchas "W"/"M".
             function truncarAlAncho(texto, anchoMax) {
                 const t = (texto || '').toString();
                 if (ctx.measureText(t).width <= anchoMax) return t;
@@ -7674,21 +7685,54 @@ const COMISIONES = {
                 }
                 return lo > 0 ? (t.slice(0, lo) + '…') : '…';
             }
+            // Si el valor no entra en una línea, sigue en una SEGUNDA línea
+            // (por palabra completa) en vez de cortarlo con "…" — a pedido
+            // explícito ("si no alcanza continúa el nombre debajo"). Si ni
+            // así entra completo (nombre extremadamente largo), la 2ª línea
+            // sí se recorta con "…".
+            function envolverDosLineas(texto, anchoMax) {
+                const t = (texto == null ? '' : texto).toString();
+                if (ctx.measureText(t).width <= anchoMax) return [t];
+                const palabras = t.split(/\s+/).filter(Boolean);
+                let linea1 = '', i = 0;
+                for (; i < palabras.length; i++) {
+                    const candidato = linea1 ? (linea1 + ' ' + palabras[i]) : palabras[i];
+                    if (ctx.measureText(candidato).width <= anchoMax) { linea1 = candidato; continue; }
+                    if (!linea1) { linea1 = palabras[i]; i++; }
+                    break;
+                }
+                const resto = palabras.slice(i).join(' ');
+                if (!resto) return [linea1];
+                return [linea1, truncarAlAncho(resto, anchoMax)];
+            }
+
+            const filasEnvueltas = filas.map(([etiqueta, valor]) => ({ etiqueta, lineas: envolverDosLineas(valor, anchoValorDisponible) }));
+            const altoTotal = ALTO_FILA + filasEnvueltas.reduce((suma, f) => suma + ALTO_FILA + (f.lineas.length > 1 ? ALTO_LINEA_EXTRA : 0), 0) + 16;
+
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
+            ctx.fillRect(x0, y0, anchoCaja, altoTotal);
+            ctx.strokeRect(x0, y0, anchoCaja, altoTotal);
 
             let y = y0 + 12;
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
             ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
             ctx.fillText(titulo, x0 + 12, y + ALTO_FILA / 2 - 6);
             y += ALTO_FILA;
-            filas.forEach(([etiqueta, valor]) => {
+            filasEnvueltas.forEach(({ etiqueta, lineas }) => {
                 const yCentro = y + ALTO_FILA / 2 - 6;
                 ctx.font = '400 13px Arial, sans-serif';
                 ctx.fillStyle = '#666666';
                 ctx.fillText(etiqueta + ':', x0 + 12, yCentro);
                 ctx.font = '700 13px Arial, sans-serif';
                 ctx.fillStyle = '#000000';
-                ctx.fillText(truncarAlAncho(valor, anchoValorDisponible), X_VALOR, yCentro);
-                y += ALTO_FILA;
+                if (lineas.length === 1) {
+                    ctx.fillText(lineas[0], X_VALOR, yCentro);
+                } else {
+                    ctx.fillText(lineas[0], X_VALOR, yCentro - ALTO_LINEA_EXTRA / 2);
+                    ctx.fillText(lineas[1], X_VALOR, yCentro - ALTO_LINEA_EXTRA / 2 + ALTO_LINEA_EXTRA);
+                }
+                y += ALTO_FILA + (lineas.length > 1 ? ALTO_LINEA_EXTRA : 0);
             });
             ctx.restore();
             return altoTotal;
@@ -7847,9 +7891,9 @@ const COMISIONES = {
             ctx.beginPath();
             puntosPxZoom.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
             ctx.closePath();
-            ctx.fillStyle = 'rgba(155,89,182,0.35)';
+            ctx.fillStyle = '#ff8c00';
             ctx.fill();
-            ctx.strokeStyle = '#8e44ad';
+            ctx.strokeStyle = '#b35900';
             ctx.lineWidth = 3;
             ctx.setLineDash([]);
             ctx.stroke();
@@ -7872,10 +7916,10 @@ const COMISIONES = {
             const totalLineasZoom = lineasNombreZoom.length + 1;
             const offsetInicialZoom = -((totalLineasZoom - 1) * alturaLineaZoom) / 2;
             lineasNombreZoom.forEach((linea, i) => {
-                ctx.font = '700 15px Arial, sans-serif'; ctx.fillStyle = '#4a235a';
+                ctx.font = '700 15px Arial, sans-serif'; ctx.fillStyle = '#5a2d00';
                 ctx.fillText(linea, centroPxZoom[0], centroPxZoom[1] + offsetInicialZoom + i * alturaLineaZoom);
             });
-            ctx.font = '600 13px Arial, sans-serif'; ctx.fillStyle = '#4a235a';
+            ctx.font = '600 13px Arial, sans-serif'; ctx.fillStyle = '#5a2d00';
             ctx.fillText(textoAreaZoom, centroPxZoom[0], centroPxZoom[1] + offsetInicialZoom + lineasNombreZoom.length * alturaLineaZoom);
 
             ctx.restore(); // deshace el translate/clip del área interna
@@ -7965,7 +8009,7 @@ const COMISIONES = {
             ctx.restore();
         }
 
-        function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, usuarioResaltado, categoriasDerechoPresentes) {
+        function _dibujarLeyendaPlanoA2(ctx, x0, yInferior, canales, usuarioResaltado, usuariosObservadosA2, categoriasDerechoPresentes) {
             // Solo se listan los órdenes de canal que de verdad aparecen en
             // esta toma — evita una leyenda larga con símbolos que no están
             // en el plano. Los canales ya no distinguen material (concreto/
@@ -7992,7 +8036,19 @@ const COMISIONES = {
                 filas.push({ tipo: 'subtitulo', texto: 'DERECHO' });
                 categoriasPresentesOrdenadas.forEach((k) => filas.push({ tipo: 'caja', color: DERECHO_PLANO_A2[k], texto: DERECHO_PLANO_A2[k].etiqueta }));
             }
+            // El color de este ítem tiene que ser EL MISMO con el que se
+            // pintó el predio de verdad más arriba (sección 5.5) — naranja
+            // para un usuario del Padrón A-1 (sin registro de Formato A-2),
+            // morado para un Observado real o el overlay de varios a la vez.
             if (usuarioResaltado) {
+                const esObservadoReal = !!usuarioResaltado.registro;
+                filas.push({ tipo: 'subtitulo', texto: esObservadoReal ? 'A2-OBSERVADO' : 'USUARIO CONSULTADO' });
+                filas.push({
+                    tipo: 'caja',
+                    color: esObservadoReal ? { fill: 'rgba(155,89,182,0.35)', stroke: '#8e44ad' } : { fill: '#ff8c00', stroke: '#b35900' },
+                    texto: esObservadoReal ? 'PREDIO OBSERVADO (FORMATO A-2)' : 'PREDIO CONSULTADO (PADRÓN A-1)',
+                });
+            } else if (usuariosObservadosA2 && usuariosObservadosA2.length) {
                 filas.push({ tipo: 'subtitulo', texto: 'A2-OBSERVADO' });
                 filas.push({ tipo: 'caja', color: { fill: 'rgba(155,89,182,0.35)', stroke: '#8e44ad' }, texto: 'PREDIO OBSERVADO (FORMATO A-2)' });
             }
