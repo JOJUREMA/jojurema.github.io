@@ -7427,12 +7427,22 @@ const COMISIONES = {
             // quepa, con un techo bajo — apunta a la densidad de texto del
             // plano de referencia (predios etiquetados con letra chica y
             // pareja, sin pisarse entre vecinos).
-            const medidasPredios = predios.map((p) => {
-                const uc = (p.catastralKey || '').toString();
-                const nombre = nombreUsuarioPlanoA2(p.usuario);
-                const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
-                return { p, uc, nombre, medida };
-            }).filter((m) => m.medida.longitudPx >= 12);
+            // El predio del usuario resaltado (sección 5.5) YA lleva su
+            // propio rótulo, girado a lo largo de su polígono — sin este
+            // filtro, ese MISMO predio (que también está en `predios`, el
+            // KML del bloque) recibía ADEMÁS su etiqueta normal (horizontal,
+            // nombre+UC) acá, duplicando el nombre en el plano — a pedido
+            // explícito de que solo quede el rótulo más chico (el rotado a
+            // lo largo del polígono), no el horizontal/perpendicular.
+            const nombreResaltadoNorm = usuarioResaltado ? _normNombrePlanoA2(usuarioResaltado.nombre) : null;
+            const medidasPredios = predios
+                .filter((p) => !nombreResaltadoNorm || _normNombrePlanoA2(p.usuario) !== nombreResaltadoNorm)
+                .map((p) => {
+                    const uc = (p.catastralKey || '').toString();
+                    const nombre = nombreUsuarioPlanoA2(p.usuario);
+                    const medida = medirEtiquetaPlanoA2(p.coordenadas.map((par) => [par[1], par[0]]), true, proyector.proyectar);
+                    return { p, uc, nombre, medida };
+                }).filter((m) => m.medida.longitudPx >= 12);
             const fuentesNaturales = medidasPredios.map((m) => {
                 const textoBase = m.uc ? ('UC ' + m.uc) : m.nombre;
                 return calcularFuenteParaAncho(m.medida.longitudPx, 1, Math.max(textoBase.length, 1));
