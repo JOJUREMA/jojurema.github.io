@@ -6679,6 +6679,7 @@ const COMISIONES = {
                     tomaNombre: esUnaToma ? tomaNombre : AMBITO_MEMBRETE[ambito],
                     comisionKey, conSatelite, conMembrete, usuarioResaltado,
                     usuariosObservadosA2Candidatos,
+                    esAmbitoObservados: ambito === 'observados',
                     orientacionInicial, nombreArchivoBase,
                 });
             } catch (e) {
@@ -6735,17 +6736,17 @@ const COMISIONES = {
             const ordenesCanalPresentes = Array.from(new Set(canalesTodosPlanoA2.map((c) => (c.campos && c.campos.ORDEN) || '')))
                 .filter(Boolean)
                 .sort((a, b) => ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(a) - ORDEN_CANAL_ORDEN_PLANO_A2.indexOf(b));
-            // Usuarios observados A2 (Fuera de Bloque / Sin Registro, ya
-            // calculados en _generarPlanoPrediosA2 con su propio polígono del
-            // Formato A-2) — este checkbox/tabla solo tiene sentido en el
-            // plano de "toda la toma", NO cuando el plano ya está resaltando
-            // a UN usuario en particular (usuarioResaltado — botón "Generar
-            // Plano" de Padrón CUSSHMI o del selector de Usuario): a pedido
-            // explícito, ni el checkbox ni la tabla de centroides se
-            // ofrecen en ese caso — antes solo arrancaba apagado, pero se
-            // podía prender a mano y la tabla terminaba pisando el cuadro
-            // de datos/el polígono resaltado.
-            const hayObservadosA2Plano = !datosPlano.usuarioResaltado && (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
+            // Usuarios observados A2 (Fuera de Bloque / Sin Registro, con su
+            // propio polígono medido/importado del Formato A-2) — estos
+            // usuarios actualizan el panorama real de la toma, así que su
+            // overlay va SIEMPRE disponible y prendido por defecto,
+            // aparezca o no un usuario resaltado en particular (a pedido
+            // explícito). Lo que SÍ es exclusivo de la opción dedicada
+            // "Usuarios Observados A2" (ambito='observados' del selector de
+            // Ámbito) es la tabla "CENTROIDE DE POLÍGONOS" — ver
+            // datosPlano.esAmbitoObservados, sección 8 de
+            // _dibujarPlanoPrediosA2Canvas.
+            const hayObservadosA2Plano = (datosPlano.usuariosObservadosA2Candidatos || []).length > 0;
 
             _previaPlanoA2Estado = {
                 datosPlano,
@@ -6755,7 +6756,7 @@ const COMISIONES = {
                 filtros: {
                     derecho: new Set(categoriasDerechoPresentes),
                     canalOrdenes: new Set(ordenesCanalPresentes),
-                    mostrarObservadosA2: hayObservadosA2Plano && !datosPlano.usuarioResaltado,
+                    mostrarObservadosA2: hayObservadosA2Plano,
                 },
             };
 
@@ -7077,7 +7078,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null, zoomPoligonoAltoMult = 1 }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null, zoomPoligonoAltoMult = 1, esAmbitoObservados = false }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -7614,7 +7615,14 @@ const COMISIONES = {
 
                 _dibujarZoomPoligonoObservadoPlanoA2(ctx, xCajaDatos, yCajaDatos, usuarioResaltado, ANCHO_CAJA_DATOS, zoomPoligonoAltoMult);
             }
-            if (usuariosObservadosA2 && usuariosObservadosA2.length) {
+            // La tabla "CENTROIDE DE POLÍGONOS" es exclusiva de la opción
+            // dedicada "Usuarios Observados A2" (ámbito='observados') — en
+            // cualquier otro plano (toma completa, un usuario resaltado,
+            // todos los bloques) el overlay de estos usuarios SÍ se dibuja
+            // arriba (actualizan el panorama real de la toma), pero sin
+            // esta tabla, que en esos casos terminaba pisando el cuadro de
+            // datos/el polígono resaltado.
+            if (esAmbitoObservados && usuariosObservadosA2 && usuariosObservadosA2.length) {
                 const altoDisponibleTabla = ALTO_MAPA - MARGEN - 15 - yCajaDatos;
                 _dibujarTablaObservadosA2PlanoA2(ctx, xCajaDatos, yCajaDatos, usuariosObservadosA2, ANCHO_CAJA_DATOS, altoDisponibleTabla);
             }
