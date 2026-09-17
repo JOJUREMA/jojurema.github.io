@@ -403,6 +403,12 @@
                     <option value="SIN_LICENCIA">2. Usuarios sin licencia/sin derecho (Formato A-2)</option>
                 </select>
             </div>
+            <div class="campo" style="width:100%; max-width:420px; margin-top:8px;">
+                <label for="selectTomaPadronCusshmiMovil">Toma</label>
+                <select id="selectTomaPadronCusshmiMovil">
+                    <option value="TODAS">Todas las tomas</option>
+                </select>
+            </div>
             <div class="buscador campo" style="width:100%; max-width:420px; margin-top:8px;">
                 <label for="inputBuscarPadronCusshmiMovil">Buscar por nombre / U. Catastral</label>
                 <input type="text" id="inputBuscarPadronCusshmiMovil" placeholder="ej. Pérez" autocomplete="off">
@@ -462,7 +468,14 @@
             <div id="mapaEditorPoligonoPadronCusshmiMovil" class="editor-poligono-mapa"></div>
             <div class="editor-poligono-footer">
                 <div class="estado-busqueda" id="estadoEditorPoligonoPadronCusshmiMovil" style="max-width:none;"></div>
-                <button class="boton-secundario" id="btnBloqueRiegoEditorPoligonoPadronCusshmiMovil" style="max-width:none;">🗺️ Ver bloque de riego (toca un predio para adoptarlo)</button>
+                <button class="boton-secundario" id="btnBloqueRiegoEditorPoligonoPadronCusshmiMovil" style="max-width:none;">🗺️ Ver bloque de riego (toca un predio para ver sus datos)</button>
+                <div id="infoPredioSeleccionadoPadronCusshmiMovil" style="display:none; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px; color:#fff; font-size:12px; text-align:left;">
+                    <div id="textoInfoPredioSeleccionadoPadronCusshmiMovil" style="margin-bottom:8px; line-height:1.5;"></div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="boton" id="btnUsarPredioSeleccionadoPadronCusshmiMovil" style="max-width:none; flex:1;">✅ Usar este polígono</button>
+                        <button class="boton-secundario" id="btnCancelarPredioSeleccionadoPadronCusshmiMovil" style="max-width:none; flex:1;">✕ Cancelar</button>
+                    </div>
+                </div>
                 <button class="boton-secundario" id="btnDeshacerEditorPoligonoPadronCusshmiMovil" style="max-width:none;">↩️ Deshacer último punto</button>
                 <button class="boton-secundario" id="btnBorrarEditorPoligonoPadronCusshmiMovil" style="max-width:none; background:#8b2c2c; color:#fff;">🗑️ Borrar polígono</button>
             </div>
@@ -2630,6 +2643,8 @@
         var padronCusshmiFilaActualMovil = null;
         var mapaEditorPoligonoPadronCusshmiMovil = null;
         var editorPoligonoPadronCusshmiMovil = null; // {fila, vertices, capaPoligono, marcadores, capaBloqueRiego, bloqueRiegoVisible}
+        var predioSeleccionadoPadronCusshmiMovil = null; // predio del KML tocado en "Ver bloque de riego", pendiente de "Usar este polígono"
+        var capaPredioSeleccionadoPadronCusshmiMovil = null; // su capa Leaflet, para restaurar el estilo al deseleccionar
 
         // "Tiene Permiso, o no tiene Licencia formalizada" — mismo criterio
         // exacto que _esFormatoA1ConPermisoOSinLicencia de escritorio.
@@ -2653,20 +2668,44 @@
             if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar el padrón.'; return; }
             padronCusshmiFilasTodasMovil = (resultado.resultados || []).filter(function (f) { return f.origen === 'ana_a1'; });
             elEstado.textContent = '';
-            _renderListaPadronCusshmiMovil();
+            _recomputarBasePadronCusshmiMovil();
         }
 
-        function _renderListaPadronCusshmiMovil() {
+        // Recalcula padronCusshmiFilasBaseMovil según la vista (con/sin
+        // Licencia) y repuebla el filtro de Toma con las tomas presentes en
+        // esa vista — mismo criterio que selectTomaPadronCusshmi de
+        // escritorio (compararOrdenTomas, ya cargado vía anexoG2.js).
+        function _recomputarBasePadronCusshmiMovil() {
             var vista = document.getElementById('selectVistaPadronCusshmiMovil').value;
             padronCusshmiFilasBaseMovil = vista === 'CON_LICENCIA'
                 ? padronCusshmiFilasTodasMovil.filter(function (f) { return (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA'; })
                 : padronCusshmiFilasTodasMovil.filter(_esFormatoA1ConPermisoOSinLicenciaMovil);
 
+            var selectToma = document.getElementById('selectTomaPadronCusshmiMovil');
+            var tomaPrevia = selectToma.value || 'TODAS';
+            var tomasSet = {};
+            padronCusshmiFilasBaseMovil.forEach(function (f) { if (f.toma_nombre) tomasSet[f.toma_nombre] = true; });
+            var tomasOrdenadas = Object.keys(tomasSet).sort(function (a, b) { return compararOrdenTomas(a, b); });
+            selectToma.innerHTML = '<option value="TODAS">Todas las tomas</option>' +
+                tomasOrdenadas.map(function (t) { return '<option value="' + t.replace(/"/g, '&quot;') + '">' + t + '</option>'; }).join('');
+            selectToma.value = tomasOrdenadas.indexOf(tomaPrevia) !== -1 ? tomaPrevia : 'TODAS';
+
+            _renderListaPadronCusshmiMovil();
+        }
+
+        function _renderListaPadronCusshmiMovil() {
+            var vista = document.getElementById('selectVistaPadronCusshmiMovil').value;
+            var tomaSel = document.getElementById('selectTomaPadronCusshmiMovil').value || 'TODAS';
             var busqueda = (document.getElementById('inputBuscarPadronCusshmiMovil').value || '').trim().toUpperCase();
-            var filas = !busqueda ? padronCusshmiFilasBaseMovil : padronCusshmiFilasBaseMovil.filter(function (f) {
-                var nombre = (f.apellidos_nombres || '').toUpperCase();
-                var uc = (f.unidad_catastral || '').toUpperCase();
-                return nombre.indexOf(busqueda) !== -1 || uc.indexOf(busqueda) !== -1;
+
+            var filas = padronCusshmiFilasBaseMovil.filter(function (f) {
+                if (tomaSel !== 'TODAS' && f.toma_nombre !== tomaSel) return false;
+                if (busqueda) {
+                    var nombre = (f.apellidos_nombres || '').toUpperCase();
+                    var uc = (f.unidad_catastral || '').toUpperCase();
+                    if (nombre.indexOf(busqueda) === -1 && uc.indexOf(busqueda) === -1) return false;
+                }
+                return true;
             });
 
             var elEstado = document.getElementById('estadoPadronCusshmiMovil');
@@ -2674,7 +2713,7 @@
             if (filas.length === 0) {
                 elEstado.textContent = padronCusshmiFilasBaseMovil.length === 0
                     ? (vista === 'CON_LICENCIA' ? 'No hay usuarios con Licencia/derecho en el Padrón A-1.' : 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1.')
-                    : 'Ningún usuario coincide con esta búsqueda.';
+                    : 'Ningún usuario coincide con estos filtros.';
                 elLista.innerHTML = '';
                 return;
             }
@@ -2689,7 +2728,8 @@
                     '</button>';
             }).join('');
         }
-        document.getElementById('selectVistaPadronCusshmiMovil').addEventListener('change', _renderListaPadronCusshmiMovil);
+        document.getElementById('selectVistaPadronCusshmiMovil').addEventListener('change', _recomputarBasePadronCusshmiMovil);
+        document.getElementById('selectTomaPadronCusshmiMovil').addEventListener('change', _renderListaPadronCusshmiMovil);
         document.getElementById('inputBuscarPadronCusshmiMovil').addEventListener('input', _renderListaPadronCusshmiMovil);
 
         function _abrirFichaPadronCusshmiMovil(unidadCatastral) {
@@ -2811,7 +2851,8 @@
             editorPoligonoPadronCusshmiMovil = { fila: fila, vertices: verticesIniciales, capaPoligono: null, marcadores: [], capaBloqueRiego: null, bloqueRiegoVisible: false };
 
             document.getElementById('tituloEditorPoligonoPadronCusshmiMovil').textContent = '📐 ' + fila.apellidos_nombres;
-            document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').textContent = '🗺️ Ver bloque de riego (toca un predio para adoptarlo)';
+            document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)';
+            _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'flex';
             _iniciarMapaEditorPoligonoPadronCusshmiMovilSiHaceFalta();
@@ -2861,7 +2902,7 @@
             var el = document.getElementById('estadoEditorPoligonoPadronCusshmiMovil');
             if (!estado || !el) return;
             if (estado.vertices.length === 0) {
-                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para adoptar el predio de este usuario con un toque.';
+                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para ver y adoptar el predio de este usuario.';
             } else if (estado.vertices.length < 3) {
                 el.textContent = estado.vertices.length + ' punto(s) — hacen falta al menos 3 para formar un polígono.';
             } else {
@@ -2889,16 +2930,17 @@
             if (estado.bloqueRiegoVisible) {
                 if (estado.capaBloqueRiego) { mapaEditorPoligonoPadronCusshmiMovil.removeLayer(estado.capaBloqueRiego); estado.capaBloqueRiego = null; }
                 estado.bloqueRiegoVisible = false;
-                btn.textContent = '🗺️ Ver bloque de riego (toca un predio para adoptarlo)';
+                btn.textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)';
+                _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
                 return;
             }
             btn.textContent = '🗺️ Cargando…';
             var predios = await obtenerPrediosBloqueRiegoA2(estado.fila.toma_nombre);
-            if (!predios.length) { alert('No hay predios mapeados (KML) para la toma "' + estado.fila.toma_nombre + '".'); btn.textContent = '🗺️ Ver bloque de riego (toca un predio para adoptarlo)'; return; }
+            if (!predios.length) { alert('No hay predios mapeados (KML) para la toma "' + estado.fila.toma_nombre + '".'); btn.textContent = '🗺️ Ver bloque de riego (toca un predio para ver sus datos)'; return; }
             var capas = predios.filter(function (p) { return p.coordenadas && p.coordenadas.length >= 3; }).map(function (p) {
                 var latlngs = p.coordenadas.map(function (par) { return [par[1], par[0]]; });
                 var poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.25, interactive: true });
-                poligono.on('click', function () { _adoptarPoligonoBloqueRiegoPadronCusshmiMovil(p); });
+                poligono.on('click', function () { _seleccionarPredioBloqueRiegoPadronCusshmiMovil(p, poligono); });
                 poligono.bindTooltip(nombreUsuarioPlanoA2(p.usuario) + (p.catastralKey ? (' — UC ' + p.catastralKey) : ''), { sticky: true });
                 return poligono;
             });
@@ -2908,21 +2950,62 @@
         }
         document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmiMovil').addEventListener('click', _toggleBloqueRiegoEditorPoligonoPadronCusshmiMovil);
 
-        function _adoptarPoligonoBloqueRiegoPadronCusshmiMovil(p) {
+        // Área a mostrar del predio del KML: el atributo AREA_HA del propio
+        // KML si trae un valor real; si no (o viene en 0), se calcula del
+        // polígono tal cual está dibujado — mismo criterio de respaldo que
+        // ya usa el resto del editor (calcularAreaPoligonoHa, coordenadasUtm.js).
+        function _areaHaPredioBloqueRiegoMovil(p) {
+            if (p.areaHa && p.areaHa > 0) return p.areaHa;
+            if (!p.coordenadas || p.coordenadas.length < 3) return 0;
+            var vertices = p.coordenadas.map(function (par) {
+                var utm = latLonAUtm17S(par[1], par[0]);
+                return { easting: utm.easting, northing: utm.northing };
+            });
+            return calcularAreaPoligonoHa(vertices);
+        }
+
+        // Toca un predio del bloque de riego → lo resalta y muestra su
+        // información (titular, UC, área, toma/lateral) en un panel, con un
+        // botón aparte "Usar este polígono" para adoptarlo — a diferencia de
+        // antes (que adoptaba de una con un confirm()), ahora el sectorista
+        // puede ver primero de quién es cada predio antes de decidir.
+        function _seleccionarPredioBloqueRiegoPadronCusshmiMovil(p, capa) {
+            if (capaPredioSeleccionadoPadronCusshmiMovil && capaPredioSeleccionadoPadronCusshmiMovil !== capa) {
+                capaPredioSeleccionadoPadronCusshmiMovil.setStyle({ color: '#00bcd4', weight: 1.5, fillOpacity: 0.25 });
+            }
+            capa.setStyle({ color: '#ffeb3b', weight: 3.5, fillOpacity: 0.4 });
+            capaPredioSeleccionadoPadronCusshmiMovil = capa;
+            predioSeleccionadoPadronCusshmiMovil = p;
+
+            document.getElementById('textoInfoPredioSeleccionadoPadronCusshmiMovil').innerHTML =
+                '<strong>Titular:</strong> ' + (nombreUsuarioPlanoA2(p.usuario) || '—') + '<br>' +
+                '<strong>Unidad Catastral:</strong> ' + (p.catastralKey || '—') + '<br>' +
+                '<strong>Área (KML):</strong> ' + _areaHaPredioBloqueRiegoMovil(p).toFixed(2) + ' ha<br>' +
+                '<strong>Toma / Lateral:</strong> ' + (p.toma || '—') + (p.lateral ? (' / ' + p.lateral) : '');
+            document.getElementById('infoPredioSeleccionadoPadronCusshmiMovil').style.display = 'block';
+        }
+
+        function _cerrarInfoPredioSeleccionadoPadronCusshmiMovil() {
+            if (capaPredioSeleccionadoPadronCusshmiMovil) {
+                capaPredioSeleccionadoPadronCusshmiMovil.setStyle({ color: '#00bcd4', weight: 1.5, fillOpacity: 0.25 });
+            }
+            capaPredioSeleccionadoPadronCusshmiMovil = null;
+            predioSeleccionadoPadronCusshmiMovil = null;
+            document.getElementById('infoPredioSeleccionadoPadronCusshmiMovil').style.display = 'none';
+        }
+        document.getElementById('btnCancelarPredioSeleccionadoPadronCusshmiMovil').addEventListener('click', _cerrarInfoPredioSeleccionadoPadronCusshmiMovil);
+
+        document.getElementById('btnUsarPredioSeleccionadoPadronCusshmiMovil').addEventListener('click', function () {
             var estado = editorPoligonoPadronCusshmiMovil;
-            if (!estado) return;
-            var nombrePredio = nombreUsuarioPlanoA2(p.usuario);
-            var yaTenia = estado.vertices.length >= 3;
-            var mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
-                ' del bloque de riego para ' + estado.fila.apellidos_nombres + '?' +
-                (yaTenia ? '\n\n⚠️ Ya hay un polígono en edición — se reemplazará por el del predio elegido.' : '');
-            if (!confirm(mensaje)) return;
+            var p = predioSeleccionadoPadronCusshmiMovil;
+            if (!estado || !p) return;
             estado.vertices = p.coordenadas.map(function (par) {
                 var utm = latLonAUtm17S(par[1], par[0]);
                 return { easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0] };
             });
             _redibujarEditorPoligonoPadronCusshmiMovil();
-        }
+            _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
+        });
 
         document.getElementById('btnGuardarEditorPoligonoPadronCusshmiMovil').addEventListener('click', async function () {
             var estado = editorPoligonoPadronCusshmiMovil;
@@ -2948,6 +3031,7 @@
         });
 
         function _cerrarEditorPoligonoPadronCusshmiMovil() {
+            _cerrarInfoPredioSeleccionadoPadronCusshmiMovil();
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
             var fila = padronCusshmiFilaActualMovil;
