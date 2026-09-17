@@ -398,8 +398,7 @@
             <p style="text-align:center; max-width:420px; margin-bottom:16px; opacity:0.85; font-size:13px;">
                 Elige qué formato deseas trabajar.
             </p>
-            <button class="boton" id="btnElegirFormatoA1" style="max-width:420px;">📋 Formato A-1</button>
-            <button class="boton" id="btnElegirFormatoA2" style="max-width:420px; margin-top:12px;">🗂️ Formato A-2 (Levantamiento de Observaciones)</button>
+            <button class="boton" id="btnElegirFormatoA2" style="max-width:420px;">🗂️ Formato A-2 (Levantamiento de Observaciones)</button>
             <button class="boton" id="btnElegirPadronCusshmi" style="max-width:420px; margin-top:12px; background:#1a6e3c;">📊 Padrón CUSSHMI</button>
         </div>
 
@@ -421,6 +420,9 @@
                     <option value="TODAS">Todas las tomas</option>
                 </select>
             </div>
+            <div class="estado-busqueda" id="avanceTomaPadronCusshmiMovil" style="display:none;"></div>
+            <button class="boton-secundario" id="btnAgregarUsuarioNuevoPadronCusshmiMovil" style="max-width:420px; margin-top:6px;" disabled>+ Agregar usuario nuevo (elige una Toma)</button>
+
             <div class="buscador campo" style="width:100%; max-width:420px; margin-top:8px;">
                 <label for="inputBuscarPadronCusshmiMovil">Buscar por nombre / U. Catastral</label>
                 <input type="text" id="inputBuscarPadronCusshmiMovil" placeholder="ej. Pérez" autocomplete="off">
@@ -644,6 +646,12 @@
         // es el nuevo (ver abrirFormularioDesdePadronCusshmi más abajo).
         // volverABusqueda lo usa para volver al lugar correcto.
         var origenFormularioIdentificacion = 'toma';
+        // true mientras el formulario abierto es un "+ Agregar usuario
+        // nuevo" desde Padrón CUSSHMI (todavía sin fila en padron_oficial_a1)
+        // — volverABusqueda lo usa para recargar la lista completa desde
+        // Supabase al volver (un usuario nuevo confirmado como A-2 se
+        // incorpora recién ahí, no está en el snapshot en memoria).
+        var origenPadronCusshmiUsuarioNuevo = false;
 
         // Padrón oficial A-1 de ANA (toda la comisión, no por toma — el
         // archivo oficial no trae toma) — se carga una sola vez por sesión
@@ -1082,8 +1090,14 @@
             var textoVolver = esDesdePadronCusshmi ? '← Volver a Padrón CUSSHMI' : '← Volver a la búsqueda';
             document.getElementById('btnVolverABusqueda').textContent = textoVolver;
             document.getElementById('btnVolverABusquedaAbajo').textContent = textoVolver;
-            document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').style.display = esDesdePadronCusshmi ? 'block' : 'none';
-            document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').style.display = esDesdePadronCusshmi ? 'block' : 'none';
+            // El polígono y los "datos oficiales" (Toma, observación) viven
+            // en padron_oficial_a1 — un usuario nuevo (padronCusshmiFilaActualMovil
+            // aún null, ver abrirFormularioUsuarioNuevoPadronCusshmi) todavía
+            // no tiene esa fila, así que esas dos acciones no aplican hasta
+            // que se confirme y se incorpore.
+            var tieneFilaOficialPadronCusshmi = esDesdePadronCusshmi && !!padronCusshmiFilaActualMovil;
+            document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').style.display = tieneFilaOficialPadronCusshmi ? 'block' : 'none';
+            document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').style.display = tieneFilaOficialPadronCusshmi ? 'block' : 'none';
             [
                 'inputApellidosNombres', 'selectTipoDocumento', 'inputNumeroDocumento', 'inputUnidadCatastral',
                 'inputAreaTotal', 'inputAreaBajoRiego', 'selectTipoRiego', 'inputCultivoActual',
@@ -1203,6 +1217,15 @@
                     fila.area_bajo_riego_ha = registroActual.areaBajoRiegoHa !== '' ? parseFloat(registroActual.areaBajoRiegoHa) : fila.area_bajo_riego_ha;
                     fila.clase_derecho = registroActual.claseDerecho || fila.clase_derecho;
                     fila.volumen_m3 = registroActual.volumenM3Anio !== '' ? parseFloat(registroActual.volumenM3Anio) : fila.volumen_m3;
+                }
+                if (origenPadronCusshmiUsuarioNuevo) {
+                    // Un usuario nuevo confirmado (A-2) recién se incorpora a
+                    // padron_oficial_a1 en ese momento — no está en el
+                    // snapshot en memoria, hace falta recargar de Supabase
+                    // para que aparezca en la lista.
+                    origenPadronCusshmiUsuarioNuevo = false;
+                    mostrarVistaPadronCusshmi();
+                    return;
                 }
                 document.getElementById('vistaPadronCusshmi').style.display = 'flex';
                 _renderListaPadronCusshmiMovil();
@@ -1531,7 +1554,11 @@
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaEleccionFormato').style.display = 'flex';
         }
-        document.getElementById('btnElegirFormatoA1').addEventListener('click', mostrarVistaTomas);
+        // btnElegirFormatoA1 se eliminó de vistaEleccionFormato (fusionado con
+        // Padrón CUSSHMI, ver btnAgregarUsuarioNuevoPadronCusshmiMovil más
+        // abajo) — mostrarVistaTomas/abrirToma/vistaBusqueda siguen definidas
+        // (las usa el formulario compartido) pero ya no tienen un botón de
+        // entrada propio.
         document.getElementById('btnElegirFormatoA2').addEventListener('click', mostrarVistaSelectorA2Levantamiento);
         document.getElementById('btnElegirPadronCusshmi').addEventListener('click', mostrarVistaPadronCusshmi);
         document.getElementById('btnVolverEleccionDesdeSelectorA2').addEventListener('click', mostrarVistaEleccionFormato);
@@ -2785,6 +2812,36 @@
             selectToma.value = tomasOrdenadas.indexOf(tomaPrevia) !== -1 ? tomaPrevia : 'TODAS';
 
             _renderListaPadronCusshmiMovil();
+            _actualizarAvanceTomaPadronCusshmiMovil();
+        }
+
+        // "Vista de avance por Toma" (portada de la antigua Pantalla 2 de
+        // Formato A-1, obtenerAvanceRegistroPorToma) — cuántos usuarios de
+        // la toma elegida ya tienen un registro de campo (identificacion_
+        // registros). También habilita/deshabilita "+ Agregar usuario
+        // nuevo": hace falta una Toma concreta (no "Todas") porque ese
+        // registro se guarda por toma.
+        async function _actualizarAvanceTomaPadronCusshmiMovil() {
+            var toma = document.getElementById('selectTomaPadronCusshmiMovil').value;
+            var elAvance = document.getElementById('avanceTomaPadronCusshmiMovil');
+            var btnNuevo = document.getElementById('btnAgregarUsuarioNuevoPadronCusshmiMovil');
+            if (!toma || toma === 'TODAS') {
+                elAvance.style.display = 'none';
+                elAvance.textContent = '';
+                btnNuevo.disabled = true;
+                btnNuevo.textContent = '+ Agregar usuario nuevo (elige una Toma)';
+                return;
+            }
+            btnNuevo.disabled = false;
+            btnNuevo.textContent = '+ Agregar usuario nuevo en ' + toma;
+            elAvance.style.display = 'block';
+            elAvance.textContent = 'Cargando avance…';
+            var resultado = await CusshmiDatos.obtenerAvanceRegistroPorToma(comisionKeyActual);
+            var avance = (resultado.ok && resultado.avance) ? resultado.avance : {};
+            var a = avance[toma] || { registrados: 0, totalPadron: 0, porcentaje: null };
+            elAvance.textContent = a.porcentaje !== null
+                ? '📊 Avance de registro en ' + toma + ': ' + a.registrados + ' / ' + a.totalPadron + ' (' + a.porcentaje + '%)'
+                : '📊 ' + a.registrados + ' registrado(s) en ' + toma + '.';
         }
 
         function _renderListaPadronCusshmiMovil() {
@@ -2823,7 +2880,10 @@
             }).join('');
         }
         document.getElementById('selectVistaPadronCusshmiMovil').addEventListener('change', _recomputarBasePadronCusshmiMovil);
-        document.getElementById('selectTomaPadronCusshmiMovil').addEventListener('change', _renderListaPadronCusshmiMovil);
+        document.getElementById('selectTomaPadronCusshmiMovil').addEventListener('change', function () {
+            _renderListaPadronCusshmiMovil();
+            _actualizarAvanceTomaPadronCusshmiMovil();
+        });
         document.getElementById('inputBuscarPadronCusshmiMovil').addEventListener('input', _renderListaPadronCusshmiMovil);
 
         // Toca un usuario de la lista → misma acción que "Formato A-1 →
@@ -2944,6 +3004,7 @@
                 return;
             }
             origenFormularioIdentificacion = 'padronCusshmi';
+            origenPadronCusshmiUsuarioNuevo = false;
             tomaSeleccionada = fila.toma_nombre;
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
             document.getElementById('vistaFormulario').style.display = 'flex';
@@ -3005,6 +3066,43 @@
             document.getElementById('estadoGuardadoFormulario').textContent = '';
         }
         document.getElementById('btnFichaCompletaPadronCusshmiMovil').addEventListener('click', abrirFormularioDesdePadronCusshmi);
+
+        // "+ Agregar usuario nuevo" — portado desde el antiguo botón de
+        // Formato A-1 (Pantalla 3), para un predio que el sectorista
+        // encuentra en campo y que todavía NO está en ningún padrón (ni el
+        // oficial padron_oficial_a1 ni el operativo del Excel semanal).
+        // Requiere una Toma concreta elegida en el filtro de la lista
+        // (identificacion_registros se guarda por toma). Usa el mismo
+        // camino que "+ Agregar usuario nuevo" tenía antes
+        // (nuevoRegistroBase(null) vía abrirFormularioDesdeUsuario(null,
+        // null)) — al confirmar, si termina clasificando A-2, el flujo ya
+        // existente lo incorpora a padron_oficial_a1 con la observación
+        // "Remitir a la Junta" (ver btnConfirmarGuardar), y ahí recién
+        // aparece en la lista de Padrón CUSSHMI.
+        async function abrirFormularioUsuarioNuevoPadronCusshmi() {
+            var toma = document.getElementById('selectTomaPadronCusshmiMovil').value;
+            if (!toma || toma === 'TODAS') {
+                alert('Elige una Toma específica arriba antes de agregar un usuario nuevo.');
+                return;
+            }
+            origenFormularioIdentificacion = 'padronCusshmi';
+            origenPadronCusshmiUsuarioNuevo = true;
+            padronCusshmiFilaActualMovil = null; // todavía no hay fila en padron_oficial_a1
+            tomaSeleccionada = toma;
+            document.getElementById('vistaPadronCusshmi').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+            document.getElementById('estadoGuardadoFormulario').textContent = 'Cargando datos del padrón oficial…';
+
+            var resultadoPadron = await CusshmiDatos.cargarPadronToma(comisionKeyActual, toma);
+            padronTomaActual = (resultadoPadron.ok && resultadoPadron.resultados) ? resultadoPadron.resultados : [];
+            var resultadoRegistros = await CusshmiDatos.listarRegistrosDeToma(comisionKeyActual, toma);
+            registrosTomaActual = (resultadoRegistros.ok && resultadoRegistros.registros) ? resultadoRegistros.registros : [];
+
+            registroActual = await nuevoRegistroBase(null);
+            pintarFormularioDesdeRegistro();
+            document.getElementById('estadoGuardadoFormulario').textContent = '';
+        }
+        document.getElementById('btnAgregarUsuarioNuevoPadronCusshmiMovil').addEventListener('click', abrirFormularioUsuarioNuevoPadronCusshmi);
 
         // ── Editor de polígono (Padrón CUSSHMI) ──────────────────────────
         function _construirVerticePoligonoPadronCusshmiMovil(lat, lon) {
