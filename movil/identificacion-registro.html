@@ -416,6 +416,7 @@
                 <select id="selectVistaPadronCusshmiMovil">
                     <option value="CON_LICENCIA">1. Usuarios con licencia/derecho (Formato A-1)</option>
                     <option value="SIN_LICENCIA">2. Usuarios sin licencia/sin derecho (Formato A-2)</option>
+                    <option value="CAMPO">3. Usuarios nuevos de campo (pendientes de la Junta)</option>
                 </select>
             </div>
             <div class="campo" style="width:100%; max-width:420px; margin-top:8px;">
@@ -2796,7 +2797,13 @@
 
             var resultado = await CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKeyActual);
             if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar el padrón.'; return; }
-            padronCusshmiFilasTodasMovil = (resultado.resultados || []).filter(function (f) { return f.origen === 'ana_a1'; });
+            // Incluye también origen 'campo' (usuarios nuevos que el
+            // sectorista agregó en el móvil, pendientes de que la Junta los
+            // formalice) — antes se excluían del todo acá, con lo que la
+            // información levantada quedaba guardada pero sin ningún lugar
+            // del móvil donde volver a verla. Ahora tienen su propia vista
+            // "3. Usuarios nuevos de campo" (ver _recomputarBasePadronCusshmiMovil).
+            padronCusshmiFilasTodasMovil = (resultado.resultados || []).filter(function (f) { return f.origen === 'ana_a1' || f.origen === 'campo'; });
             elEstado.textContent = '';
             _recomputarBasePadronCusshmiMovil();
         }
@@ -2809,7 +2816,9 @@
             var vista = document.getElementById('selectVistaPadronCusshmiMovil').value;
             padronCusshmiFilasBaseMovil = vista === 'CON_LICENCIA'
                 ? padronCusshmiFilasTodasMovil.filter(function (f) { return (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA'; })
-                : padronCusshmiFilasTodasMovil.filter(_esFormatoA1ConPermisoOSinLicenciaMovil);
+                : vista === 'CAMPO'
+                    ? padronCusshmiFilasTodasMovil.filter(function (f) { return f.origen === 'campo'; })
+                    : padronCusshmiFilasTodasMovil.filter(_esFormatoA1ConPermisoOSinLicenciaMovil);
 
             var selectToma = document.getElementById('selectTomaPadronCusshmiMovil');
             var tomaPrevia = selectToma.value || 'TODAS';
@@ -2870,9 +2879,14 @@
 
             var elEstado = document.getElementById('estadoPadronCusshmiMovil');
             var elLista = document.getElementById('listaPadronCusshmiMovil');
+            var MENSAJES_VACIO = {
+                CON_LICENCIA: 'No hay usuarios con Licencia/derecho en el Padrón A-1.',
+                SIN_LICENCIA: 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1.',
+                CAMPO: 'No hay usuarios nuevos agregados desde campo todavía.',
+            };
             if (filas.length === 0) {
                 elEstado.textContent = padronCusshmiFilasBaseMovil.length === 0
-                    ? (vista === 'CON_LICENCIA' ? 'No hay usuarios con Licencia/derecho en el Padrón A-1.' : 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1.')
+                    ? (MENSAJES_VACIO[vista] || 'Sin resultados.')
                     : 'Ningún usuario coincide con estos filtros.';
                 elLista.innerHTML = '';
                 return;
@@ -2882,6 +2896,7 @@
                 var tienePoligono = Array.isArray(f.vertices_utm) && f.vertices_utm.length >= 3;
                 return '<button class="fila-toma" data-uc="' + (f.unidad_catastral ? f.unidad_catastral.replace(/"/g, '&quot;') : '') + '" onclick="_abrirUsuarioPadronCusshmiMovil(\'' + (f.unidad_catastral || '').replace(/'/g, "\\'") + '\')">' +
                     '<div class="nombre-toma">' + (f.apellidos_nombres || '(sin nombre)') +
+                    (f.origen === 'campo' ? '<span class="badge-registrado" style="background:#c8a84b;color:#1a1a1a;">🆕 pendiente Junta</span>' : '') +
                     (tienePoligono ? '<span class="badge-registrado">📐 con polígono</span>' : '') + '</div>' +
                     '<div class="detalle-toma">Toma: ' + (f.toma_nombre || '—') + ' · UC: ' + (f.unidad_catastral || '—') +
                     ' · Área: ' + (f.area_total_ha != null ? Number(f.area_total_ha).toFixed(2) : '—') + ' ha</div>' +
