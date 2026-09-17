@@ -7923,10 +7923,16 @@ const COMISIONES = {
             ctx.setLineDash([]);
             ctx.stroke();
 
-            // Medida de cada lado (metros UTM reales) — a pedido explícito,
-            // sobre el punto medio de cada lado del polígono, con una
-            // "píldora" blanca detrás para que se lea sobre el relleno
-            // naranja o el fondo satelital/blanco de más allá.
+            const centroideZoom = (typeof calcularCentroidePoligono === 'function')
+                ? calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
+                : null;
+            const centroPxZoom = centroideZoom ? proyectorZoom.proyectar(centroideZoom.easting, centroideZoom.northing) : [areaAncho / 2, areaAlto / 2];
+
+            // Medida de cada lado (metros UTM reales) — por FUERA del
+            // polígono (no sobre la línea), desplazada desde el punto medio
+            // del lado en dirección opuesta al centroide, con una "píldora"
+            // blanca detrás para que se lea sobre cualquier fondo.
+            const OFFSET_MEDIDA_PX = 16;
             ctx.font = '700 11px Arial, sans-serif';
             for (let i = 0; i < verticesOrdenados.length; i++) {
                 const v1 = verticesOrdenados[i];
@@ -7935,12 +7941,16 @@ const COMISIONES = {
                 if (distM < 0.5) continue; // 2 vértices casi coincidentes: nada que rotular
                 const p1 = puntosPxZoom[i], p2 = puntosPxZoom[(i + 1) % puntosPxZoom.length];
                 const midX = (p1[0] + p2[0]) / 2, midY = (p1[1] + p2[1]) / 2;
+                let dx = midX - centroPxZoom[0], dy = midY - centroPxZoom[1];
+                const normLongitud = Math.sqrt(dx * dx + dy * dy) || 1;
+                dx /= normLongitud; dy /= normLongitud;
+                const labelX = midX + dx * OFFSET_MEDIDA_PX, labelY = midY + dy * OFFSET_MEDIDA_PX;
                 let angulo = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
                 if (angulo > Math.PI / 2 || angulo < -Math.PI / 2) angulo += Math.PI; // nunca al revés
                 const texto = Math.round(distM) + ' m';
                 const anchoTexto = ctx.measureText(texto).width;
                 ctx.save();
-                ctx.translate(midX, midY);
+                ctx.translate(labelX, labelY);
                 ctx.rotate(angulo);
                 ctx.fillStyle = 'rgba(255,255,255,0.85)';
                 ctx.fillRect(-anchoTexto / 2 - 3, -8, anchoTexto + 6, 16);
@@ -7950,10 +7960,22 @@ const COMISIONES = {
                 ctx.restore();
             }
 
-            const centroideZoom = (typeof calcularCentroidePoligono === 'function')
-                ? calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
-                : null;
-            const centroPxZoom = centroideZoom ? proyectorZoom.proyectar(centroideZoom.easting, centroideZoom.northing) : [areaAncho / 2, areaAlto / 2];
+            // Número de cada vértice (1, 2, 3…, en el mismo orden del
+            // polígono) — un círculo chico con el número, en el propio
+            // vértice.
+            ctx.font = '700 11px Arial, sans-serif';
+            puntosPxZoom.forEach((pt, i) => {
+                ctx.beginPath();
+                ctx.arc(pt[0], pt[1], 10, 0, Math.PI * 2);
+                ctx.fillStyle = '#b35900';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(String(i + 1), pt[0], pt[1]);
+            });
             const areaHaZoom = (typeof calcularAreaPoligonoHa === 'function')
                 ? calcularAreaPoligonoHa(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
                 : 0;
