@@ -6765,8 +6765,8 @@ const COMISIONES = {
             const checkboxObservadosA2Html = hayObservadosA2Plano ? `
                             <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#333;cursor:pointer;">
                                 <input type="checkbox" ${_previaPlanoA2Estado.filtros.mostrarObservadosA2 ? 'checked' : ''} onchange="_alternarFiltroObservadosA2PlanoA2(this.checked)">
-                                <span style="width:13px;height:13px;border-radius:3px;background:rgba(155,89,182,0.30);border:1.5px solid #8e44ad;display:inline-block;"></span>
-                                📐 Usuarios Observados A2 (Fuera de Bloque / Sin Registro)
+                                <span style="width:13px;height:13px;border-radius:3px;background:${DERECHO_PLANO_A2.A2_FUERA_BLOQUE.fill};border:1.5px solid ${DERECHO_PLANO_A2.A2_FUERA_BLOQUE.stroke};display:inline-block;"></span>
+                                A2 - FUERA DEL BLOQUE
                             </label>` : '';
             const filtroDerechoHtml = (categoriasDerechoPresentes.length || hayObservadosA2Plano) ? `
                 <div style="display:flex;flex-direction:column;gap:6px;">
@@ -7341,9 +7341,18 @@ const COMISIONES = {
             //      (esa solo tiene sentido para un usuario a la vez) — las
             //      coordenadas del centroide van aparte, en la tabla
             //      "Centroide de Polígonos" (esquina superior derecha), no
-            //      sobre el propio polígono — con la MISMA prioridad de
-            //      colocación más alta que canales/predios, porque ver estos
-            //      usuarios es el propósito de haber elegido esta opción.
+            //      sobre el propio polígono.
+            //
+            //      Prioridad de colocación de su etiqueta: en el ámbito
+            //      dedicado "Usuarios Observados A2" (esAmbitoObservados),
+            //      por ENCIMA de canales/predios — ver a estos usuarios es
+            //      el propósito de haber elegido esa opción. En cualquier
+            //      otro plano (toma completa, un usuario resaltado, todos
+            //      los bloques), donde este overlay es solo un dato extra
+            //      y no el foco, se dibuja DESPUÉS de los canales — antes
+            //      les ganaba el espacio incluso a la etiqueta del canal
+            //      principal, que es información más importante ahí.
+            function _dibujarObservadosA2AhoraPlanoA2() {
             if (usuariosObservadosA2 && usuariosObservadosA2.length) {
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';
@@ -7354,9 +7363,9 @@ const COMISIONES = {
                     ctx.beginPath();
                     puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
                     ctx.closePath();
-                    ctx.fillStyle = 'rgba(155,89,182,0.30)';
+                    ctx.fillStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.fill;
                     ctx.fill();
-                    ctx.strokeStyle = '#8e44ad';
+                    ctx.strokeStyle = DERECHO_PLANO_A2.A2_FUERA_BLOQUE.stroke;
                     ctx.lineWidth = 3;
                     ctx.setLineDash([]);
                     ctx.stroke();
@@ -7404,6 +7413,8 @@ const COMISIONES = {
                     ctx.restore();
                 });
             }
+            }
+            if (esAmbitoObservados) _dibujarObservadosA2AhoraPlanoA2();
 
             // 6) Etiquetas — predios (nombre + UC) y canales (nombre), giradas
             //    paralelas a su lado/tramo más largo, con tamaño de fuente
@@ -7476,6 +7487,7 @@ const COMISIONES = {
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
                 dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, anguloRad, nombreCanal, colorLinea, fuente);
             });
+            if (!esAmbitoObservados) _dibujarObservadosA2AhoraPlanoA2();
 
             // 6b) Predios — de mayor a menor tamaño (los más grandes reclaman
             //     su espacio primero). Si el nombre+identificador completo
@@ -8154,16 +8166,12 @@ const COMISIONES = {
 
         // Flecha de norte — el plano ya está orientado norte-arriba (misma
         // proyección UTM de siempre, sin rotación), así que basta una
-        // flecha fija apuntando hacia arriba con "N", dentro de un
-        // recuadro chico a juego con las demás cajas del plano (leyenda,
-        // escala, datos). A pedido explícito del usuario.
+        // flecha fija apuntando hacia arriba con "N". Sin cuadro/recuadro
+        // detrás — a pedido explícito, solo el dibujo de la flecha, sin
+        // fondo ni borde, para que se vea más limpio sobre el mapa.
         function _dibujarNorteFlechaPlanoA2(ctx, x0, y0) {
             const ANCHO_CAJA = 64, ALTO_CAJA = 84;
             ctx.save();
-            ctx.fillStyle = 'rgba(255,255,255,0.92)';
-            ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
-            ctx.fillRect(x0, y0, ANCHO_CAJA, ALTO_CAJA);
-            ctx.strokeRect(x0, y0, ANCHO_CAJA, ALTO_CAJA);
 
             const cx = x0 + ANCHO_CAJA / 2;
             const yPuntaFlecha = y0 + 12, yBaseFlecha = y0 + 52, yMuescaFlecha = yBaseFlecha - 9;
@@ -8203,28 +8211,31 @@ const COMISIONES = {
             }
             // Solo las categorías de Derecho que de verdad aparecen entre los
             // predios de este plano — mismo criterio que canales/drenes: la
-            // leyenda no debe listar símbolos que no están en el dibujo.
+            // leyenda no debe listar símbolos que no están en el dibujo. Los
+            // Usuarios Observados A2 (Fuera de Bloque / Sin Registro) se
+            // suman AQUÍ, como una categoría más de Derecho (mismo nombre y
+            // color que ya usa DERECHO_PLANO_A2.A2_FUERA_BLOQUE en todo el
+            // resto del sistema) — antes era un ítem aparte con su propio
+            // subtítulo "A2-OBSERVADO", y encima solo se agregaba si NO
+            // había un usuarioResaltado (if/else), así que con un usuario
+            // resaltado el overlay se dibujaba en el mapa pero desaparecía
+            // de la leyenda.
             const categoriasPresentesOrdenadas = Object.keys(DERECHO_PLANO_A2)
-                .filter((k) => categoriasDerechoPresentes && categoriasDerechoPresentes.has(k));
-            if (categoriasPresentesOrdenadas.length) {
+                .filter((k) => k !== 'A2_FUERA_BLOQUE' && categoriasDerechoPresentes && categoriasDerechoPresentes.has(k));
+            const hayObservadosEnLeyenda = usuariosObservadosA2 && usuariosObservadosA2.length > 0;
+            if (categoriasPresentesOrdenadas.length || hayObservadosEnLeyenda) {
                 filas.push({ tipo: 'subtitulo', texto: 'DERECHO' });
                 categoriasPresentesOrdenadas.forEach((k) => filas.push({ tipo: 'caja', color: DERECHO_PLANO_A2[k], texto: DERECHO_PLANO_A2[k].etiqueta }));
+                if (hayObservadosEnLeyenda) {
+                    filas.push({ tipo: 'caja', color: DERECHO_PLANO_A2.A2_FUERA_BLOQUE, texto: DERECHO_PLANO_A2.A2_FUERA_BLOQUE.etiqueta });
+                }
             }
-            // El color de este ítem tiene que ser EL MISMO con el que se
-            // pintó el predio de verdad más arriba (sección 5.5) — naranja
-            // para un usuario del Padrón A-1 (sin registro de Formato A-2),
-            // morado para un Observado real o el overlay de varios a la vez.
+            // El predio consultado es un ítem aparte, no una categoría de
+            // Derecho — mismo naranja con el que se pintó en la sección
+            // 5.5, SIEMPRE (tenga o no un registro real de Formato A-2).
             if (usuarioResaltado) {
-                const esObservadoReal = !!usuarioResaltado.registro;
-                filas.push({ tipo: 'subtitulo', texto: esObservadoReal ? 'A2-OBSERVADO' : 'USUARIO CONSULTADO' });
-                filas.push({
-                    tipo: 'caja',
-                    color: esObservadoReal ? { fill: 'rgba(155,89,182,0.35)', stroke: '#8e44ad' } : { fill: '#ff8c00', stroke: '#b35900' },
-                    texto: esObservadoReal ? 'PREDIO OBSERVADO (FORMATO A-2)' : 'PREDIO CONSULTADO (PADRÓN A-1)',
-                });
-            } else if (usuariosObservadosA2 && usuariosObservadosA2.length) {
-                filas.push({ tipo: 'subtitulo', texto: 'A2-OBSERVADO' });
-                filas.push({ tipo: 'caja', color: { fill: 'rgba(155,89,182,0.35)', stroke: '#8e44ad' }, texto: 'PREDIO OBSERVADO (FORMATO A-2)' });
+                filas.push({ tipo: 'subtitulo', texto: 'USUARIO CONSULTADO' });
+                filas.push({ tipo: 'caja', color: { fill: '#ff8c00', stroke: '#b35900' }, texto: 'PREDIO CONSULTADO' });
             }
 
             const ALTO_FILA = 26, ANCHO_CAJA = 300;
