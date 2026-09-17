@@ -350,6 +350,12 @@
 
             <div class="estado-busqueda" id="estadoGuardadoFormulario"></div>
             <button class="boton-secundario" id="btnVolverABusquedaAbajo" style="max-width:420px; margin-top:6px;">← Volver a la búsqueda</button>
+            <!-- Solo visibles cuando se entró desde Padrón CUSSHMI (ver
+                 origenFormularioIdentificacion / abrirFormularioDesdePadronCusshmi) —
+                 acciones propias de Padrón CUSSHMI que este formulario (compartido
+                 con Formato A-1) no tiene por defecto. -->
+            <button class="boton-secundario" id="btnPoligonoDesdeFormularioPadronCusshmi" style="max-width:420px; margin-top:6px; display:none;">📐 Crear/Editar Polígono</button>
+            <button class="boton-secundario" id="btnDatosOficialesDesdeFormularioPadronCusshmi" style="max-width:420px; margin-top:6px; display:none;">⚙️ Datos oficiales (Toma, observación…)</button>
             <button class="boton" id="btnContinuarConfirmacion" style="max-width:420px; margin-top:10px;">Continuar →</button>
         </div>
 
@@ -1072,6 +1078,12 @@
             document.getElementById('avisoBloqueadoFormulario').style.display = bloqueado ? 'block' : 'none';
             document.getElementById('estadoGuardadoFormulario').textContent = '';
             document.getElementById('btnContinuarConfirmacion').textContent = bloqueado ? 'Ver confirmación →' : 'Continuar →';
+            var esDesdePadronCusshmi = origenFormularioIdentificacion === 'padronCusshmi';
+            var textoVolver = esDesdePadronCusshmi ? '← Volver a Padrón CUSSHMI' : '← Volver a la búsqueda';
+            document.getElementById('btnVolverABusqueda').textContent = textoVolver;
+            document.getElementById('btnVolverABusquedaAbajo').textContent = textoVolver;
+            document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').style.display = esDesdePadronCusshmi ? 'block' : 'none';
+            document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').style.display = esDesdePadronCusshmi ? 'block' : 'none';
             [
                 'inputApellidosNombres', 'selectTipoDocumento', 'inputNumeroDocumento', 'inputUnidadCatastral',
                 'inputAreaTotal', 'inputAreaBajoRiego', 'selectTipoRiego', 'inputCultivoActual',
@@ -1181,26 +1193,46 @@
                 origenFormularioIdentificacion = 'toma';
                 var fila = padronCusshmiFilaActualMovil;
                 if (fila && registroActual) {
-                    // Refleja en la ficha simple / la lista lo que se acaba de
+                    // Refleja en la lista de Padrón CUSSHMI lo que se acaba de
                     // escribir en la ficha completa — mismo objeto en memoria
-                    // que ya usan _renderListaPadronCusshmiMovil/la ficha, así
-                    // que mutarlo alcanza para que ambas pantallas queden al día
-                    // sin tener que volver a consultar Supabase.
+                    // que ya usa _renderListaPadronCusshmiMovil, así que
+                    // mutarlo alcanza para que la lista quede al día sin tener
+                    // que volver a consultar Supabase.
                     fila.apellidos_nombres = registroActual.apellidosNombres || fila.apellidos_nombres;
                     fila.area_total_ha = registroActual.areaTotalHa !== '' ? parseFloat(registroActual.areaTotalHa) : fila.area_total_ha;
                     fila.area_bajo_riego_ha = registroActual.areaBajoRiegoHa !== '' ? parseFloat(registroActual.areaBajoRiegoHa) : fila.area_bajo_riego_ha;
                     fila.clase_derecho = registroActual.claseDerecho || fila.clase_derecho;
                     fila.volumen_m3 = registroActual.volumenM3Anio !== '' ? parseFloat(registroActual.volumenM3Anio) : fila.volumen_m3;
-                    _abrirFichaPadronCusshmiMovil(fila.unidad_catastral);
-                } else {
-                    document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
                 }
+                document.getElementById('vistaPadronCusshmi').style.display = 'flex';
+                _renderListaPadronCusshmiMovil();
                 return;
             }
             abrirToma(tomaSeleccionada); // refresca padrón/registros para que los badges queden al día
         }
         document.getElementById('btnVolverABusqueda').addEventListener('click', volverABusqueda);
         document.getElementById('btnVolverABusquedaAbajo').addEventListener('click', volverABusqueda);
+
+        // Acciones propias de Padrón CUSSHMI, solo visibles cuando
+        // origenFormularioIdentificacion === 'padronCusshmi' (ver
+        // pintarFormularioDesdeRegistro) — saltan al editor de polígono o a
+        // la ficha simple (Toma, observación oficial…) sin perder lo ya
+        // tecleado en este formulario (autoguardado inmediato antes de salir).
+        document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').addEventListener('click', function () {
+            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+                CusshmiDatos.guardarRegistroIdentificacion(registroActual);
+            }
+            document.getElementById('vistaFormulario').style.display = 'none';
+            origenEditorPoligonoPadronCusshmiMovil = 'formulario';
+            _abrirEditorPoligonoPadronCusshmiMovil();
+        });
+        document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').addEventListener('click', function () {
+            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+                CusshmiDatos.guardarRegistroIdentificacion(registroActual);
+            }
+            document.getElementById('vistaFormulario').style.display = 'none';
+            if (padronCusshmiFilaActualMovil) _abrirFichaPadronCusshmiMovil(padronCusshmiFilaActualMovil.unidad_catastral);
+        });
 
         document.getElementById('btnContinuarConfirmacion').addEventListener('click', async function () {
             if (!registroActual.confirmado) {
@@ -2698,6 +2730,12 @@
         // (ver el punto 2 más abajo) sin crear vértices sin querer; hay que
         // tocar "✏️ Editar" a propósito para empezar a modificar el polígono.
         var editorPoligonoPadronCusshmiMovilBloqueado = true;
+        // A qué pantalla vuelve _cerrarEditorPoligonoPadronCusshmiMovil —
+        // 'ficha' (la ficha simple) o 'formulario' (la ficha completa,
+        // vistaFormulario) — cada botón que abre el editor fija este valor
+        // antes de llamarlo (ver btnPoligonoFichaPadronCusshmiMovil y
+        // btnPoligonoDesdeFormularioPadronCusshmi).
+        var origenEditorPoligonoPadronCusshmiMovil = 'ficha';
         var watchIdEditorPoligonoPadronCusshmiMovil = null;
         var marcadorGpsEditorPoligonoPadronCusshmiMovil = null;
         var posicionGpsEditorPoligonoPadronCusshmiMovilActual = null; // {easting, northing, lat, lon}
@@ -2776,7 +2814,7 @@
             elEstado.textContent = filas.length + ' usuario(s).';
             elLista.innerHTML = filas.map(function (f) {
                 var tienePoligono = Array.isArray(f.vertices_utm) && f.vertices_utm.length >= 3;
-                return '<button class="fila-toma" data-uc="' + (f.unidad_catastral ? f.unidad_catastral.replace(/"/g, '&quot;') : '') + '" onclick="_abrirFichaPadronCusshmiMovil(\'' + (f.unidad_catastral || '').replace(/'/g, "\\'") + '\')">' +
+                return '<button class="fila-toma" data-uc="' + (f.unidad_catastral ? f.unidad_catastral.replace(/"/g, '&quot;') : '') + '" onclick="_abrirUsuarioPadronCusshmiMovil(\'' + (f.unidad_catastral || '').replace(/'/g, "\\'") + '\')">' +
                     '<div class="nombre-toma">' + (f.apellidos_nombres || '(sin nombre)') +
                     (tienePoligono ? '<span class="badge-registrado">📐 con polígono</span>' : '') + '</div>' +
                     '<div class="detalle-toma">Toma: ' + (f.toma_nombre || '—') + ' · UC: ' + (f.unidad_catastral || '—') +
@@ -2787,6 +2825,26 @@
         document.getElementById('selectVistaPadronCusshmiMovil').addEventListener('change', _recomputarBasePadronCusshmiMovil);
         document.getElementById('selectTomaPadronCusshmiMovil').addEventListener('change', _renderListaPadronCusshmiMovil);
         document.getElementById('inputBuscarPadronCusshmiMovil').addEventListener('input', _renderListaPadronCusshmiMovil);
+
+        // Toca un usuario de la lista → misma acción que "Formato A-1 →
+        // elegir toma → elegir usuario": abre DIRECTO la ficha completa
+        // (Secciones A-F), a pedido explícito del usuario ("el contenido
+        // que se muestra al acceder a Formato A-1 también se muestre en
+        // Padrón CUSSHMI"). Solo cae a la ficha simple (más liviana, con el
+        // campo Toma editable) cuando la fila todavía no tiene Toma
+        // asignada — identificacion_registros se guarda por toma, así que
+        // sin eso no hay dónde abrir la ficha completa todavía.
+        function _abrirUsuarioPadronCusshmiMovil(unidadCatastral) {
+            var fila = padronCusshmiFilasBaseMovil.find(function (f) { return (f.unidad_catastral || '') === unidadCatastral; });
+            if (!fila) return;
+            padronCusshmiFilaActualMovil = fila;
+            if (!fila.toma_nombre) {
+                _abrirFichaPadronCusshmiMovil(unidadCatastral);
+                return;
+            }
+            document.getElementById('vistaPadronCusshmi').style.display = 'none';
+            abrirFormularioDesdePadronCusshmi();
+        }
 
         function _abrirFichaPadronCusshmiMovil(unidadCatastral) {
             var fila = padronCusshmiFilasBaseMovil.find(function (f) { return (f.unidad_catastral || '') === unidadCatastral; });
@@ -2806,6 +2864,15 @@
         }
         document.getElementById('btnVolverListaDesdeFichaPadronCusshmi').addEventListener('click', function () {
             document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'none';
+            // Si se llegó acá desde "⚙️ Datos oficiales" dentro de la ficha
+            // completa (origenFormularioIdentificacion sigue en
+            // 'padronCusshmi' porque solo volverABusqueda lo resetea),
+            // volver ahí en vez de a la lista.
+            if (origenFormularioIdentificacion === 'padronCusshmi' && registroActual) {
+                pintarFormularioDesdeRegistro();
+                document.getElementById('vistaFormulario').style.display = 'flex';
+                return;
+            }
             document.getElementById('vistaPadronCusshmi').style.display = 'flex';
             _renderListaPadronCusshmiMovil();
         });
@@ -3025,7 +3092,10 @@
             }
             _fijarBloqueoEdicionPoligonoPadronCusshmiMovil(true); // también redibuja, ya con la vista final del mapa
         }
-        document.getElementById('btnPoligonoFichaPadronCusshmiMovil').addEventListener('click', _abrirEditorPoligonoPadronCusshmiMovil);
+        document.getElementById('btnPoligonoFichaPadronCusshmiMovil').addEventListener('click', function () {
+            origenEditorPoligonoPadronCusshmiMovil = 'ficha';
+            _abrirEditorPoligonoPadronCusshmiMovil();
+        });
 
         function _redibujarEditorPoligonoPadronCusshmiMovil() {
             var estado = editorPoligonoPadronCusshmiMovil;
@@ -3236,7 +3306,12 @@
             marcadorGpsEditorPoligonoPadronCusshmiMovil = null;
             posicionGpsEditorPoligonoPadronCusshmiMovilActual = null;
             document.getElementById('vistaEditorPoligonoPadronCusshmiMovil').style.display = 'none';
-            document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
+            if (origenEditorPoligonoPadronCusshmiMovil === 'formulario') {
+                pintarFormularioDesdeRegistro();
+                document.getElementById('vistaFormulario').style.display = 'flex';
+            } else {
+                document.getElementById('vistaFichaPadronCusshmiMovil').style.display = 'flex';
+            }
         }
         document.getElementById('btnCerrarEditorPoligonoPadronCusshmiMovil').addEventListener('click', _cerrarEditorPoligonoPadronCusshmiMovil);
 
