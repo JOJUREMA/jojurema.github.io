@@ -10405,7 +10405,8 @@ const COMISIONES = {
         // CUAL sin tocarlo, al flujo existente de los 93 Usuarios
         // Observados del Levantamiento en campo (modalFormatoA2Menu).
         let _padronCusshmiEstado = { filasTodas: [], comisionKey: null, comisionNombre: '' };
-        let _padronCusshmiFilasVista = [];
+        let _padronCusshmiFilasBase = []; // tras el filtro de vista (con/sin Licencia), antes de Bloque/Toma/Buscar
+        let _padronCusshmiFilasVista = []; // tras aplicar TAMBIÉN Bloque/Toma/Buscar — el que ve el usuario
         let _padronCusshmiEditandoIdx = null;
 
         async function mostrarPanelPadronCusshmi() {
@@ -10463,27 +10464,174 @@ const COMISIONES = {
             _renderVistaPadronCusshmi();
         }
 
+        // Abre "Usuarios Observados" (modalFormatoA2Menu) desde dentro de
+        // Padrón CUSSHMI — hay que OCULTAR este modal primero: ambos son
+        // `.modal-overlay` con el mismo z-index por defecto (9999), pero
+        // Padrón CUSSHMI se abre con z-index:99998 propio (para apilarse
+        // sobre el modal de Identificación y Registro), así que sin esto
+        // el de Observados abría igual mas quedaba TAPADO detrás — se veía
+        // como si "no abriera".
+        function _abrirObservadosDesdePadronCusshmi() {
+            const modalPadron = document.getElementById('modalPadronCusshmi');
+            if (modalPadron) modalPadron.classList.remove('active');
+            abrirModalFormatoA2Menu();
+        }
+
         function _renderVistaPadronCusshmi() {
             const contenedor = document.getElementById('contenidoPadronCusshmi');
             if (!contenedor) return;
             const vista = (document.getElementById('selectVistaPadronCusshmi') || {}).value || 'CON_LICENCIA';
             const filasTodas = _padronCusshmiEstado.filasTodas || [];
+            _padronCusshmiFilasBase = vista === 'CON_LICENCIA'
+                ? filasTodas.filter((f) => (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA')
+                : filasTodas.filter(_esFormatoA1ConPermisoOSinLicencia);
 
-            if (vista === 'CON_LICENCIA') {
-                const filas = filasTodas.filter((f) => (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA');
-                contenedor.innerHTML = _htmlTablaEditablePadronCusshmi(filas, 'No hay usuarios con Licencia/derecho en el Padrón A-1 de esta comisión.');
-            } else {
-                const filas = filasTodas.filter(_esFormatoA1ConPermisoOSinLicencia);
-                contenedor.innerHTML = `
-                    <div style="background:#f0f4fa;border:1px solid #c8d6ea;border-radius:6px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;text-align:left;">
-                        <div style="font-size:12px;color:#333;">
-                            <strong>🗂️ Usuarios Observados (Levantamiento en campo)</strong><br>
-                            El flujo ya existente de sincronizar/ver-editar/exportar/importar polígonos — se conserva tal cual está.
-                        </div>
-                        <button onclick="abrirModalFormatoA2Menu()" style="padding:8px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">Abrir →</button>
+            const cajaObservados = vista === 'SIN_LICENCIA' ? `
+                <div style="background:#f0f4fa;border:1px solid #c8d6ea;border-radius:6px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;text-align:left;">
+                    <div style="font-size:12px;color:#333;">
+                        <strong>🗂️ Usuarios Observados (Levantamiento en campo)</strong><br>
+                        El flujo ya existente de sincronizar/ver-editar/exportar/importar polígonos — se conserva tal cual está.
                     </div>
-                    <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;"><strong>📋 Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)</strong></p>
-                    ${_htmlTablaEditablePadronCusshmi(filas, 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1 de esta comisión.')}`;
+                    <button onclick="_abrirObservadosDesdePadronCusshmi()" style="padding:8px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap;">Abrir →</button>
+                </div>
+                <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;"><strong>📋 Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)</strong></p>` : '';
+
+            contenedor.innerHTML = `
+                ${cajaObservados}
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
+                    <div style="min-width:180px;">
+                        <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Bloque de Riego</label>
+                        <select id="selectBloquePadronCusshmi" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                            <option value="TODOS">Todos los bloques</option>
+                        </select>
+                    </div>
+                    <div style="min-width:180px;">
+                        <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Toma</label>
+                        <select id="selectTomaPadronCusshmi" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;">
+                            <option value="TODAS">Todas las tomas</option>
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="font-size:11px;color:#666;display:block;margin-bottom:3px;">Buscar usuario / U. Catastral</label>
+                        <input type="text" id="inputBuscarPadronCusshmi" placeholder="Nombre o unidad catastral…" style="width:100%;padding:7px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box;">
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                    <button id="btnExportarPadronCusshmiPorBloque" onclick="_exportarPadronCusshmiPorBloque()" style="padding:9px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;" title="Elige un Bloque de Riego arriba para habilitar">⬇️ Exportar por Bloque</button>
+                    <button id="btnExportarPadronCusshmiPorToma" onclick="_exportarPadronCusshmiPorToma()" style="padding:9px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;" title="Elige una Toma arriba para habilitar">⬇️ Exportar por Toma</button>
+                    <button id="btnExportarPadronCusshmiGeneral" onclick="_exportarPadronCusshmiGeneral()" style="padding:9px 14px;background:#1a6e3c;color:#fff;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;" title="Exporta todos los usuarios de esta vista, sin acotar por bloque/toma">⬇️ Exportar General</button>
+                </div>
+                <div id="tablaPadronCusshmi"></div>`;
+
+            const bloquesSet = new Set();
+            const tomasSet = new Set();
+            _padronCusshmiFilasBase.forEach((f) => {
+                if (!f.toma_nombre) return;
+                tomasSet.add(f.toma_nombre);
+                const bloque = (typeof obtenerBloqueDeToma === 'function') ? obtenerBloqueDeToma(f.toma_nombre) : '—';
+                (bloque || '').split('/').forEach((b) => { if (b && b !== '—') bloquesSet.add(b); });
+            });
+            const tomasOrdenadas = Array.from(tomasSet).sort((a, b) => compararOrdenTomas(a, b));
+            const bloquesOrdenados = Array.from(bloquesSet).sort();
+
+            const selectBloque = document.getElementById('selectBloquePadronCusshmi');
+            bloquesOrdenados.forEach((b) => {
+                const opt = document.createElement('option');
+                opt.value = b; opt.textContent = b;
+                selectBloque.appendChild(opt);
+            });
+            const selectToma = document.getElementById('selectTomaPadronCusshmi');
+            tomasOrdenadas.forEach((t) => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                selectToma.appendChild(opt);
+            });
+
+            selectBloque.addEventListener('change', _aplicarFiltrosPadronCusshmi);
+            selectToma.addEventListener('change', _aplicarFiltrosPadronCusshmi);
+            document.getElementById('inputBuscarPadronCusshmi').addEventListener('input', _aplicarFiltrosPadronCusshmi);
+
+            _aplicarFiltrosPadronCusshmi();
+        }
+
+        // Filtra en memoria (sin volver a consultar Supabase) sobre
+        // _padronCusshmiFilasBase, según Bloque/Toma/búsqueda elegidos —
+        // mismo criterio que ya usaba el panel "Formato A-1" original.
+        function _aplicarFiltrosPadronCusshmi() {
+            const tabla = document.getElementById('tablaPadronCusshmi');
+            if (!tabla) return;
+            const bloqueSel = (document.getElementById('selectBloquePadronCusshmi') || {}).value || 'TODOS';
+            const tomaSel = (document.getElementById('selectTomaPadronCusshmi') || {}).value || 'TODAS';
+            const busqueda = ((document.getElementById('inputBuscarPadronCusshmi') || {}).value || '').trim().toUpperCase();
+
+            const filas = _padronCusshmiFilasBase.filter((f) => {
+                if (tomaSel !== 'TODAS' && f.toma_nombre !== tomaSel) return false;
+                if (bloqueSel !== 'TODOS') {
+                    const bloqueFila = (typeof obtenerBloqueDeToma === 'function' && f.toma_nombre) ? obtenerBloqueDeToma(f.toma_nombre) : '';
+                    if (!(bloqueFila || '').split('/').includes(bloqueSel)) return false;
+                }
+                if (busqueda) {
+                    const nombre = (f.apellidos_nombres || '').toUpperCase();
+                    const uc = (f.unidad_catastral || '').toUpperCase();
+                    if (!nombre.includes(busqueda) && !uc.includes(busqueda)) return false;
+                }
+                return true;
+            });
+
+            const btnBloque = document.getElementById('btnExportarPadronCusshmiPorBloque');
+            const btnToma = document.getElementById('btnExportarPadronCusshmiPorToma');
+            if (btnBloque) btnBloque.disabled = (bloqueSel === 'TODOS');
+            if (btnToma) btnToma.disabled = (tomaSel === 'TODAS');
+            [btnBloque, btnToma].forEach((b) => {
+                if (!b) return;
+                b.style.opacity = b.disabled ? '0.5' : '1';
+                b.style.cursor = b.disabled ? 'not-allowed' : 'pointer';
+            });
+
+            const vista = (document.getElementById('selectVistaPadronCusshmi') || {}).value || 'CON_LICENCIA';
+            const mensajeVacio = vista === 'CON_LICENCIA'
+                ? 'No hay usuarios con Licencia/derecho en el Padrón A-1 de esta comisión.'
+                : 'No hay usuarios con Permiso o sin Licencia en el Padrón A-1 de esta comisión.';
+            tabla.innerHTML = filas.length === 0
+                ? `<div style="text-align:center;color:#888;padding:20px;">${_padronCusshmiFilasBase.length === 0 ? mensajeVacio : 'Ningún usuario coincide con estos filtros.'}</div>`
+                : _htmlTablaEditablePadronCusshmi(filas);
+        }
+
+        function _exportarPadronCusshmiPorBloque() {
+            const bloqueSel = (document.getElementById('selectBloquePadronCusshmi') || {}).value || 'TODOS';
+            if (bloqueSel === 'TODOS') { alert('Elige un Bloque de Riego primero.'); return; }
+            const filas = _padronCusshmiFilasBase.filter((f) => {
+                const bloqueFila = (typeof obtenerBloqueDeToma === 'function' && f.toma_nombre) ? obtenerBloqueDeToma(f.toma_nombre) : '';
+                return (bloqueFila || '').split('/').includes(bloqueSel);
+            });
+            _exportarPadronCusshmi(filas, 'Bloque_' + bloqueSel);
+        }
+
+        function _exportarPadronCusshmiPorToma() {
+            const tomaSel = (document.getElementById('selectTomaPadronCusshmi') || {}).value || 'TODAS';
+            if (tomaSel === 'TODAS') { alert('Elige una Toma primero.'); return; }
+            const filas = _padronCusshmiFilasBase.filter((f) => f.toma_nombre === tomaSel);
+            _exportarPadronCusshmi(filas, 'Toma_' + tomaSel);
+        }
+
+        function _exportarPadronCusshmiGeneral() {
+            _exportarPadronCusshmi(_padronCusshmiFilasBase, 'General');
+        }
+
+        async function _exportarPadronCusshmi(filas, sufijo) {
+            if (!window.ExcelJS) { alert('Librería Excel no disponible'); return; }
+            if (!filas || filas.length === 0) { alert('No hay usuarios para exportar con este filtro.'); return; }
+            try {
+                const fecha = new Date().toISOString().split('T')[0];
+                const wb = new ExcelJS.Workbook();
+                construirHojaFormatoA1(wb, filas, _padronCusshmiEstado.comisionNombre);
+                const vista = (document.getElementById('selectVistaPadronCusshmi') || {}).value || 'CON_LICENCIA';
+                const prefijo = vista === 'CON_LICENCIA' ? 'Formato_A1' : 'Formato_A2_SinLicencia';
+                const nombreArchivo = `${prefijo}_${sufijo}_${_padronCusshmiEstado.comisionKey}_${fecha}.xlsx`.replace(/\s+/g, '_');
+                await _descargarWorkbook(wb, nombreArchivo);
+            } catch (e) {
+                console.error('Error al exportar Padrón CUSSHMI:', e);
+                alert('No se pudo generar el archivo: ' + (e.message || e));
             }
         }
 
@@ -10494,11 +10642,8 @@ const COMISIONES = {
         // de ese usuario con "🗺️ Plano". Los campos vacíos se resaltan en
         // amarillo — no solo al no coincidir "LICENCIA" exacto, sino
         // cualquier dato faltante del Padrón A-1 (área, volumen, toma, etc.).
-        function _htmlTablaEditablePadronCusshmi(filas, mensajeVacio) {
+        function _htmlTablaEditablePadronCusshmi(filas) {
             _padronCusshmiFilasVista = filas || [];
-            if (!_padronCusshmiFilasVista.length) {
-                return `<div style="text-align:center;color:#888;padding:20px;">${mensajeVacio}</div>`;
-            }
             const campoVacio = (v) => v === null || v === undefined || (typeof v === 'string' && !v.trim()) || v === '';
             const filasHtml = _padronCusshmiFilasVista.map((f, idx) => {
                 const bloque = (typeof obtenerBloqueDeToma === 'function' && f.toma_nombre) ? obtenerBloqueDeToma(f.toma_nombre) : '—';
@@ -10513,7 +10658,7 @@ const COMISIONES = {
                 };
                 const acciones = editando
                     ? `<button onclick="_guardarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">💾 Guardar</button>
-                       <button onclick="_cambiarVistaPadronCusshmi()" style="padding:5px 10px;background:#e2e8f0;color:#4a5568;border:none;border-radius:3px;font-size:11px;cursor:pointer;">✖ Cancelar</button>`
+                       <button onclick="_cancelarEdicionFilaPadronCusshmi()" style="padding:5px 10px;background:#e2e8f0;color:#4a5568;border:none;border-radius:3px;font-size:11px;cursor:pointer;">✖ Cancelar</button>`
                     : `<button onclick="_editarFilaPadronCusshmi(${idx})" style="padding:5px 10px;background:#2563a6;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;margin-right:4px;">✏️ Editar</button>
                        <button onclick="_generarPlanoUsuarioPadronCusshmi(${idx})" style="padding:5px 10px;background:#1a6e3c;color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;">🗺️ Plano</button>`;
                 return `
@@ -10556,7 +10701,12 @@ const COMISIONES = {
 
         function _editarFilaPadronCusshmi(idx) {
             _padronCusshmiEditandoIdx = idx;
-            _renderVistaPadronCusshmi();
+            _aplicarFiltrosPadronCusshmi();
+        }
+
+        function _cancelarEdicionFilaPadronCusshmi() {
+            _padronCusshmiEditandoIdx = null;
+            _aplicarFiltrosPadronCusshmi();
         }
 
         async function _guardarFilaPadronCusshmi(idx) {
@@ -10597,7 +10747,7 @@ const COMISIONES = {
             fila.clase_derecho = nuevo.claseDerecho;
             fila.volumen_m3 = nuevo.volumenM3Anio !== '' ? parseFloat(nuevo.volumenM3Anio) : null;
             _padronCusshmiEditandoIdx = null;
-            _renderVistaPadronCusshmi();
+            _aplicarFiltrosPadronCusshmi();
         }
 
         // Genera el plano individual de un usuario del Padrón CUSSHMI
