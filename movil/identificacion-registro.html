@@ -681,6 +681,19 @@
             return (valor || '').toString().trim().toUpperCase().replace(/\s+/g, '');
         }
 
+        // Ventana temporal pedida explícitamente por el usuario (2026-09-18):
+        // durante una semana, un registro YA CONFIRMADO (Formato A-1/Padrón
+        // CUSSHMI vía identificacion_registros, y Formato A-2 Levantamiento)
+        // se puede seguir editando SIN pedirle habilitación al administrador
+        // — incluye "🗺️ Ubicar Este/Norte en el mapa". El campo `confirmado`
+        // en la base de datos no se toca (confirmar/desbloquear siguen
+        // funcionando igual): pasada la fecha, el bloqueo normal vuelve solo,
+        // sin tocar código de nuevo.
+        var LIMITE_EDICION_LIBRE_TEMPORAL = new Date('2026-09-25T23:59:59-05:00');
+        function _edicionLibreTemporalActiva() {
+            return new Date() < LIMITE_EDICION_LIBRE_TEMPORAL;
+        }
+
         // Empareja por unidad catastral (más confiable) y si no por nombre
         // normalizado — mismo criterio ya usado en Seguimiento PDA/Mapa.
         function emparejarConPadronA1(padronA1, unidadCatastral, nombre) {
@@ -1091,7 +1104,7 @@
             actualizarIndicadorClasificacion();
             actualizarAvisoArea();
 
-            var bloqueado = registroActual.confirmado;
+            var bloqueado = registroActual.confirmado && !_edicionLibreTemporalActiva();
             document.getElementById('avisoBloqueadoFormulario').style.display = bloqueado ? 'block' : 'none';
             document.getElementById('estadoGuardadoFormulario').textContent = '';
             document.getElementById('btnContinuarConfirmacion').textContent = bloqueado ? 'Ver confirmación →' : 'Continuar →';
@@ -1154,7 +1167,7 @@
         }
 
         function autoguardar() {
-            if (registroActual.confirmado) return;
+            if (registroActual.confirmado && !_edicionLibreTemporalActiva()) return;
             CusshmiDatos.guardarRegistroIdentificacionDebounced(registroActual, pintarEstadoGuardado);
         }
 
@@ -1208,7 +1221,7 @@
         async function volverABusqueda() {
             // Guarda de inmediato lo tecleado antes de salir — el autoguardado
             // tiene 1s de espera y podría no haber alcanzado a disparar todavía.
-            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+            if (registroActual && (!registroActual.confirmado || _edicionLibreTemporalActiva()) && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
                 await CusshmiDatos.guardarRegistroIdentificacion(registroActual);
             }
             document.getElementById('vistaFormulario').style.display = 'none';
@@ -1251,7 +1264,7 @@
         // la ficha simple (Toma, observación oficial…) sin perder lo ya
         // tecleado en este formulario (autoguardado inmediato antes de salir).
         document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').addEventListener('click', function () {
-            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+            if (registroActual && (!registroActual.confirmado || _edicionLibreTemporalActiva()) && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
                 CusshmiDatos.guardarRegistroIdentificacion(registroActual);
             }
             document.getElementById('vistaFormulario').style.display = 'none';
@@ -1259,7 +1272,7 @@
             _abrirEditorPoligonoPadronCusshmiMovil();
         });
         document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').addEventListener('click', function () {
-            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+            if (registroActual && (!registroActual.confirmado || _edicionLibreTemporalActiva()) && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
                 CusshmiDatos.guardarRegistroIdentificacion(registroActual);
             }
             document.getElementById('vistaFormulario').style.display = 'none';
@@ -1267,7 +1280,7 @@
         });
 
         document.getElementById('btnContinuarConfirmacion').addEventListener('click', async function () {
-            if (!registroActual.confirmado) {
+            if (!registroActual.confirmado || _edicionLibreTemporalActiva()) {
                 if (!registroActual.apellidosNombres || !registroActual.apellidosNombres.trim()) {
                     alert('Ingresa apellidos y nombres antes de continuar.');
                     return;
@@ -1323,7 +1336,7 @@
             html += filaResumen('Observaciones', r.observaciones);
             document.getElementById('resumenRegistro').innerHTML = html;
 
-            var bloqueado = r.confirmado;
+            var bloqueado = r.confirmado && !_edicionLibreTemporalActiva();
             var solicitado = !!r.solicitudEdicion;
             document.getElementById('avisoBloqueadoConfirmacion').style.display = bloqueado ? 'block' : 'none';
             document.getElementById('btnConfirmarGuardar').style.display = bloqueado ? 'none' : 'block';
@@ -1884,7 +1897,7 @@
             elValor.style.cssText = 'background:none; border:none; color:inherit; text-decoration:underline dotted; cursor:pointer; font:inherit; padding:0; text-align:right;';
             elValor.textContent = textoMostrado(valorActual);
             elValor.addEventListener('click', function () {
-                if (registroA2Actual.confirmado) return;
+                if (registroA2Actual.confirmado && !_edicionLibreTemporalActiva()) return;
                 var input;
                 if (campo.tipo === 'seleccion') {
                     input = document.createElement('select');
@@ -1978,7 +1991,7 @@
                 elBadge.style.display = 'none';
             }
 
-            document.getElementById('avisoBloqueadoA2').style.display = r.confirmado ? 'block' : 'none';
+            document.getElementById('avisoBloqueadoA2').style.display = (r.confirmado && !_edicionLibreTemporalActiva()) ? 'block' : 'none';
 
             document.getElementById('datosObservadosA2').innerHTML =
                 filaResumenA2('N° de orden', r.numeroOrden) +
@@ -2006,10 +2019,10 @@
             });
 
             document.getElementById('btnMarcarVerificadoCampoA2').textContent = r.verificadoEnCampo ? '✅ Verificado en campo' : '✅ Marcar verificado en campo';
-            document.getElementById('btnMarcarVerificadoCampoA2').disabled = r.verificadoEnCampo || r.confirmado;
-            document.getElementById('btnGpsA2').disabled = r.confirmado;
+            document.getElementById('btnMarcarVerificadoCampoA2').disabled = r.verificadoEnCampo || (r.confirmado && !_edicionLibreTemporalActiva());
+            document.getElementById('btnGpsA2').disabled = r.confirmado && !_edicionLibreTemporalActiva();
 
-            var bloqueado = r.confirmado;
+            var bloqueado = r.confirmado && !_edicionLibreTemporalActiva();
             var solicitado = !!r.solicitudEdicion;
             document.getElementById('btnConfirmarA2').style.display = bloqueado ? 'none' : 'block';
             document.getElementById('btnSolicitarEdicionA2').style.display = (bloqueado && !esAdmin && !solicitado) ? 'block' : 'none';
@@ -2514,7 +2527,7 @@
         }
 
         function abrirEditorUbicacionA2() {
-            if (!registroA2Actual || registroA2Actual.confirmado) return;
+            if (!registroA2Actual || (registroA2Actual.confirmado && !_edicionLibreTemporalActiva())) return;
             var r = registroA2Actual;
             puntoTempA2 = (r.este != null && r.norte != null && Number.isFinite(Number(r.este)) && Number.isFinite(Number(r.norte)))
                 ? Object.assign(utm17SALatLon(Number(r.este), Number(r.norte)), { easting: Number(r.este), northing: Number(r.norte) })
