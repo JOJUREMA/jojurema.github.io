@@ -1112,13 +1112,17 @@
             var textoVolver = esDesdePadronCusshmi ? '← Volver a Padrón CUSSHMI' : '← Volver a la búsqueda';
             document.getElementById('btnVolverABusqueda').textContent = textoVolver;
             document.getElementById('btnVolverABusquedaAbajo').textContent = textoVolver;
-            // El polígono y los "datos oficiales" (Toma, observación) viven
-            // en padron_oficial_a1 — un usuario nuevo (padronCusshmiFilaActualMovil
-            // aún null, ver abrirFormularioUsuarioNuevoPadronCusshmi) todavía
-            // no tiene esa fila, así que esas dos acciones no aplican hasta
-            // que se confirme y se incorpore.
+            // "Datos oficiales" (Toma, observación) vive en padron_oficial_a1
+            // — un usuario nuevo (padronCusshmiFilaActualMovil aún null, ver
+            // abrirFormularioUsuarioNuevoPadronCusshmi) todavía no tiene esa
+            // fila, así que esa acción puntual no aplica hasta que exista.
+            // El polígono SÍ se ofrece igual para un usuario nuevo — su
+            // propio botón crea esa fila en el momento si hace falta (ver
+            // btnPoligonoDesdeFormularioPadronCusshmi más abajo), porque
+            // levantar el polígono en el momento es justo el caso de uso
+            // más común de "+ Agregar usuario nuevo" en campo.
             var tieneFilaOficialPadronCusshmi = esDesdePadronCusshmi && !!padronCusshmiFilaActualMovil;
-            document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').style.display = tieneFilaOficialPadronCusshmi ? 'block' : 'none';
+            document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').style.display = esDesdePadronCusshmi ? 'block' : 'none';
             document.getElementById('btnDatosOficialesDesdeFormularioPadronCusshmi').style.display = tieneFilaOficialPadronCusshmi ? 'block' : 'none';
             [
                 'inputApellidosNombres', 'selectTipoDocumento', 'inputNumeroDocumento', 'inputUnidadCatastral',
@@ -1263,9 +1267,57 @@
         // pintarFormularioDesdeRegistro) — saltan al editor de polígono o a
         // la ficha simple (Toma, observación oficial…) sin perder lo ya
         // tecleado en este formulario (autoguardado inmediato antes de salir).
-        document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').addEventListener('click', function () {
+        document.getElementById('btnPoligonoDesdeFormularioPadronCusshmi').addEventListener('click', async function () {
             if (registroActual && (!registroActual.confirmado || _edicionLibreTemporalActiva()) && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
-                CusshmiDatos.guardarRegistroIdentificacion(registroActual);
+                await CusshmiDatos.guardarRegistroIdentificacion(registroActual);
+            }
+            if (!padronCusshmiFilaActualMovil) {
+                // "+ Agregar usuario nuevo" (ver abrirFormularioUsuarioNuevoPadronCusshmi):
+                // todavía no hay fila en padron_oficial_a1 donde guardar el
+                // polígono — se crea acá mismo (mismo upsert idempotente por
+                // UC que ya usa "✔ Confirmar y guardar" para incorporar un
+                // usuario nuevo A-2), en vez de obligar a confirmar primero
+                // y volver después solo para poder dibujar.
+                if (!registroActual.apellidosNombres || !registroActual.apellidosNombres.trim()) {
+                    alert('Ingresa Apellidos y Nombres antes de dibujar el polígono.');
+                    return;
+                }
+                if (!registroActual.unidadCatastral || !registroActual.unidadCatastral.trim()) {
+                    alert('Ingresa la Unidad Catastral (UC) antes de dibujar el polígono — es la clave con la que se guarda.');
+                    return;
+                }
+                var incorporado = await CusshmiDatos.incorporarUsuarioNuevoAPadronOficialA1({
+                    comisionKey: comisionKeyActual,
+                    apellidosNombres: registroActual.apellidosNombres,
+                    tipoDocumento: registroActual.tipoDocumento,
+                    numeroDocumento: registroActual.numeroDocumento,
+                    unidadCatastral: registroActual.unidadCatastral,
+                    areaTotalHa: registroActual.areaTotalHa,
+                    areaBajoRiegoHa: registroActual.areaBajoRiegoHa,
+                    tipoUso: registroActual.tipoUso,
+                    canalDerivacion: registroActual.canalDerivacion,
+                    fuenteAgua: registroActual.fuenteAgua,
+                    cutExpediente: registroActual.cutExpediente,
+                    tomaNombre: registroActual.tomaNombre,
+                });
+                if (!incorporado.ok) { alert('No se pudo preparar el registro para el polígono: ' + (incorporado.error || 'error desconocido')); return; }
+                padronCusshmiFilaActualMovil = {
+                    apellidos_nombres: registroActual.apellidosNombres,
+                    unidad_catastral: registroActual.unidadCatastral,
+                    toma_nombre: registroActual.tomaNombre,
+                    tipo_documento: registroActual.tipoDocumento,
+                    numero_documento: registroActual.numeroDocumento,
+                    area_total_ha: registroActual.areaTotalHa !== '' ? parseFloat(registroActual.areaTotalHa) : null,
+                    area_bajo_riego_ha: registroActual.areaBajoRiegoHa !== '' ? parseFloat(registroActual.areaBajoRiegoHa) : null,
+                    tipo_uso: registroActual.tipoUso,
+                    canal_derivacion: registroActual.canalDerivacion,
+                    fuente_agua: registroActual.fuenteAgua,
+                    cut_expediente: registroActual.cutExpediente,
+                    clase_derecho: null,
+                    volumen_m3: null,
+                    origen: 'campo',
+                    vertices_utm: null,
+                };
             }
             document.getElementById('vistaFormulario').style.display = 'none';
             origenEditorPoligonoPadronCusshmiMovil = 'formulario';
