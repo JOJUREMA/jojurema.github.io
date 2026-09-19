@@ -11172,6 +11172,8 @@ const COMISIONES = {
         // Padrón A-1, tenga o no un registro de Formato A-2.
         let _mapaEditorPoligonoPadronCusshmi = null; // instancia Leaflet — se crea UNA vez y se reutiliza entre aperturas
         let _editorPoligonoPadronCusshmi = null; // { fila, vertices, capaPoligono, marcadores, capaBloqueRiego, bloqueRiegoVisible }
+        let _predioSeleccionadoPadronCusshmi = null; // predio del KML tocado en "Ver bloque de riego", mostrado en la barra lateral
+        let _capaPredioSeleccionadoPadronCusshmi = null; // su capa Leaflet, para restaurar el estilo al deseleccionar
 
         function _construirEditorPoligonoPadronCusshmiSiHaceFalta() {
             if (document.getElementById('modalEditorPoligonoPadronCusshmi')) return;
@@ -11182,11 +11184,23 @@ const COMISIONES = {
                         <span id="tituloEditorPoligonoPadronCusshmi" style="font-weight:600;font-size:13px;"></span>
                         <button id="btnGuardarEditorPoligonoPadronCusshmi" style="padding:7px 12px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">💾 Guardar Polígono</button>
                     </div>
-                    <div id="mapaEditorPoligonoPadronCusshmi" style="flex:1;"></div>
+                    <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+                        <div id="mapaEditorPoligonoPadronCusshmi" style="flex:1;min-width:0;"></div>
+                        <!-- Barra lateral con la info del predio tocado en "Ver bloque
+                             de riego" — reemplaza el confirm() de antes: ahora se puede
+                             ver de quién es cada predio antes de decidir "Usar este
+                             polígono", igual que ya se hizo en la versión móvil. -->
+                        <div id="barraLateralPredioPadronCusshmi" style="display:none;width:300px;flex-shrink:0;background:#00234d;color:#fff;padding:16px;overflow-y:auto;border-left:1px solid rgba(255,255,255,0.15);box-sizing:border-box;">
+                            <h4 style="margin:0 0 12px;font-size:13px;color:#9ad8ff;">📍 Predio seleccionado</h4>
+                            <div id="textoInfoPredioPadronCusshmi" style="font-size:12.5px;line-height:1.8;margin-bottom:16px;"></div>
+                            <button id="btnUsarPredioSeleccionadoPadronCusshmi" style="width:100%;padding:9px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;margin-bottom:8px;">✅ Usar este polígono</button>
+                            <button id="btnCerrarInfoPredioPadronCusshmi" style="width:100%;padding:9px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">✕ Cerrar</button>
+                        </div>
+                    </div>
                     <div style="background:#00234d;color:#fff;padding:10px 16px;display:flex;flex-direction:column;gap:8px;">
                         <div id="estadoEditorPoligonoPadronCusshmi" style="font-size:12px;color:#cfe0f5;"></div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button id="btnBloqueRiegoEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗺️ Ver bloque de riego (clic en un predio para adoptarlo)</button>
+                            <button id="btnBloqueRiegoEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗺️ Ver bloque de riego (clic en un predio para ver sus datos)</button>
                             <button id="btnDeshacerEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">↩️ Deshacer último punto</button>
                             <button id="btnBorrarEditorPoligonoPadronCusshmi" style="padding:8px 14px;background:#8b2c2c;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗑️ Borrar polígono</button>
                         </div>
@@ -11210,6 +11224,8 @@ const COMISIONES = {
                 _redibujarEditorPoligonoPadronCusshmi();
             });
             document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi').addEventListener('click', _toggleBloqueRiegoEditorPoligonoPadronCusshmi);
+            document.getElementById('btnUsarPredioSeleccionadoPadronCusshmi').addEventListener('click', _usarPredioSeleccionadoPadronCusshmi);
+            document.getElementById('btnCerrarInfoPredioPadronCusshmi').addEventListener('click', _cerrarInfoPredioSeleccionadoPadronCusshmi);
         }
 
         function _iniciarMapaEditorPoligonoPadronCusshmiSiHaceFalta() {
@@ -11274,7 +11290,8 @@ const COMISIONES = {
 
             document.getElementById('tituloEditorPoligonoPadronCusshmi').textContent = '📐 Polígono — ' + fila.apellidos_nombres;
             const btnBloque = document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi');
-            if (btnBloque) btnBloque.textContent = '🗺️ Ver bloque de riego (clic en un predio para adoptarlo)';
+            if (btnBloque) btnBloque.textContent = '🗺️ Ver bloque de riego (clic en un predio para ver sus datos)';
+            _cerrarInfoPredioSeleccionadoPadronCusshmi();
             const modal = document.getElementById('modalEditorPoligonoPadronCusshmi');
             modal.style.display = 'flex';
             _iniciarMapaEditorPoligonoPadronCusshmiSiHaceFalta();
@@ -11330,7 +11347,7 @@ const COMISIONES = {
             const el = document.getElementById('estadoEditorPoligonoPadronCusshmi');
             if (!estado || !el) return;
             if (estado.vertices.length === 0) {
-                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para adoptar el predio de este usuario con un clic.';
+                el.textContent = 'Toca el mapa para poner el primer vértice, o abre "Ver bloque de riego" para ver y adoptar el predio de este usuario.';
             } else if (estado.vertices.length < 3) {
                 el.textContent = estado.vertices.length + ' punto(s) — hacen falta al menos 3 para formar un polígono.';
             } else {
@@ -11346,7 +11363,8 @@ const COMISIONES = {
             if (estado.bloqueRiegoVisible) {
                 if (estado.capaBloqueRiego) { _mapaEditorPoligonoPadronCusshmi.removeLayer(estado.capaBloqueRiego); estado.capaBloqueRiego = null; }
                 estado.bloqueRiegoVisible = false;
-                if (btn) btn.textContent = '🗺️ Ver bloque de riego (clic en un predio para adoptarlo)';
+                if (btn) btn.textContent = '🗺️ Ver bloque de riego (clic en un predio para ver sus datos)';
+                _cerrarInfoPredioSeleccionadoPadronCusshmi();
                 return;
             }
             const predios = await _obtenerPrediosBloqueRiegoLevantamientoA2Esc(estado.fila.toma_nombre);
@@ -11354,9 +11372,17 @@ const COMISIONES = {
             const capas = predios.map((p) => {
                 const latlngs = p.coordenadas.map((par) => [par[1], par[0]]);
                 const poligono = L.polygon(latlngs, { color: '#00bcd4', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.25, interactive: true });
-                poligono.on('click', () => _adoptarPoligonoBloqueRiegoPadronCusshmi(p));
-                poligono.on('mouseover', () => poligono.setStyle({ weight: 3.5 }));
-                poligono.on('mouseout', () => poligono.setStyle({ weight: 1.5 }));
+                // stopPropagation es la parte clave: sin esto, el click en el
+                // predio también le llega al mapa (Leaflet hace bubbling de
+                // los eventos de los Path por defecto) y el handler de click
+                // del mapa terminaba agregando un vértice nuevo de paso —
+                // mismo bug ya corregido en la versión móvil.
+                poligono.on('click', (e) => {
+                    L.DomEvent.stopPropagation(e);
+                    _seleccionarPredioBloqueRiegoPadronCusshmi(p, poligono);
+                });
+                poligono.on('mouseover', () => { if (poligono !== _capaPredioSeleccionadoPadronCusshmi) poligono.setStyle({ weight: 3.5 }); });
+                poligono.on('mouseout', () => { if (poligono !== _capaPredioSeleccionadoPadronCusshmi) poligono.setStyle({ weight: 1.5 }); });
                 poligono.bindTooltip(nombreUsuarioPlanoA2(p.usuario) + (p.catastralKey ? (' — UC ' + p.catastralKey) : ''), { sticky: true });
                 return poligono;
             });
@@ -11365,20 +11391,62 @@ const COMISIONES = {
             if (btn) btn.textContent = '🗺️ Ocultar bloque de riego (' + predios.length + ' predios)';
         }
 
-        function _adoptarPoligonoBloqueRiegoPadronCusshmi(p) {
+        // Área a mostrar del predio del KML: el atributo AREA_HA del propio
+        // KML si trae un valor real; si no (o viene en 0), se calcula del
+        // polígono tal cual está dibujado.
+        function _areaHaPredioBloqueRiegoPadronCusshmi(p) {
+            if (p.areaHa && p.areaHa > 0) return p.areaHa;
+            if (!p.coordenadas || p.coordenadas.length < 3) return 0;
+            const vertices = p.coordenadas.map(([lon, lat]) => {
+                const utm = latLonAUtm17S(lat, lon);
+                return { easting: utm.easting, northing: utm.northing };
+            });
+            return (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(vertices) : 0;
+        }
+
+        // Clic en un predio del bloque de riego → lo resalta y muestra su
+        // información (titular, UC, área, toma/lateral) en la barra
+        // lateral, con "✅ Usar este polígono" como acción aparte — a
+        // diferencia de antes (que adoptaba de una con un confirm()), ahora
+        // se puede ver primero de quién es cada predio antes de decidir.
+        function _seleccionarPredioBloqueRiegoPadronCusshmi(p, capa) {
+            if (_capaPredioSeleccionadoPadronCusshmi && _capaPredioSeleccionadoPadronCusshmi !== capa) {
+                _capaPredioSeleccionadoPadronCusshmi.setStyle({ color: '#00bcd4', weight: 1.5, fillOpacity: 0.25 });
+            }
+            capa.setStyle({ color: '#ffeb3b', weight: 3.5, fillOpacity: 0.4 });
+            _capaPredioSeleccionadoPadronCusshmi = capa;
+            _predioSeleccionadoPadronCusshmi = p;
+
+            document.getElementById('textoInfoPredioPadronCusshmi').innerHTML =
+                '<strong>Titular:</strong> ' + escapeHtml(nombreUsuarioPlanoA2(p.usuario) || '—') + '<br>' +
+                '<strong>Unidad Catastral:</strong> ' + escapeHtml(p.catastralKey || '—') + '<br>' +
+                '<strong>Área (KML):</strong> ' + _areaHaPredioBloqueRiegoPadronCusshmi(p).toFixed(2) + ' ha<br>' +
+                '<strong>Toma / Lateral:</strong> ' + escapeHtml(p.toma || '—') + (p.lateral ? (' / ' + escapeHtml(p.lateral)) : '');
+            document.getElementById('barraLateralPredioPadronCusshmi').style.display = 'block';
+            setTimeout(() => { if (_mapaEditorPoligonoPadronCusshmi) _mapaEditorPoligonoPadronCusshmi.invalidateSize(); }, 50);
+        }
+
+        function _cerrarInfoPredioSeleccionadoPadronCusshmi() {
+            if (_capaPredioSeleccionadoPadronCusshmi) {
+                _capaPredioSeleccionadoPadronCusshmi.setStyle({ color: '#00bcd4', weight: 1.5, fillOpacity: 0.25 });
+            }
+            _capaPredioSeleccionadoPadronCusshmi = null;
+            _predioSeleccionadoPadronCusshmi = null;
+            const barra = document.getElementById('barraLateralPredioPadronCusshmi');
+            if (barra) barra.style.display = 'none';
+            setTimeout(() => { if (_mapaEditorPoligonoPadronCusshmi) _mapaEditorPoligonoPadronCusshmi.invalidateSize(); }, 50);
+        }
+
+        function _usarPredioSeleccionadoPadronCusshmi() {
             const estado = _editorPoligonoPadronCusshmi;
-            if (!estado) return;
-            const nombrePredio = nombreUsuarioPlanoA2(p.usuario);
-            const yaTenia = estado.vertices.length >= 3;
-            const mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
-                ' del bloque de riego para ' + estado.fila.apellidos_nombres + '?' +
-                (yaTenia ? '\n\n⚠️ Ya hay un polígono en edición — se reemplazará por el del predio elegido.' : '');
-            if (!confirm(mensaje)) return;
+            const p = _predioSeleccionadoPadronCusshmi;
+            if (!estado || !p) return;
             estado.vertices = p.coordenadas.map((par) => {
                 const utm = latLonAUtm17S(par[1], par[0]);
                 return { easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0] };
             });
             _redibujarEditorPoligonoPadronCusshmi();
+            _cerrarInfoPredioSeleccionadoPadronCusshmi();
         }
 
         async function _guardarEditorPoligonoPadronCusshmi() {
@@ -11404,6 +11472,7 @@ const COMISIONES = {
         }
 
         function _cerrarEditorPoligonoPadronCusshmi() {
+            _cerrarInfoPredioSeleccionadoPadronCusshmi();
             const modal = document.getElementById('modalEditorPoligonoPadronCusshmi');
             if (modal) modal.style.display = 'none';
         }
