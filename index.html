@@ -9210,6 +9210,7 @@ const COMISIONES = {
                             <span><i style="display:inline-block;width:14px;height:3px;background:#ffff00;vertical-align:middle;"></i> L4</span>
                             <span><i style="display:inline-block;width:14px;height:3px;background:#000;vertical-align:middle;"></i> L5</span>
                             <span style="color:#9ad8ff;">▭ predios (toca uno para ver sus datos)</span>
+                            <span style="color:#e91e8c;">┅ 👁️ usuarios observados con polígono propio</span>
                         </div>
                         <div id="controlesModoPuntoLevantamientoA2Esc" style="display:flex;gap:8px;">
                             <button id="btnMedirAreaLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">📐 Medir área (opcional)</button>
@@ -9666,6 +9667,49 @@ const COMISIONES = {
                 _agregarLineaConEtiquetaBloqueEsc(d.geom.coords, estiloDren.color, nombreDren, 'canal');
             });
 
+            // Polígonos YA CREADOS/medidos de OTROS usuarios observados
+            // (formato_a2_levantamiento, formatoA2RowsBloqueEsc ya cargado
+            // arriba para la clasificación de Derecho) — a pedido explícito
+            // del usuario, se muestran junto al bloque de riego para que
+            // sirvan de referencia (o se puedan adoptar igual que un predio
+            // del KML) sin salir de este editor. Excluye el registro que se
+            // está editando ahora mismo (su propio polígono, si tiene, ya
+            // se ve aparte como capa de referencia en modo punto).
+            const observadosConPoligonoBloqueEsc = formatoA2RowsBloqueEsc.filter((fila) =>
+                fila.toma_nombre === tomaNombre &&
+                fila.id !== _levantamientoA2Estado.registroActual.id &&
+                Array.isArray(fila.vertices_utm) && fila.vertices_utm.length >= 3
+            );
+            observadosConPoligonoBloqueEsc.forEach((fila) => {
+                const latlngsObservado = fila.vertices_utm.slice()
+                    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+                    .map((v) => [v.lat, v.lon]);
+                if (latlngsObservado.length < 3) return;
+                const poligonoObservado = L.polygon(latlngsObservado, { color: '#e91e8c', weight: 2, dashArray: '6,4', fillColor: '#e91e8c', fillOpacity: 0.22, interactive: true });
+                const predioAdaptadoObservado = {
+                    usuario: fila.apellidos_nombres,
+                    catastralKey: fila.unidad_catastral,
+                    toma: fila.toma_nombre,
+                    lateral: '',
+                    areaHa: (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(fila.vertices_utm) : 0,
+                    coordenadas: fila.vertices_utm.map((v) => [v.lon, v.lat]),
+                };
+                const clasifObservado = { colorInfo: { etiqueta: '👁️ USUARIO OBSERVADO — polígono propio', fill: '#f3b8dd' }, matchInfo: fila };
+                poligonoObservado.on('click', (evClicObservado) => {
+                    if (_modoEditorLevantamientoA2Esc === 'area') {
+                        _verticesAreaTempLevantamientoA2Esc.push(_construirVerticeAreaLevantamientoA2Esc(evClicObservado.latlng.lat, evClicObservado.latlng.lng));
+                        _redibujarAreaEditorLevantamientoA2Esc();
+                        return;
+                    }
+                    L.DomEvent.stopPropagation(evClicObservado);
+                    _seleccionarPredioBloqueRiegoLevantamientoA2Esc(predioAdaptadoObservado, poligonoObservado, clasifObservado);
+                });
+                poligonoObservado.on('mouseover', () => { if (poligonoObservado !== _capaPredioSeleccionadoLevantamientoA2Esc) poligonoObservado.setStyle({ weight: 4 }); });
+                poligonoObservado.on('mouseout', () => { if (poligonoObservado !== _capaPredioSeleccionadoLevantamientoA2Esc) poligonoObservado.setStyle({ weight: 2 }); });
+                poligonoObservado.bindTooltip('👁️ ' + escapeHtml(nombreUsuarioPlanoA2(fila.apellidos_nombres)), { sticky: true });
+                capas.push(poligonoObservado);
+            });
+
             _capaBloqueRiegoEditorLevantamientoA2Esc = L.layerGroup(capas).addTo(_mapaEditorLevantamientoA2Esc);
             // Recién ahora existen los elementos DOM de cada tooltip (se crean al
             // agregar la capa al mapa) — se cachean para no volver a buscarlos en
@@ -9688,8 +9732,10 @@ const COMISIONES = {
             _actualizarEtiquetasBloqueA2Esc();
             if (leyenda) leyenda.style.display = 'flex';
             if (btn) {
-                const totalFiguras = prediosValidosBloqueEsc.length + canalesParaDibujoBloqueEsc.length + drenesBloqueEsc.length;
-                btn.textContent = '🗺️ Ocultar bloque de riego' + (totalFiguras ? ' (' + prediosValidosBloqueEsc.length + ' predios, ' + canalesParaDibujoBloqueEsc.length + ' canales, ' + drenesBloqueEsc.length + ' drenes)' : ' (sin datos para esta toma)');
+                const totalFiguras = prediosValidosBloqueEsc.length + canalesParaDibujoBloqueEsc.length + drenesBloqueEsc.length + observadosConPoligonoBloqueEsc.length;
+                btn.textContent = '🗺️ Ocultar bloque de riego' + (totalFiguras
+                    ? ' (' + prediosValidosBloqueEsc.length + ' predios, ' + canalesParaDibujoBloqueEsc.length + ' canales, ' + drenesBloqueEsc.length + ' drenes, ' + observadosConPoligonoBloqueEsc.length + ' observados)'
+                    : ' (sin datos para esta toma)');
             }
         }
 
