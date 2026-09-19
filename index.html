@@ -9577,16 +9577,20 @@ const COMISIONES = {
                 // interrumpe el trazado manual.
                 const poligono = L.polygon(latlngs, { color: colorBordeBloqueEsc, weight: 1.5, fillColor: colorRellenoBloqueEsc, fillOpacity: 0.3, interactive: true });
                 poligono.on('click', (evClicBloqueEsc) => {
+                    // stopPropagation es la parte clave en AMBOS modos: sin
+                    // esto, el click en el predio también le llega al mapa
+                    // (Leaflet hace bubbling de los eventos de los Path por
+                    // defecto) y el handler de click del mapa terminaba
+                    // agregando UN SEGUNDO vértice de paso en modo "área"
+                    // (dos puntos por un solo clic) — mismo bug ya
+                    // corregido en Padrón CUSSHMI y en la versión móvil,
+                    // acá hacía falta también en la rama de modo "área".
+                    L.DomEvent.stopPropagation(evClicBloqueEsc);
                     if (_modoEditorLevantamientoA2Esc === 'area') {
                         _verticesAreaTempLevantamientoA2Esc.push(_construirVerticeAreaLevantamientoA2Esc(evClicBloqueEsc.latlng.lat, evClicBloqueEsc.latlng.lng));
                         _redibujarAreaEditorLevantamientoA2Esc();
                         return;
                     }
-                    // stopPropagation es la parte clave: sin esto, el click en el
-                    // predio también le llega al mapa (Leaflet hace bubbling de
-                    // los eventos de los Path por defecto) — mismo bug ya
-                    // corregido en Padrón CUSSHMI y en la versión móvil.
-                    L.DomEvent.stopPropagation(evClicBloqueEsc);
                     _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, poligono, clasifBloqueEsc);
                 });
                 poligono.on('mouseover', () => { if (poligono !== _capaPredioSeleccionadoLevantamientoA2Esc) poligono.setStyle({ weight: 3.5 }); });
@@ -9696,12 +9700,12 @@ const COMISIONES = {
                 };
                 const clasifObservado = { colorInfo: { etiqueta: '👁️ USUARIO OBSERVADO — polígono propio', fill: '#f3b8dd' }, matchInfo: fila };
                 poligonoObservado.on('click', (evClicObservado) => {
+                    L.DomEvent.stopPropagation(evClicObservado);
                     if (_modoEditorLevantamientoA2Esc === 'area') {
                         _verticesAreaTempLevantamientoA2Esc.push(_construirVerticeAreaLevantamientoA2Esc(evClicObservado.latlng.lat, evClicObservado.latlng.lng));
                         _redibujarAreaEditorLevantamientoA2Esc();
                         return;
                     }
-                    L.DomEvent.stopPropagation(evClicObservado);
                     _seleccionarPredioBloqueRiegoLevantamientoA2Esc(predioAdaptadoObservado, poligonoObservado, clasifObservado);
                 });
                 poligonoObservado.on('mouseover', () => { if (poligonoObservado !== _capaPredioSeleccionadoLevantamientoA2Esc) poligonoObservado.setStyle({ weight: 4 }); });
