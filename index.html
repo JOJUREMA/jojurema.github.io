@@ -9140,6 +9140,8 @@ const COMISIONES = {
         let _capaPoligonoExistenteLevantamientoA2Esc = null; // capa Leaflet de solo referencia (azul), no interactiva
         let _capaBloqueRiegoEditorLevantamientoA2Esc = null; // L.layerGroup con los predios + canales del bloque de riego de la toma
         let _bloqueRiegoActivoLevantamientoA2Esc = false;
+        let _predioSeleccionadoLevantamientoA2Esc = null; // predio del KML tocado en "Ver bloque de riego", mostrado en la barra lateral
+        let _capaPredioSeleccionadoLevantamientoA2Esc = null; // su capa Leaflet, para restaurar el estilo al deseleccionar
         const _prediosBloqueRiegoCacheLevantamientoA2Esc = {}; // cache por toma
         const _canalesBloqueRiegoCacheLevantamientoA2Esc = {}; // cache por toma de los canales (mapas/inventario_gis/canal_lateral.json)
         let _canalesInventarioGisTodosA2Esc = null; // el .json completo, descargado una sola vez
@@ -9184,7 +9186,20 @@ const COMISIONES = {
                         <span id="tituloEditorLevantamientoA2Esc" style="font-weight:600;">Ubicación (Este/Norte)</span>
                         <button id="btnFinalizarEditorLevantamientoA2Esc" style="padding:7px 12px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">✔ Finalizar</button>
                     </div>
-                    <div id="mapaEditorLevantamientoA2Esc" style="flex:1;"></div>
+                    <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+                        <div id="mapaEditorLevantamientoA2Esc" style="flex:1;min-width:0;"></div>
+                        <!-- Barra lateral con la info del predio tocado en "Ver bloque
+                             de riego" — reemplaza el confirm() de antes: ahora se puede
+                             ver de quién es cada predio antes de decidir "Usar este
+                             polígono como área", igual que en el editor de Padrón
+                             CUSSHMI y en la versión móvil. -->
+                        <div id="barraLateralPredioLevantamientoA2Esc" style="display:none;width:300px;flex-shrink:0;background:#00234d;color:#fff;padding:16px;overflow-y:auto;border-left:1px solid rgba(255,255,255,0.15);box-sizing:border-box;">
+                            <h4 style="margin:0 0 12px;font-size:13px;color:#9ad8ff;">📍 Predio seleccionado</h4>
+                            <div id="textoInfoPredioLevantamientoA2Esc" style="font-size:12.5px;line-height:1.8;margin-bottom:16px;"></div>
+                            <button id="btnUsarPredioSeleccionadoLevantamientoA2Esc" style="width:100%;padding:9px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;margin-bottom:8px;">✅ Usar este polígono como área</button>
+                            <button id="btnCerrarInfoPredioLevantamientoA2Esc" style="width:100%;padding:9px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">✕ Cerrar</button>
+                        </div>
+                    </div>
                     <div style="background:#00234d;color:#fff;padding:10px 16px;display:flex;flex-direction:column;gap:8px;">
                         <div id="estadoEditorLevantamientoA2Esc" style="font-size:12px;color:#cfe0f5;"></div>
                         <button id="btnBloqueRiegoLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;align-self:flex-start;">🗺️ Ver bloque de riego</button>
@@ -9194,7 +9209,7 @@ const COMISIONES = {
                             <span><i style="display:inline-block;width:14px;height:3px;background:#4ce600;vertical-align:middle;"></i> L3</span>
                             <span><i style="display:inline-block;width:14px;height:3px;background:#ffff00;vertical-align:middle;"></i> L4</span>
                             <span><i style="display:inline-block;width:14px;height:3px;background:#000;vertical-align:middle;"></i> L5</span>
-                            <span style="color:#9ad8ff;">▭ predios (toca uno para usar su polígono en este registro)</span>
+                            <span style="color:#9ad8ff;">▭ predios (toca uno para ver sus datos)</span>
                         </div>
                         <div id="controlesModoPuntoLevantamientoA2Esc" style="display:flex;gap:8px;">
                             <button id="btnMedirAreaLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">📐 Medir área (opcional)</button>
@@ -9219,6 +9234,8 @@ const COMISIONES = {
 
             document.getElementById('btnCerrarEditorLevantamientoA2Esc').addEventListener('click', _cerrarEditorUbicacionLevantamientoA2Esc);
             document.getElementById('btnBloqueRiegoLevantamientoA2Esc').addEventListener('click', _toggleBloqueRiegoEditorLevantamientoA2Esc);
+            document.getElementById('btnUsarPredioSeleccionadoLevantamientoA2Esc').addEventListener('click', _usarPredioSeleccionadoLevantamientoA2Esc);
+            document.getElementById('btnCerrarInfoPredioLevantamientoA2Esc').addEventListener('click', _cerrarInfoPredioSeleccionadoLevantamientoA2Esc);
             document.getElementById('btnFinalizarEditorLevantamientoA2Esc').addEventListener('click', function () {
                 if (!_puntoTempLevantamientoA2Esc) { alert('Haz clic en el mapa para colocar el punto antes de finalizar.'); return; }
                 const r = _levantamientoA2Estado.registroActual;
@@ -9317,24 +9334,65 @@ const COMISIONES = {
             return canales;
         }
 
+        // Área a mostrar del predio del KML: el atributo AREA_HA del propio
+        // KML si trae un valor real; si no (o viene en 0), se calcula del
+        // polígono tal cual está dibujado.
+        function _areaHaPredioBloqueRiegoLevantamientoA2Esc(p) {
+            if (p.areaHa && p.areaHa > 0) return p.areaHa;
+            if (!p.coordenadas || p.coordenadas.length < 3) return 0;
+            const vertices = p.coordenadas.map(([lon, lat]) => {
+                const utm = latLonAUtm17S(lat, lon);
+                return { easting: utm.easting, northing: utm.northing };
+            });
+            return (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(vertices) : 0;
+        }
+
         // Clic sobre un predio del bloque de riego (KML oficial) mientras se
         // está editando la ubicación/área de un registro observado del
-        // Formato A-2: si ESE predio ya mapeado es en realidad el mismo que
-        // el usuario observado, se adopta su polígono tal cual como el área
-        // del registro — evita volver a medirlo a mano cuando ya existe en
-        // la base gráfica. Mismo formato de vertices_utm y misma función de
-        // guardado (_guardarCampoLevantamientoA2Esc) que "Cerrar polígono"
-        // (modo área) e Importar Polígonos (KML/KMZ), origen:'bloque_riego'
-        // para distinguirlo de 'manual'/'kml_importado' en el dato guardado.
-        function _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc(p) {
+        // Formato A-2 → lo resalta y muestra su información (titular, UC,
+        // área, toma/lateral) en la barra lateral, con "✅ Usar este polígono
+        // como área" como acción aparte — a diferencia de antes (que
+        // adoptaba de una con un confirm()), ahora se puede ver primero de
+        // quién es cada predio antes de decidir. Si ESE predio ya mapeado es
+        // en realidad el mismo que el usuario observado, se evita volver a
+        // medirlo a mano cuando ya existe en la base gráfica.
+        function _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, capa) {
+            if (_capaPredioSeleccionadoLevantamientoA2Esc && _capaPredioSeleccionadoLevantamientoA2Esc !== capa) {
+                _capaPredioSeleccionadoLevantamientoA2Esc.setStyle({ weight: 1.5 });
+            }
+            capa.setStyle({ weight: 3.5 });
+            _capaPredioSeleccionadoLevantamientoA2Esc = capa;
+            _predioSeleccionadoLevantamientoA2Esc = p;
+
+            document.getElementById('textoInfoPredioLevantamientoA2Esc').innerHTML =
+                '<strong>Titular:</strong> ' + escapeHtml(nombreUsuarioPlanoA2(p.usuario) || '—') + '<br>' +
+                '<strong>Unidad Catastral:</strong> ' + escapeHtml(p.catastralKey || '—') + '<br>' +
+                '<strong>Área (KML):</strong> ' + _areaHaPredioBloqueRiegoLevantamientoA2Esc(p).toFixed(2) + ' ha<br>' +
+                '<strong>Toma / Lateral:</strong> ' + escapeHtml(p.toma || '—') + (p.lateral ? (' / ' + escapeHtml(p.lateral)) : '');
+            document.getElementById('barraLateralPredioLevantamientoA2Esc').style.display = 'block';
+            setTimeout(() => { if (_mapaEditorLevantamientoA2Esc) _mapaEditorLevantamientoA2Esc.invalidateSize(); }, 50);
+        }
+
+        function _cerrarInfoPredioSeleccionadoLevantamientoA2Esc() {
+            if (_capaPredioSeleccionadoLevantamientoA2Esc) {
+                _capaPredioSeleccionadoLevantamientoA2Esc.setStyle({ weight: 1.5 });
+            }
+            _capaPredioSeleccionadoLevantamientoA2Esc = null;
+            _predioSeleccionadoLevantamientoA2Esc = null;
+            const barra = document.getElementById('barraLateralPredioLevantamientoA2Esc');
+            if (barra) barra.style.display = 'none';
+            setTimeout(() => { if (_mapaEditorLevantamientoA2Esc) _mapaEditorLevantamientoA2Esc.invalidateSize(); }, 50);
+        }
+
+        // Mismo formato de vertices_utm y misma función de guardado
+        // (_guardarCampoLevantamientoA2Esc) que "Cerrar polígono" (modo
+        // área) e Importar Polígonos (KML/KMZ), origen:'bloque_riego' para
+        // distinguirlo de 'manual'/'kml_importado' en el dato guardado.
+        function _usarPredioSeleccionadoLevantamientoA2Esc() {
             const r = _levantamientoA2Estado.registroActual;
-            if (!r) return;
+            const p = _predioSeleccionadoLevantamientoA2Esc;
+            if (!r || !p) return;
             const nombrePredio = nombreUsuarioPlanoA2(p.usuario);
-            const yaTenia = Array.isArray(r.verticesUtm) && r.verticesUtm.length >= 3;
-            const mensaje = '¿Usar el polígono de "' + nombrePredio + '"' + (p.catastralKey ? ' (UC ' + p.catastralKey + ')' : '') +
-                ' del bloque de riego como el área de este registro observado?' +
-                (yaTenia ? '\n\n⚠️ Este registro ya tiene un polígono guardado — se reemplazará por el del predio elegido.' : '');
-            if (!confirm(mensaje)) return;
 
             const verticesParaGuardar = p.coordenadas.map((par, idx) => {
                 const utm = latLonAUtm17S(par[1], par[0]); // p.coordenadas viene [lon,lat] (parsearKmlATomas)
@@ -9347,6 +9405,7 @@ const COMISIONES = {
             // guardado) en modo punto para que se vea el cambio sin cerrar
             // el editor.
             if (_modoEditorLevantamientoA2Esc === 'punto') _redibujarPuntoEditorLevantamientoA2Esc();
+            _cerrarInfoPredioSeleccionadoLevantamientoA2Esc();
             alert('✅ Polígono de "' + nombrePredio + '" guardado como el área de este registro.');
         }
 
@@ -9400,6 +9459,7 @@ const COMISIONES = {
                 _entradasEtiquetasBloqueA2Esc = [];
                 if (btn) btn.textContent = '🗺️ Ver bloque de riego';
                 if (leyenda) leyenda.style.display = 'none';
+                _cerrarInfoPredioSeleccionadoLevantamientoA2Esc();
                 return;
             }
             if (btn) btn.textContent = '🗺️ Cargando bloque de riego…';
@@ -9488,10 +9548,15 @@ const COMISIONES = {
                         _redibujarAreaEditorLevantamientoA2Esc();
                         return;
                     }
-                    _adoptarPoligonoBloqueRiegoComoAreaLevantamientoA2Esc(p);
+                    // stopPropagation es la parte clave: sin esto, el click en el
+                    // predio también le llega al mapa (Leaflet hace bubbling de
+                    // los eventos de los Path por defecto) — mismo bug ya
+                    // corregido en Padrón CUSSHMI y en la versión móvil.
+                    L.DomEvent.stopPropagation(evClicBloqueEsc);
+                    _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, poligono);
                 });
-                poligono.on('mouseover', () => poligono.setStyle({ weight: 3.5 }));
-                poligono.on('mouseout', () => poligono.setStyle({ weight: 1.5 }));
+                poligono.on('mouseover', () => { if (poligono !== _capaPredioSeleccionadoLevantamientoA2Esc) poligono.setStyle({ weight: 3.5 }); });
+                poligono.on('mouseout', () => { if (poligono !== _capaPredioSeleccionadoLevantamientoA2Esc) poligono.setStyle({ weight: 1.5 }); });
                 // Ángulo Y longitud reales (metros) del lado más largo del predio
                 // (assets/core/mapa.js) — el ángulo orienta la etiqueta paralela a
                 // ese lado; la longitud decide, en cada zoom, qué tamaño de fuente
@@ -9723,6 +9788,7 @@ const COMISIONES = {
             if (btnBloqueRiego) btnBloqueRiego.textContent = '🗺️ Ver bloque de riego';
             const leyendaBloqueRiego = document.getElementById('leyendaBloqueRiegoLevantamientoA2Esc');
             if (leyendaBloqueRiego) leyendaBloqueRiego.style.display = 'none';
+            _cerrarInfoPredioSeleccionadoLevantamientoA2Esc();
             document.getElementById('modalEditorUbicacionLevantamientoA2Esc').style.display = 'flex';
             _inicializarMapaEditorLevantamientoA2EscSiHaceFalta();
             _cambiarModoEditorLevantamientoA2Esc('punto');
@@ -9731,6 +9797,7 @@ const COMISIONES = {
         }
 
         function _cerrarEditorUbicacionLevantamientoA2Esc() {
+            _cerrarInfoPredioSeleccionadoLevantamientoA2Esc();
             const editor = document.getElementById('modalEditorUbicacionLevantamientoA2Esc');
             if (editor) editor.style.display = 'none';
             if (_levantamientoA2Estado.registroActual) _renderizarFichaLevantamientoA2Esc();
