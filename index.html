@@ -9347,16 +9347,53 @@ const COMISIONES = {
             return (typeof calcularAreaPoligonoHa === 'function') ? calcularAreaPoligonoHa(vertices) : 0;
         }
 
+        // Arma el HTML de la barra lateral con TODO lo que se sepa del
+        // predio: lo propio del KML (titular, UC, área, toma/lateral), la
+        // clasificación de Derecho ya calculada para colorearlo en el mapa
+        // (con licencia / A2 dentro o fuera del bloque / sin registro,
+        // clasificarDerechoPredioA2 en assets/core/planoPrediosA2.js), y —
+        // si hay una fila emparejada (matchInfo, del Padrón A-1 o del
+        // Formato A-2) — los campos que existan: clase de derecho, N° de
+        // resolución, volumen, tipo de uso, etc. Cada campo solo se muestra
+        // si tiene valor real, para no llenar la barra de "—".
+        function _construirInfoPredioLevantamientoA2Esc(p, clasif) {
+            let html = '<strong>Titular:</strong> ' + escapeHtml(nombreUsuarioPlanoA2(p.usuario) || '—') + '<br>' +
+                '<strong>Unidad Catastral:</strong> ' + escapeHtml(p.catastralKey || '—') + '<br>' +
+                '<strong>Área (KML):</strong> ' + _areaHaPredioBloqueRiegoLevantamientoA2Esc(p).toFixed(2) + ' ha<br>' +
+                '<strong>Toma / Lateral:</strong> ' + escapeHtml(p.toma || '—') + (p.lateral ? (' / ' + escapeHtml(p.lateral)) : '');
+
+            if (clasif && clasif.colorInfo) {
+                html += '<div style="margin:12px 0;padding:6px 10px;border-radius:4px;background:' + clasif.colorInfo.fill + ';color:#1a1a1a;font-weight:700;font-size:11.5px;text-align:center;">' + escapeHtml(clasif.colorInfo.etiqueta) + '</div>';
+            }
+
+            const m = clasif ? clasif.matchInfo : null;
+            if (m) {
+                const filas = [];
+                if (m.clase_derecho) filas.push(['Clase de derecho', m.clase_derecho]);
+                if (m.numero_resolucion) filas.push(['N° Resolución', m.numero_resolucion]);
+                if (m.volumen_m3 != null && m.volumen_m3 !== '') filas.push(['Volumen', Number(m.volumen_m3).toFixed(2) + ' m³']);
+                if (m.tipo_uso) filas.push(['Tipo de uso', m.tipo_uso]);
+                if (m.area_total_ha != null && m.area_total_ha !== '') filas.push(['Área total (padrón)', Number(m.area_total_ha).toFixed(2) + ' ha']);
+                if (m.cut_expediente) filas.push(['CUT expediente', m.cut_expediente]);
+                if (m.se_ubica_bloque) filas.push(['Ubicación (Formato A-2)', m.se_ubica_bloque]);
+                if (m.observacion) filas.push(['Observación', m.observacion]);
+                if (filas.length) {
+                    html += filas.map(([et, val]) => '<strong>' + escapeHtml(et) + ':</strong> ' + escapeHtml(String(val))).join('<br>') + '<br>';
+                }
+            }
+            return html;
+        }
+
         // Clic sobre un predio del bloque de riego (KML oficial) mientras se
         // está editando la ubicación/área de un registro observado del
-        // Formato A-2 → lo resalta y muestra su información (titular, UC,
-        // área, toma/lateral) en la barra lateral, con "✅ Usar este polígono
-        // como área" como acción aparte — a diferencia de antes (que
-        // adoptaba de una con un confirm()), ahora se puede ver primero de
-        // quién es cada predio antes de decidir. Si ESE predio ya mapeado es
-        // en realidad el mismo que el usuario observado, se evita volver a
-        // medirlo a mano cuando ya existe en la base gráfica.
-        function _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, capa) {
+        // Formato A-2 → lo resalta y muestra toda su información en la
+        // barra lateral, con "✅ Usar este polígono como área" como acción
+        // aparte — a diferencia de antes (que adoptaba de una con un
+        // confirm()), ahora se puede ver primero de quién es cada predio
+        // antes de decidir. Si ESE predio ya mapeado es en realidad el
+        // mismo que el usuario observado, se evita volver a medirlo a mano
+        // cuando ya existe en la base gráfica.
+        function _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, capa, clasif) {
             if (_capaPredioSeleccionadoLevantamientoA2Esc && _capaPredioSeleccionadoLevantamientoA2Esc !== capa) {
                 _capaPredioSeleccionadoLevantamientoA2Esc.setStyle({ weight: 1.5 });
             }
@@ -9364,11 +9401,7 @@ const COMISIONES = {
             _capaPredioSeleccionadoLevantamientoA2Esc = capa;
             _predioSeleccionadoLevantamientoA2Esc = p;
 
-            document.getElementById('textoInfoPredioLevantamientoA2Esc').innerHTML =
-                '<strong>Titular:</strong> ' + escapeHtml(nombreUsuarioPlanoA2(p.usuario) || '—') + '<br>' +
-                '<strong>Unidad Catastral:</strong> ' + escapeHtml(p.catastralKey || '—') + '<br>' +
-                '<strong>Área (KML):</strong> ' + _areaHaPredioBloqueRiegoLevantamientoA2Esc(p).toFixed(2) + ' ha<br>' +
-                '<strong>Toma / Lateral:</strong> ' + escapeHtml(p.toma || '—') + (p.lateral ? (' / ' + escapeHtml(p.lateral)) : '');
+            document.getElementById('textoInfoPredioLevantamientoA2Esc').innerHTML = _construirInfoPredioLevantamientoA2Esc(p, clasif);
             document.getElementById('barraLateralPredioLevantamientoA2Esc').style.display = 'block';
             setTimeout(() => { if (_mapaEditorLevantamientoA2Esc) _mapaEditorLevantamientoA2Esc.invalidateSize(); }, 50);
         }
@@ -9553,7 +9586,7 @@ const COMISIONES = {
                     // los eventos de los Path por defecto) — mismo bug ya
                     // corregido en Padrón CUSSHMI y en la versión móvil.
                     L.DomEvent.stopPropagation(evClicBloqueEsc);
-                    _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, poligono);
+                    _seleccionarPredioBloqueRiegoLevantamientoA2Esc(p, poligono, clasifBloqueEsc);
                 });
                 poligono.on('mouseover', () => { if (poligono !== _capaPredioSeleccionadoLevantamientoA2Esc) poligono.setStyle({ weight: 3.5 }); });
                 poligono.on('mouseout', () => { if (poligono !== _capaPredioSeleccionadoLevantamientoA2Esc) poligono.setStyle({ weight: 1.5 }); });
