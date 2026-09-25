@@ -1401,10 +1401,6 @@
                 🕓 Elegir otra semana (mes/año)
             </button>
 
-            <button class="btn btn-secondary" onclick="mostrarHistorialSemanasPDA()" style="margin-top: 10px; width: 80%; background:#1a6e3c; color:white;" title="Semanas con programación ya guardada en este navegador">
-                🕒 Historial — Semanas ya trabajadas
-            </button>
-
             <button class="btn btn-secondary" onclick="cerrarModalSemana()" style="margin-top: 10px; width: 80%;">
                 ❌ Cancelar
             </button>
@@ -17278,15 +17274,15 @@ function cerrarModalGrupos() {
     tomaPendiente = null;
 }
 
-// Botón "Anexo G2" del modal "Seleccionar Toma": abre el G2 de la semana en curso si ya
-// hay tomas programadas, o avisa en vez de dejar una pantalla en blanco.
+// Botón "Anexo G2" del modal "Seleccionar Toma": antes solo mostraba el G2
+// de lo que hubiera en memoria en ese momento (normalmente la semana
+// AUTOMÁTICA que calcula "Programar PDA", casi nunca la que el usuario
+// realmente ya trabajó) — a pedido explícito, ahora abre el mismo listado
+// de "semanas ya trabajadas" para elegir cuál visualizar, en vez de
+// depender de qué semana haya quedado cargada.
 function abrirAnexoG2DesdeSelectorToma() {
-    if (!consolidadoDemandas || consolidadoDemandas.length === 0) {
-        alert('No existe información programada para generar el Anexo G2 de la semana seleccionada.');
-        return;
-    }
     cerrarModalGrupos();
-    mostrarAnexoG2();
+    mostrarHistorialSemanasPDA();
 }
 
 function generarAvanceSiembraPorGrupo(tomasGrupo, nombreGrupo) {
