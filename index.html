@@ -6764,6 +6764,12 @@ const COMISIONES = {
                 orientacion: datosPlano.orientacionInicial || 'horizontal',
                 bboxOverride: null,
                 zoomPoligonoAltoMult: 1,
+                // 'auto' = comportamiento de siempre (esquina superior
+                // derecha, o izquierda si el polígono resaltado cae en la
+                // mitad derecha del mapa); 'izquierda'/'derecha' fuerza la
+                // esquina a pedido explícito del usuario, sin importar
+                // dónde caiga el polígono.
+                posicionCajas: 'auto',
                 filtros: {
                     derecho: new Set(categoriasDerechoPresentes),
                     canalOrdenes: new Set(ordenesCanalPresentes),
@@ -6837,6 +6843,19 @@ const COMISIONES = {
                             <span id="estadoVistaPreviaPlanoA2" style="font-size:12px;color:#666;"></span>
                         </div>
 
+                        ${(datosPlano.usuarioResaltado || (datosPlano.esAmbitoObservados && hayObservadosA2Plano)) ? `
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 14px;background:#f4f6f9;border:1px solid #dde3ea;border-radius:6px;flex-wrap:wrap;">
+                            <span style="font-size:12px;font-weight:700;color:#003876;white-space:nowrap;">📍 Cuadros de datos</span>
+                            <div style="display:flex;">
+                                <button id="btnCajasAutoPlanoA2" onclick="_cambiarPosicionCajasPlanoA2('auto')"
+                                    style="${estiloBotonOrient}border-radius:4px 0 0 4px;border-right:none;font-size:12px;padding:7px 12px;">Automático</button>
+                                <button id="btnCajasIzquierdaPlanoA2" onclick="_cambiarPosicionCajasPlanoA2('izquierda')"
+                                    style="${estiloBotonOrient}border-right:none;font-size:12px;padding:7px 12px;">⬅ Izquierda</button>
+                                <button id="btnCajasDerechaPlanoA2" onclick="_cambiarPosicionCajasPlanoA2('derecha')"
+                                    style="${estiloBotonOrient}border-radius:0 4px 4px 0;font-size:12px;padding:7px 12px;">➡ Derecha</button>
+                            </div>
+                        </div>` : ''}
+
                         ${datosPlano.usuarioResaltado ? `
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 14px;background:#f4f6f9;border:1px solid #dde3ea;border-radius:6px;">
                             <label for="sliderAltoZoomPoligonoPlanoA2" style="font-size:12px;font-weight:700;color:#003876;white-space:nowrap;">📐 Alto del recuadro "Polígono (Zoom)"</label>
@@ -6884,6 +6903,7 @@ const COMISIONES = {
                 usuariosObservadosA2: estado.filtros.mostrarObservadosA2 ? estado.datosPlano.usuariosObservadosA2Candidatos : null,
                 usuariosObservadosA2Completos: estado.datosPlano.usuariosObservadosA2Candidatos,
                 zoomPoligonoAltoMult: estado.zoomPoligonoAltoMult,
+                posicionCajas: estado.posicionCajas,
             }));
             estado.canvas = resultado.canvas;
             estado.bbox = resultado.bbox;
@@ -6916,6 +6936,13 @@ const COMISIONES = {
             const btnVertical = document.getElementById('btnOrientVerticalPlanoA2');
             if (btnHorizontal) { btnHorizontal.style.background = estado.orientacion === 'horizontal' ? '#003876' : 'white'; btnHorizontal.style.color = estado.orientacion === 'horizontal' ? 'white' : '#003876'; }
             if (btnVertical) { btnVertical.style.background = estado.orientacion === 'vertical' ? '#003876' : 'white'; btnVertical.style.color = estado.orientacion === 'vertical' ? 'white' : '#003876'; }
+            [['btnCajasAutoPlanoA2', 'auto'], ['btnCajasIzquierdaPlanoA2', 'izquierda'], ['btnCajasDerechaPlanoA2', 'derecha']].forEach(([id, valor]) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                const activo = (estado.posicionCajas || 'auto') === valor;
+                btn.style.background = activo ? '#003876' : 'white';
+                btn.style.color = activo ? 'white' : '#003876';
+            });
             const btnAreaCompleta = document.getElementById('btnAreaCompletaPlanoA2');
             if (btnAreaCompleta) btnAreaCompleta.style.display = estado.bboxOverride ? 'inline-block' : 'none';
             const btnRecortar = document.getElementById('btnRecortarAreaPlanoA2');
@@ -6959,6 +6986,20 @@ const COMISIONES = {
         function _cambiarOrientacionVistaPreviaPlanoA2(orientacion) {
             if (!_previaPlanoA2Estado) return;
             _previaPlanoA2Estado.orientacion = orientacion;
+            _regenerarVistaPreviaPlanoA2();
+        }
+
+        // Fuerza la esquina de los cuadros de datos ("Datos del predio",
+        // "Coordenadas del centroide", "Polígono Observado (zoom)", tabla
+        // de Usuarios Observados A2) a pedido explícito — a diferencia del
+        // comportamiento 'auto' (que solo decide entre las 2 esquinas de
+        // arriba mirando dónde cae el polígono resaltado), el usuario
+        // puede necesitar la otra esquina por otro motivo (ej. un canal o
+        // un predio que le interesa mostrar completo, no solo el
+        // resaltado) — ver posicionCajas en _dibujarPlanoPrediosA2Canvas.
+        function _cambiarPosicionCajasPlanoA2(posicion) {
+            if (!_previaPlanoA2Estado) return;
+            _previaPlanoA2Estado.posicionCajas = posicion;
             _regenerarVistaPreviaPlanoA2();
         }
 
@@ -7089,7 +7130,7 @@ const COMISIONES = {
 
         // Dibuja el plano completo en un <canvas> nuevo y lo devuelve (sin
         // agregarlo al DOM — solo se usa para generar el PDF).
-        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null, zoomPoligonoAltoMult = 1, esAmbitoObservados = false }) {
+        async function _dibujarPlanoPrediosA2Canvas({ predios, canales, canalesTroncales, padronA1Rows, formatoA2Rows, tomaNombre, comisionKey, conSatelite, conMembrete, usuarioResaltado, usuariosObservadosA2 = null, usuariosObservadosA2Completos = null, orientacion = 'horizontal', bboxOverride = null, prediosCompletos = null, canalesCompletos = null, zoomPoligonoAltoMult = 1, esAmbitoObservados = false, posicionCajas = 'auto' }) {
             // ~A3 a 150dpi — vertical simplemente intercambia ancho/alto,
             // así todo lo que ya recibe ANCHO/ALTO_MAPA como parámetro
             // (membrete, grilla, leyenda, escala, cajas) se reacomoda solo.
@@ -7713,16 +7754,27 @@ const COMISIONES = {
             //    la práctica solo una de las 2 primeras (resaltado vs. tabla
             //    de observados) suele estar activa a la vez).
             const ANCHO_CAJA_DATOS = 460;
-            // Las cajas de datos van por defecto en la esquina superior
-            // derecha, pero si el polígono resaltado cae en la mitad
-            // derecha del mapa, se pasan a la esquina superior izquierda —
-            // a pedido explícito de que los cuadros no "pisen" el polígono
-            // que están describiendo. Abajo siempre queda libre para la
-            // leyenda (izquierda) y la escala (derecha), así que solo se
-            // elige entre las 2 esquinas de arriba.
+            // Las cajas de datos van por defecto ('auto') en la esquina
+            // superior derecha, pero si el polígono resaltado cae en la
+            // mitad derecha del mapa, se pasan a la esquina superior
+            // izquierda — para que no "pisen" el polígono que están
+            // describiendo. 'izquierda'/'derecha' (posicionCajas, elegido
+            // a mano en la vista previa — a pedido explícito de poder
+            // elegir dónde van los cuadros) fuerza la esquina sin importar
+            // dónde caiga el polígono, por si el motivo para cambiarla es
+            // otro (ej. un canal o predio que el usuario quiere ver
+            // completo). Abajo siempre queda libre para la leyenda
+            // (izquierda) y la escala (derecha), así que solo se elige
+            // entre las 2 esquinas de arriba.
             let xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
             let cajasALaIzquierda = false;
-            if (usuarioResaltado) {
+            if (posicionCajas === 'izquierda') {
+                xCajaDatos = MARGEN + 15;
+                cajasALaIzquierda = true;
+            } else if (posicionCajas === 'derecha') {
+                xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
+                cajasALaIzquierda = false;
+            } else if (usuarioResaltado) {
                 const centroideParaUbicar = (typeof calcularCentroidePoligono === 'function')
                     ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
                     : null;
