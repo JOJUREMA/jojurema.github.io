@@ -7485,45 +7485,68 @@ const COMISIONES = {
 
             // 6a) Canales primero — reservan su espacio con prioridad sobre
             //     los predios (mismo criterio visual de siempre: rótulo
-            //     sobre una "píldora" del color del canal, en el punto medio
-            //     de su tramo más largo).
+            //     sobre una "píldora" del color del canal).
+            //
+            //     Antes se probaba SOLO el tramo recto más largo de todo el
+            //     canal (medirEtiquetaPlanoA2) — para un lateral que
+            //     serpentea mucho (varias decenas de vértices, común en
+            //     L3/L4), ese tramo "más largo" muchas veces igual es
+            //     corto, y un nombre largo ("CANAL MATILDO CHIROQUE") ahí
+            //     da una fuente por debajo del piso legible (6.5px) y el
+            //     canal entero se quedaba sin ninguna etiqueta, aunque el
+            //     resto de su trazo sí tuviera tramos más largos donde SÍ
+            //     entraría bien. Ahora se prueban varios tramos (los más
+            //     largos primero), y en cada uno varias posiciones
+            //     perpendiculares (por si choca con una etiqueta vecina),
+            //     hasta encontrar el primero que sirva.
             canalesParaDibujo.forEach((c, idx) => {
                 const nombreCanal = (c.campos && c.campos.NOMBRE) || c.nombre || '';
                 if (!nombreCanal) return;
-                const medida = medirEtiquetaPlanoA2(_coordsVisiblesPlanoA2(c.geom.coords), false, proyector.proyectar);
-                if (medida.longitudPx < 12 || !medida.centroPx) return;
-                let fuente = calcularFuenteParaAncho(medida.longitudPx, 1, Math.max(nombreCanal.length, 1));
-                if (fuente < 6.5) return;
-                fuente = Math.min(fuente, 10);
-                ctx.font = '700 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
-                const anchoTexto = ctx.measureText(nombreCanal).width;
-                const padX = fuente * 0.55, padY = fuente * 0.3;
-                const wPildora = anchoTexto + padX * 2, hPildora = fuente + padY * 2;
-                const anguloRad = medida.anguloCss * Math.PI / 180; // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
-                // Un canal L3/L4 que corre pegado y casi paralelo a su
-                // L1/L2 (corredor compartido, muy común) caía siempre en el
-                // mismo punto medio que un canal YA etiquetado, chocaba, y
-                // se omitía por completo — un lateral entero se quedaba sin
-                // nombre visible en todo el plano. Antes de rendirse, se
-                // prueba desplazar la píldora perpendicular a la línea unos
-                // pasos a cada lado (0 = la posición original de siempre).
-                const dirCanalX = Math.cos(anguloRad), dirCanalY = Math.sin(anguloRad);
-                const perpCanalX = -dirCanalY, perpCanalY = dirCanalX;
-                const OFFSETS_ETIQUETA_CANAL_PLANO_A2 = [0, 16, -16, 30, -30, 46, -46];
-                let bboxCanal = null, centroEtiquetaCanal = null;
-                for (let k = 0; k < OFFSETS_ETIQUETA_CANAL_PLANO_A2.length; k++) {
-                    const offK = OFFSETS_ETIQUETA_CANAL_PLANO_A2[k];
-                    const centroCand = [medida.centroPx[0] + perpCanalX * offK, medida.centroPx[1] + perpCanalY * offK];
-                    const bboxCand = _bboxTextoRotadoPlanoA2(centroCand[0], centroCand[1], wPildora, hPildora, anguloRad);
-                    if (!_colisionaConOcupadosPlanoA2(bboxCand, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2)) {
-                        bboxCanal = bboxCand; centroEtiquetaCanal = centroCand; break;
-                    }
+                const puntosCanalPx = latlngsCanalPx[idx];
+                if (!puntosCanalPx || puntosCanalPx.length < 2) return;
+                const tramosCanal = [];
+                for (let i = 0; i < puntosCanalPx.length - 1; i++) {
+                    const p1 = puntosCanalPx[i], p2 = puntosCanalPx[i + 1];
+                    const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
+                    const longitudPx = Math.sqrt(dx * dx + dy * dy);
+                    if (longitudPx < 12) continue;
+                    let anguloDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+                    if (anguloDeg > 90) anguloDeg -= 180; else if (anguloDeg < -90) anguloDeg += 180;
+                    tramosCanal.push({ longitudPx, centroPx: [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2], anguloCss: anguloDeg });
                 }
-                if (!bboxCanal) return; // ninguna posición cercana entra sin pisar otra etiqueta: se omite
-                rectangulosOcupadosPlanoA2.push(bboxCanal);
+                tramosCanal.sort((a, b) => b.longitudPx - a.longitudPx);
+
                 const orden = (c.campos && c.campos.ORDEN) || '';
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
-                dibujarEtiquetaPildoraPlanoA2(ctx, centroEtiquetaCanal, anguloRad, nombreCanal, colorLinea, fuente);
+                const OFFSETS_ETIQUETA_CANAL_PLANO_A2 = [0, 16, -16, 30, -30];
+
+                for (let t = 0; t < Math.min(tramosCanal.length, 6); t++) {
+                    const tramo = tramosCanal[t];
+                    let fuente = calcularFuenteParaAncho(tramo.longitudPx, 1, Math.max(nombreCanal.length, 1));
+                    if (fuente < 6.5) continue; // este tramo no alcanza para un tamaño legible: probar el siguiente
+                    fuente = Math.min(fuente, 10);
+                    ctx.font = '700 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
+                    const anchoTexto = ctx.measureText(nombreCanal).width;
+                    const padX = fuente * 0.55, padY = fuente * 0.3;
+                    const wPildora = anchoTexto + padX * 2, hPildora = fuente + padY * 2;
+                    const anguloRad = tramo.anguloCss * Math.PI / 180;
+                    const dirCanalX = Math.cos(anguloRad), dirCanalY = Math.sin(anguloRad);
+                    const perpCanalX = -dirCanalY, perpCanalY = dirCanalX;
+                    let bboxCanal = null, centroEtiquetaCanal = null;
+                    for (let k = 0; k < OFFSETS_ETIQUETA_CANAL_PLANO_A2.length; k++) {
+                        const offK = OFFSETS_ETIQUETA_CANAL_PLANO_A2[k];
+                        const centroCand = [tramo.centroPx[0] + perpCanalX * offK, tramo.centroPx[1] + perpCanalY * offK];
+                        const bboxCand = _bboxTextoRotadoPlanoA2(centroCand[0], centroCand[1], wPildora, hPildora, anguloRad);
+                        if (!_colisionaConOcupadosPlanoA2(bboxCand, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2)) {
+                            bboxCanal = bboxCand; centroEtiquetaCanal = centroCand; break;
+                        }
+                    }
+                    if (!bboxCanal) continue; // este tramo no tiene ninguna posición libre: probar el siguiente tramo
+                    rectangulosOcupadosPlanoA2.push(bboxCanal);
+                    dibujarEtiquetaPildoraPlanoA2(ctx, centroEtiquetaCanal, anguloRad, nombreCanal, colorLinea, fuente);
+                    return; // ya se colocó la etiqueta de este canal, seguir con el siguiente
+                }
+                // ningún tramo (ni con las posiciones cercanas) sirvió: se omite, igual que antes
             });
             if (!esAmbitoObservados) _dibujarObservadosA2EtiquetasPlanoA2();
 
@@ -7587,12 +7610,33 @@ const COMISIONES = {
                     // ahí compactar a solo el identificador o rendirse.
                     const dirPredioX = Math.cos(anguloRad), dirPredioY = Math.sin(anguloRad);
                     const perpPredioX = -dirPredioY, perpPredioY = dirPredioX;
-                    const OFFSETS_ETIQUETA_PREDIO_PLANO_A2 = [[0, 0], [0, 18], [0, -18], [22, 0], [-22, 0], [22, 18], [-22, 18], [22, -18], [-22, -18]];
+                    // Pasos chicos primero (sobre todo perpendiculares — el
+                    // ancho angosto de una parcela en hilera es la
+                    // dimensión más restrictiva) y recién después los más
+                    // grandes, para tener la mejor chance de encontrar un
+                    // punto libre SIN salir de un predio angosto.
+                    const OFFSETS_ETIQUETA_PREDIO_PLANO_A2 = [
+                        [0, 0], [0, 6], [0, -6], [0, 10], [0, -10], [0, 14], [0, -14], [0, 18], [0, -18],
+                        [10, 0], [-10, 0], [16, 0], [-16, 0], [22, 0], [-22, 0],
+                        [10, 8], [-10, 8], [10, -8], [-10, -8], [16, 10], [-16, 10], [16, -10], [-16, -10],
+                    ];
+                    // Un desplazamiento que escapa la colisión pero cae
+                    // FUERA del propio polígono (frecuente en una parcela
+                    // angosta) se lee como si la etiqueta fuera de un predio
+                    // vecino — exactamente el reporte de "dos UC para un
+                    // mismo polígono". Por eso TODO candidato debe caer
+                    // DENTRO del polígono del propio predio
+                    // (verticesPxPredio) — a diferencia del canal (línea sin
+                    // "adentro"), acá no hay respaldo fuera del polígono: es
+                    // mejor omitir la etiqueta que dejarla flotando sobre un
+                    // predio vecino.
+                    const verticesPxPredio = verticesUtmPredio.map((v) => proyector.proyectar(v.easting, v.northing));
                     function _colocarEtiquetaPredioConOffsets(lineas) {
                         for (let k = 0; k < OFFSETS_ETIQUETA_PREDIO_PLANO_A2.length; k++) {
                             const [alongOff, perpOff] = OFFSETS_ETIQUETA_PREDIO_PLANO_A2[k];
                             const cx = centroPx[0] + dirPredioX * alongOff + perpPredioX * perpOff;
                             const cy = centroPx[1] + dirPredioY * alongOff + perpPredioY * perpOff;
+                            if (!_puntoDentroPoligonoPlanoA2(cx, cy, verticesPxPredio)) continue;
                             const bboxCand = intentarColocar(lineas, cx, cy);
                             if (bboxCand) return { bbox: bboxCand, cx, cy };
                         }

@@ -388,6 +388,24 @@ function _colisionaConOcupadosPlanoA2(rect, ocupados, tolerancia) {
     return ocupados.some((o) => _seSolapanBBoxPlanoA2(rect, o, tolerancia));
 }
 
+// true si el punto (x,y) cae dentro del polígono `poligonoPx` (array de
+// [x,y] en píxeles) — ray casting estándar. Usado para que una etiqueta
+// de predio, al desplazarse buscando un lugar libre, no termine flotando
+// fuera de SU PROPIO polígono (donde puede leerse como si perteneciera a
+// un predio vecino) — el centroide geométrico de un polígono cóncavo o
+// muy angosto puede además caer fuera de su propia forma, así que esta
+// misma función también sirve para detectar ese caso desde el arranque.
+function _puntoDentroPoligonoPlanoA2(x, y, poligonoPx) {
+    let dentro = false;
+    for (let i = 0, j = poligonoPx.length - 1; i < poligonoPx.length; j = i++) {
+        const xi = poligonoPx[i][0], yi = poligonoPx[i][1];
+        const xj = poligonoPx[j][0], yj = poligonoPx[j][1];
+        const cruza = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (cruza) dentro = !dentro;
+    }
+    return dentro;
+}
+
 // Mayor número "redondo" (1, 2 o 5 × una potencia de 10, en metros) que
 // cabe dentro de `anchoDeseadoPx * metrosPorPx` sin excederlo — para que
 // la barra de escala gráfica del plano represente una distancia legible
