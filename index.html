@@ -7500,12 +7500,30 @@ const COMISIONES = {
                 const padX = fuente * 0.55, padY = fuente * 0.3;
                 const wPildora = anchoTexto + padX * 2, hPildora = fuente + padY * 2;
                 const anguloRad = medida.anguloCss * Math.PI / 180; // anguloCss ya viene en convención "clockwise, y hacia abajo" — igual a ctx.rotate(), sin negar
-                const bboxCanal = _bboxTextoRotadoPlanoA2(medida.centroPx[0], medida.centroPx[1], wPildora, hPildora, anguloRad);
-                if (_colisionaConOcupadosPlanoA2(bboxCanal, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2)) return;
+                // Un canal L3/L4 que corre pegado y casi paralelo a su
+                // L1/L2 (corredor compartido, muy común) caía siempre en el
+                // mismo punto medio que un canal YA etiquetado, chocaba, y
+                // se omitía por completo — un lateral entero se quedaba sin
+                // nombre visible en todo el plano. Antes de rendirse, se
+                // prueba desplazar la píldora perpendicular a la línea unos
+                // pasos a cada lado (0 = la posición original de siempre).
+                const dirCanalX = Math.cos(anguloRad), dirCanalY = Math.sin(anguloRad);
+                const perpCanalX = -dirCanalY, perpCanalY = dirCanalX;
+                const OFFSETS_ETIQUETA_CANAL_PLANO_A2 = [0, 16, -16, 30, -30, 46, -46];
+                let bboxCanal = null, centroEtiquetaCanal = null;
+                for (let k = 0; k < OFFSETS_ETIQUETA_CANAL_PLANO_A2.length; k++) {
+                    const offK = OFFSETS_ETIQUETA_CANAL_PLANO_A2[k];
+                    const centroCand = [medida.centroPx[0] + perpCanalX * offK, medida.centroPx[1] + perpCanalY * offK];
+                    const bboxCand = _bboxTextoRotadoPlanoA2(centroCand[0], centroCand[1], wPildora, hPildora, anguloRad);
+                    if (!_colisionaConOcupadosPlanoA2(bboxCand, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2)) {
+                        bboxCanal = bboxCand; centroEtiquetaCanal = centroCand; break;
+                    }
+                }
+                if (!bboxCanal) return; // ninguna posición cercana entra sin pisar otra etiqueta: se omite
                 rectangulosOcupadosPlanoA2.push(bboxCanal);
                 const orden = (c.campos && c.campos.ORDEN) || '';
                 const colorLinea = COLOR_POR_ORDEN_CANAL_PLANO_A2[orden] || '#666666';
-                dibujarEtiquetaPildoraPlanoA2(ctx, medida.centroPx, anguloRad, nombreCanal, colorLinea, fuente);
+                dibujarEtiquetaPildoraPlanoA2(ctx, centroEtiquetaCanal, anguloRad, nombreCanal, colorLinea, fuente);
             });
             if (!esAmbitoObservados) _dibujarObservadosA2EtiquetasPlanoA2();
 
@@ -7553,25 +7571,46 @@ const COMISIONES = {
                     const anguloRad = medida.anguloCss * Math.PI / 180;
                     const alturaLinea = fuente * 1.15;
 
-                    const intentarColocar = (lineas) => {
+                    const intentarColocar = (lineas, cx, cy) => {
                         const anchoMax = lineas.reduce((max, l) => Math.max(max, ctx.measureText(l).width), 0);
                         const alto = lineas.length * alturaLinea;
-                        const bbox = _bboxTextoRotadoPlanoA2(centroPx[0], centroPx[1], anchoMax, alto, anguloRad);
+                        const bbox = _bboxTextoRotadoPlanoA2(cx, cy, anchoMax, alto, anguloRad);
                         return _colisionaConOcupadosPlanoA2(bbox, rectangulosOcupadosPlanoA2, GAP_ETIQUETAS_PLANO_A2) ? null : bbox;
                     };
+                    // Antes, un choque con la etiqueta de un vecino
+                    // descartaba el predio entero (sin nombre NI UC) aunque
+                    // el propio polígono tuviera espacio de sobra un poco
+                    // más al costado del centroide exacto — frecuente en
+                    // parcelas angostas en hilera. Se prueba primero el
+                    // centro de siempre y, si choca, unos pasos cerca de él
+                    // (a lo largo y a lo ancho del predio) antes de recién
+                    // ahí compactar a solo el identificador o rendirse.
+                    const dirPredioX = Math.cos(anguloRad), dirPredioY = Math.sin(anguloRad);
+                    const perpPredioX = -dirPredioY, perpPredioY = dirPredioX;
+                    const OFFSETS_ETIQUETA_PREDIO_PLANO_A2 = [[0, 0], [0, 18], [0, -18], [22, 0], [-22, 0], [22, 18], [-22, 18], [22, -18], [-22, -18]];
+                    function _colocarEtiquetaPredioConOffsets(lineas) {
+                        for (let k = 0; k < OFFSETS_ETIQUETA_PREDIO_PLANO_A2.length; k++) {
+                            const [alongOff, perpOff] = OFFSETS_ETIQUETA_PREDIO_PLANO_A2[k];
+                            const cx = centroPx[0] + dirPredioX * alongOff + perpPredioX * perpOff;
+                            const cy = centroPx[1] + dirPredioY * alongOff + perpPredioY * perpOff;
+                            const bboxCand = intentarColocar(lineas, cx, cy);
+                            if (bboxCand) return { bbox: bboxCand, cx, cy };
+                        }
+                        return null;
+                    }
 
                     const lineasCompletas = textoIdentificador ? lineasNombre.concat([textoIdentificador]) : lineasNombre;
                     let lineas = lineasCompletas;
-                    let bbox = intentarColocar(lineas);
-                    if (!bbox && textoIdentificador) {
+                    let colocado = _colocarEtiquetaPredioConOffsets(lineas);
+                    if (!colocado && textoIdentificador) {
                         lineas = [textoIdentificador]; // no entra completo: compactar al identificador mínimo (UC, o el área en A2-Fuera Bloque/Sin Registro)
-                        bbox = intentarColocar(lineas);
+                        colocado = _colocarEtiquetaPredioConOffsets(lineas);
                     }
-                    if (!bbox) return; // ni la versión compacta entra sin pisar a un vecino: se omite
+                    if (!colocado) return; // ni la versión compacta entra cerca del centroide sin pisar a un vecino: se omite
 
-                    rectangulosOcupadosPlanoA2.push(bbox);
+                    rectangulosOcupadosPlanoA2.push(colocado.bbox);
                     ctx.save();
-                    ctx.translate(centroPx[0], centroPx[1]);
+                    ctx.translate(colocado.cx, colocado.cy);
                     ctx.rotate(anguloRad);
                     ctx.fillStyle = '#002b52';
                     if (lineas.length === 1) {
