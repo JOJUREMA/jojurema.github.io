@@ -338,6 +338,50 @@ function medirEtiquetaPlanoA2(puntosLatLon, cerrado, proyectarFn) {
     return { anguloCss, longitudPx, centroPx };
 }
 
+// Tramos "cuasi-rectos" de una polilínea ya proyectada a píxeles
+// (`puntosPx`, [[x,y],...]) — un canal lateral real casi nunca es una
+// línea recta larga: serpentea en pasos cortos (varias decenas de
+// vértices), así que el tramo entre DOS vértices consecutivos suele ser
+// corto aunque el trazo, visto de conjunto, sea casi recto a lo largo de
+// muchos vértices seguidos (una curva suave, no una zigzagueante de
+// verdad). Para cada vértice de arranque `i`, estira el tramo hasta el
+// vértice más lejano `j` tal que NINGÚN vértice intermedio se aparte más
+// de `toleranciaPx` de la recta (i,j) — el resultado es la longitud
+// recta real disponible para apoyar una etiqueta, mucho mayor que la de
+// un solo par de vértices consecutivos. Devuelve un candidato por cada
+// vértice de arranque (se solapan entre sí a propósito — el llamador los
+// ordena por longitud y prueba los más largos primero).
+function _tramosCuasiRectosPlanoA2(puntosPx, toleranciaPx) {
+    const tramos = [];
+    const n = puntosPx.length;
+    const tol = toleranciaPx || 16;
+    for (let i = 0; i < n - 1; i++) {
+        let mejorJ = i + 1;
+        for (let j = i + 2; j < n; j++) {
+            const p0 = puntosPx[i], p1 = puntosPx[j];
+            const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+            const largo = Math.sqrt(dx * dx + dy * dy);
+            if (largo < 1) break;
+            let dentroDeTolerancia = true;
+            for (let k = i + 1; k < j; k++) {
+                const pk = puntosPx[k];
+                const distPerp = Math.abs((pk[0] - p0[0]) * dy - (pk[1] - p0[1]) * dx) / largo;
+                if (distPerp > tol) { dentroDeTolerancia = false; break; }
+            }
+            if (!dentroDeTolerancia) break; // en cuanto un vértice se sale, no tiene sentido seguir estirando desde `i`
+            mejorJ = j;
+        }
+        const p0 = puntosPx[i], p1 = puntosPx[mejorJ];
+        const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+        const longitudPx = Math.sqrt(dx * dx + dy * dy);
+        if (longitudPx < 12) continue;
+        let anguloDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (anguloDeg > 90) anguloDeg -= 180; else if (anguloDeg < -90) anguloDeg += 180;
+        tramos.push({ longitudPx, centroPx: [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2], anguloCss: anguloDeg });
+    }
+    return tramos;
+}
+
 // Divide el nombre de un titular en 2 líneas lo más balanceadas posible
 // (por cantidad de caracteres), cortando siempre entre palabras completas
 // — nunca a mitad de una palabra. Se usa cuando el nombre completo no cabe

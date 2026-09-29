@@ -7504,27 +7504,25 @@ const COMISIONES = {
                 if (!nombreCanal) return;
                 const puntosCanalPx = latlngsCanalPx[idx];
                 if (!puntosCanalPx || puntosCanalPx.length < 2) return;
-                const tramosCanal = [];
-                for (let i = 0; i < puntosCanalPx.length - 1; i++) {
-                    const p1 = puntosCanalPx[i], p2 = puntosCanalPx[i + 1];
-                    const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
-                    const longitudPx = Math.sqrt(dx * dx + dy * dy);
-                    if (longitudPx < 12) continue;
-                    const centroTramoPx = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+                // Tramos "cuasi-rectos" (_tramosCuasiRectosPlanoA2) en vez
+                // de solo pares de vértices consecutivos — un lateral real
+                // serpentea en pasos cortos, pero visto de conjunto suele
+                // ser casi recto a lo largo de VARIOS vértices seguidos (no
+                // una curva cerrada de verdad); esto le da al algoritmo la
+                // longitud recta real disponible, no la de un solo par de
+                // vértices, que casi nunca alcanza para un nombre largo.
+                const tramosCanal = _tramosCuasiRectosPlanoA2(puntosCanalPx, 16).filter((tr) => {
                     // Un canal troncal (ej. Canal Sur) recorre TODA la
                     // comisión — sus tramos rectos más largos suelen quedar
                     // bien lejos del recuadro visible de esta toma. Sin
-                    // este descarte, "los 6 tramos más largos" podían ser
+                    // este descarte, "los tramos más largos" podían ser
                     // todos tramos fuera del área imprimible: la etiqueta
                     // se calculaba y se consideraba "colocada" (nada choca
                     // en un punto donde no hay nada más), pero quedaba
                     // recortada/invisible fuera del marco — el canal seguía
                     // pareciendo sin nombre.
-                    if (centroTramoPx[0] < MARGEN || centroTramoPx[0] > ANCHO - MARGEN || centroTramoPx[1] < MARGEN || centroTramoPx[1] > ALTO_MAPA - MARGEN) continue;
-                    let anguloDeg = Math.atan2(dy, dx) * 180 / Math.PI;
-                    if (anguloDeg > 90) anguloDeg -= 180; else if (anguloDeg < -90) anguloDeg += 180;
-                    tramosCanal.push({ longitudPx, centroPx: centroTramoPx, anguloCss: anguloDeg });
-                }
+                    return tr.centroPx[0] >= MARGEN && tr.centroPx[0] <= ANCHO - MARGEN && tr.centroPx[1] >= MARGEN && tr.centroPx[1] <= ALTO_MAPA - MARGEN;
+                });
                 tramosCanal.sort((a, b) => b.longitudPx - a.longitudPx);
 
                 const orden = (c.campos && c.campos.ORDEN) || '';
