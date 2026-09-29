@@ -7707,7 +7707,7 @@ const COMISIONES = {
             } else {
                 const areaVerificadaTotal = _valorCampoFormatoA2Plano(registro, 'areaTotalVerificadaHa', true);
                 const areaVerificadaBajoRiego = _valorCampoFormatoA2Plano(registro, 'areaBajoRiegoVerificadaHa', true);
-                titulo = 'DATOS DEL PREDIO (FORMATO A-2)';
+                titulo = 'DATOS DEL PREDIO';
                 // Las coordenadas del centroide van en su PROPIA caja aparte
                 // (_dibujarCuadroCentroidePlanoA2, dibujada justo debajo), no
                 // mezcladas en esta lista — a pedido explícito.
@@ -7962,7 +7962,7 @@ const COMISIONES = {
             ctx.strokeRect(x0, y0, anchoCaja, ALTO_CAJA);
             ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
             ctx.font = '700 18px Arial, sans-serif'; ctx.fillStyle = '#000000';
-            ctx.fillText('POLÍGONO OBSERVADO (ZOOM)', x0 + 12, y0 + ALTO_TITULO / 2 + 4);
+            ctx.fillText('POLÍGONO OBSERVADO', x0 + 12, y0 + ALTO_TITULO / 2 + 4);
             ctx.restore();
 
             const proyectorZoom = crearProyectorUtmPlanoA2(bboxZoom, areaAncho, areaAlto, 0);
