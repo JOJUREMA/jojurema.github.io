@@ -134,6 +134,14 @@ const _EXCEPCIONES_TEMPORALES_DERECHO_PLANO_A2 = {
         area_total_ha: 2.65, area_bajo_riego_ha: 2.5, tipo_uso: 'AGRARIO',
         volumen_m3: 62499.5, origen: 'ana_a1',
     },
+    // SOTO CHERO LEONARDO — Bloque Miraflores (toma SD6) — misma R.A.
+    // 127-2006-G.R.PIURA-420010-AACH-ATDRCH (agregada 2026-09-29).
+    '39332': {
+        unidad_catastral: '39332', apellidos_nombres: 'SOTO CHERO LEONARDO',
+        clase_derecho: 'LICENCIA', numero_resolucion: '127-2006-G.R.PIURA-420010-AACH-ATDRCH',
+        area_total_ha: 1.05, area_bajo_riego_ha: 1, tipo_uso: 'AGRARIO',
+        volumen_m3: 24999.8, origen: 'ana_a1',
+    },
 };
 function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const ucPredio = _normUcPlanoA2(predio.catastralKey);
