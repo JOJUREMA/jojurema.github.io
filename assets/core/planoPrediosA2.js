@@ -54,9 +54,23 @@ function _normUcPlanoA2(v) {
     return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^[A-Z]+/, '').replace(/^0+/, '');
 }
 
+// Puede haber MÁS de una fila para la misma UC normalizada — dato real
+// confirmado: una importación vieja del Padrón A-1 (con el bug de
+// columnas ya corregido, ver Sistema_Riego_CUSSHMI_14.html) dejó filas
+// con clase_derecho vacío que nunca se depuraron, y la re-importación
+// nueva (con datos correctos) no las pisa si su unidad_catastral quedó
+// guardada en un formato ligeramente distinto — así que ambas filas
+// conviven para la misma UC real. Si se toma la primera (el orden lo
+// decide la consulta, no cuál es "la buena"), se puede terminar usando
+// la fila vieja e incompleta aunque exista una fila nueva con Licencia
+// real — por eso, ante varias, se prefiere la que SÍ tiene un derecho
+// formal confirmado antes que devolver la primera sin más.
 function _buscarPorUcPlanoA2(filas, ucPredio) {
     if (!Array.isArray(filas) || filas.length === 0 || !ucPredio) return null;
-    return filas.find((f) => _normUcPlanoA2(f.unidad_catastral) === ucPredio) || null;
+    const candidatos = filas.filter((f) => _normUcPlanoA2(f.unidad_catastral) === ucPredio);
+    if (candidatos.length === 0) return null;
+    if (candidatos.length === 1) return candidatos[0];
+    return candidatos.find((f) => _tieneDerechoFormalPlanoA2(f)) || candidatos[0];
 }
 function _buscarPorNombrePlanoA2(filas, nombrePredio) {
     if (!Array.isArray(filas) || filas.length === 0 || !nombrePredio) return null;
