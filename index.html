@@ -7292,30 +7292,19 @@ const COMISIONES = {
                 ctx.stroke();
             });
 
-            // 4) Canales (color real por orden). Se usa canalesParaDibujo
-            //    (incluye los troncales, ej. Canal Sur) — ver arriba.
-            const latlngsCanalPx = canalesParaDibujo.map((c) => c.geom.coords.map((par) => {
-                const utm = latLonAUtm17S(par[0], par[1]);
-                return proyector.proyectar(utm.easting, utm.northing);
-            }));
-            canalesParaDibujo.forEach((c, idx) => {
-                const orden = (c.campos && c.campos.ORDEN) || '';
-                const estilo = estiloCanalPlanoA2(orden);
-                dibujarLineaConHaloPlanoA2(ctx, latlngsCanalPx[idx], estilo);
-            });
-
-            // 5) Drenes: a pedido explícito, este plano ya NO los muestra —
-            //    solo la red de riego (canales). Siguen dibujándose en el
-            //    editor interactivo "Ver bloque de riego" (otro contexto,
-            //    _obtenerDrenesParaPlanoA2 sigue existiendo para ese uso).
-
-            // 5.5) Polígono resaltado del usuario elegido (opcional) — el
-            //      área medida/importada del Formato A-2, encima de todo lo
-            //      demás, con un contorno grueso bien distinguible del resto,
-            //      en MORADO (misma familia que A2-Fuera Bloque, a pedido
-            //      explícito — antes era dorado). El KML del bloque de riego
-            //      sigue mostrando TODOS sus predios sin cambios; esto es un
-            //      resaltado adicional, no un reemplazo.
+            // 4) Polígono resaltado del usuario elegido (opcional) — el área
+            //      medida/importada del Formato A-2, con un contorno grueso
+            //      bien distinguible del resto, en NARANJA (misma familia
+            //      que A2-Fuera Bloque, a pedido explícito — antes era
+            //      dorado). El KML del bloque de riego sigue mostrando TODOS
+            //      sus predios sin cambios; esto es un resaltado adicional,
+            //      no un reemplazo.
+            //      Se dibuja ANTES que los canales (sección 4.5, justo
+            //      después) — a pedido explícito: el trazo del canal debe
+            //      quedar SIEMPRE visible por ENCIMA del relleno de este
+            //      polígono, nunca tapado por él (antes se dibujaba después
+            //      de los canales y un canal que pasara por su interior
+            //      quedaba oculto bajo el relleno naranja).
             if (usuarioResaltado) {
                 const verticesOrdenados = usuarioResaltado.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
                 const puntosUsuarioPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
@@ -7357,6 +7346,26 @@ const COMISIONES = {
                 // relleno naranja ya lo distingue de sobra, un círculo
                 // encima era redundante.
             }
+
+            // 4.5) Canales (color real por orden). Se usa canalesParaDibujo
+            //      (incluye los troncales, ej. Canal Sur) — ver arriba. Van
+            //      DESPUÉS del polígono resaltado (sección 4) para quedar
+            //      siempre visibles por encima de su relleno — ver el
+            //      comentario de la sección 4.
+            const latlngsCanalPx = canalesParaDibujo.map((c) => c.geom.coords.map((par) => {
+                const utm = latLonAUtm17S(par[0], par[1]);
+                return proyector.proyectar(utm.easting, utm.northing);
+            }));
+            canalesParaDibujo.forEach((c, idx) => {
+                const orden = (c.campos && c.campos.ORDEN) || '';
+                const estilo = estiloCanalPlanoA2(orden);
+                dibujarLineaConHaloPlanoA2(ctx, latlngsCanalPx[idx], estilo);
+            });
+
+            // 5) Drenes: a pedido explícito, este plano ya NO los muestra —
+            //    solo la red de riego (canales). Siguen dibujándose en el
+            //    editor interactivo "Ver bloque de riego" (otro contexto,
+            //    _obtenerDrenesParaPlanoA2 sigue existiendo para ese uso).
 
             // Colección compartida de rectángulos ya ocupados por una
             // etiqueta (predios, canales, y ahora también los usuarios
