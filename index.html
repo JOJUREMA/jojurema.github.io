@@ -7510,9 +7510,20 @@ const COMISIONES = {
                     const dx = p2[0] - p1[0], dy = p2[1] - p1[1];
                     const longitudPx = Math.sqrt(dx * dx + dy * dy);
                     if (longitudPx < 12) continue;
+                    const centroTramoPx = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+                    // Un canal troncal (ej. Canal Sur) recorre TODA la
+                    // comisión — sus tramos rectos más largos suelen quedar
+                    // bien lejos del recuadro visible de esta toma. Sin
+                    // este descarte, "los 6 tramos más largos" podían ser
+                    // todos tramos fuera del área imprimible: la etiqueta
+                    // se calculaba y se consideraba "colocada" (nada choca
+                    // en un punto donde no hay nada más), pero quedaba
+                    // recortada/invisible fuera del marco — el canal seguía
+                    // pareciendo sin nombre.
+                    if (centroTramoPx[0] < MARGEN || centroTramoPx[0] > ANCHO - MARGEN || centroTramoPx[1] < MARGEN || centroTramoPx[1] > ALTO_MAPA - MARGEN) continue;
                     let anguloDeg = Math.atan2(dy, dx) * 180 / Math.PI;
                     if (anguloDeg > 90) anguloDeg -= 180; else if (anguloDeg < -90) anguloDeg += 180;
-                    tramosCanal.push({ longitudPx, centroPx: [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2], anguloCss: anguloDeg });
+                    tramosCanal.push({ longitudPx, centroPx: centroTramoPx, anguloCss: anguloDeg });
                 }
                 tramosCanal.sort((a, b) => b.longitudPx - a.longitudPx);
 
@@ -7522,13 +7533,33 @@ const COMISIONES = {
 
                 for (let t = 0; t < Math.min(tramosCanal.length, 6); t++) {
                     const tramo = tramosCanal[t];
+                    // 1 línea primero (el caso normal). Un lateral muy
+                    // serpenteante con un nombre largo (ej. "CANAL MATILDO
+                    // CHIROQUE") puede no tener NINGÚN tramo recto visible
+                    // lo bastante largo para ese nombre en una sola línea
+                    // — antes de descartar el tramo, se prueba partirlo en
+                    // 2 líneas balanceadas (mismo criterio que el nombre
+                    // de un predio): la línea más larga de las 2 mitades
+                    // es más corta que el nombre completo, así que el
+                    // mismo tramo corto puede alcanzar para un tamaño
+                    // legible partido en 2 aunque no alcance en 1.
+                    let lineasCanal = [nombreCanal];
                     let fuente = calcularFuenteParaAncho(tramo.longitudPx, 1, Math.max(nombreCanal.length, 1));
-                    if (fuente < 6.5) continue; // este tramo no alcanza para un tamaño legible: probar el siguiente
+                    if (fuente < 6.5 && nombreCanal.length > 12) {
+                        const partesCanal = partirNombreEnDosLineas(nombreCanal);
+                        if (partesCanal[1]) {
+                            const maxCharsCanal = Math.max(partesCanal[0].length, partesCanal[1].length);
+                            const fuente2Lineas = calcularFuenteParaAncho(tramo.longitudPx, 1, Math.max(maxCharsCanal, 1));
+                            if (fuente2Lineas > fuente) { fuente = fuente2Lineas; lineasCanal = partesCanal; }
+                        }
+                    }
+                    if (fuente < 6.5) continue; // ni en 1 ni en 2 líneas alcanza un tamaño legible: probar el siguiente tramo
                     fuente = Math.min(fuente, 10);
                     ctx.font = '700 ' + fuente.toFixed(1) + 'px Arial, sans-serif';
-                    const anchoTexto = ctx.measureText(nombreCanal).width;
+                    const anchoTexto = Math.max(...lineasCanal.map((l) => ctx.measureText(l).width));
                     const padX = fuente * 0.55, padY = fuente * 0.3;
-                    const wPildora = anchoTexto + padX * 2, hPildora = fuente + padY * 2;
+                    const alturaLineaCanal = fuente * 1.15;
+                    const wPildora = anchoTexto + padX * 2, hPildora = lineasCanal.length * alturaLineaCanal + padY * 2;
                     const anguloRad = tramo.anguloCss * Math.PI / 180;
                     const dirCanalX = Math.cos(anguloRad), dirCanalY = Math.sin(anguloRad);
                     const perpCanalX = -dirCanalY, perpCanalY = dirCanalX;
@@ -7543,10 +7574,10 @@ const COMISIONES = {
                     }
                     if (!bboxCanal) continue; // este tramo no tiene ninguna posición libre: probar el siguiente tramo
                     rectangulosOcupadosPlanoA2.push(bboxCanal);
-                    dibujarEtiquetaPildoraPlanoA2(ctx, centroEtiquetaCanal, anguloRad, nombreCanal, colorLinea, fuente);
+                    dibujarEtiquetaPildoraPlanoA2(ctx, centroEtiquetaCanal, anguloRad, lineasCanal, colorLinea, fuente);
                     return; // ya se colocó la etiqueta de este canal, seguir con el siguiente
                 }
-                // ningún tramo (ni con las posiciones cercanas) sirvió: se omite, igual que antes
+                // ningún tramo (ni con las posiciones cercanas, ni en 1 ni en 2 líneas) sirvió: se omite
             });
             if (!esAmbitoObservados) _dibujarObservadosA2EtiquetasPlanoA2();
 
@@ -8109,10 +8140,17 @@ const COMISIONES = {
             ctx.setLineDash([]);
             ctx.stroke();
 
-            const centroideZoom = (typeof calcularCentroidePoligono === 'function')
-                ? calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })))
-                : null;
-            const centroPxZoom = centroideZoom ? proyectorZoom.proyectar(centroideZoom.easting, centroideZoom.northing) : [areaAncho / 2, areaAlto / 2];
+            // El centro visual del recuadro (punto medio del bounding box
+            // del polígono en píxeles) en vez del centroide geométrico
+            // (área) — en un predio angosto/alargado o con más "masa" de
+            // un lado (frecuente: este recuadro es justo el zoom de UN
+            // polígono, muchas veces una franja larga y algo irregular), el
+            // centroide de área puede quedar bien lejos del medio visual de
+            // la forma, y el nombre terminaba pegado a un extremo con un
+            // montón de espacio vacío del otro lado — a pedido explícito,
+            // "que quede dentro del polígono y en el centro".
+            const xsPxZoom = puntosPxZoom.map((p) => p[0]), ysPxZoom = puntosPxZoom.map((p) => p[1]);
+            const centroPxZoom = [(Math.min(...xsPxZoom) + Math.max(...xsPxZoom)) / 2, (Math.min(...ysPxZoom) + Math.max(...ysPxZoom)) / 2];
 
             // Número de cada vértice (1, 2, 3…, en el mismo orden del
             // polígono) — un círculo chico con el número, en el propio

@@ -236,23 +236,32 @@ function aclararColorPlanoA2(hex, factor) {
 // SANTA CLARA" en rojo sobre fondo salmón claro). `centroPx`/`anguloRad`
 // ya vienen resueltos (ver medirEtiquetaPlanoA2) — esta función solo
 // dibuja, no mide ubicación.
+// `texto` acepta un string (1 línea, caso normal) o un array de
+// strings (2 líneas balanceadas — ver la sección 6a del generador de
+// planos: un lateral que serpentea mucho puede tener un nombre largo
+// que no entra en 1 línea en ningún tramo recto disponible, pero SÍ
+// partido en 2 líneas más cortas).
 function dibujarEtiquetaPildoraPlanoA2(ctx, centroPx, anguloRad, texto, colorLinea, fuentePx) {
+    const lineas = Array.isArray(texto) ? texto : [texto];
     ctx.save();
     ctx.translate(centroPx[0], centroPx[1]);
     ctx.rotate(anguloRad);
     ctx.font = '700 ' + fuentePx.toFixed(1) + 'px Arial, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const anchoTexto = ctx.measureText(texto).width;
+    const anchoTexto = Math.max(...lineas.map((l) => ctx.measureText(l).width));
     const padX = fuentePx * 0.55, padY = fuentePx * 0.3;
-    const w = anchoTexto + padX * 2, h = fuentePx + padY * 2;
+    const alturaLinea = fuentePx * 1.15;
+    const w = anchoTexto + padX * 2, h = lineas.length * alturaLinea + padY * 2;
     ctx.fillStyle = aclararColorPlanoA2(colorLinea, 0.75);
     ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(-w / 2, -h / 2, w, h, h / 2);
+    const radio = Math.min(w, h) / 2;
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(-w / 2, -h / 2, w, h, radio);
     else ctx.rect(-w / 2, -h / 2, w, h); // respaldo si el navegador no soporta roundRect
     ctx.fill();
     ctx.fillStyle = colorLinea;
-    ctx.fillText(texto, 0, 0);
+    const offsetInicial = -((lineas.length - 1) * alturaLinea) / 2;
+    lineas.forEach((linea, i) => ctx.fillText(linea, 0, offsetInicial + i * alturaLinea));
     ctx.restore();
 }
 
