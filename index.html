@@ -7672,10 +7672,6 @@ const COMISIONES = {
             const areaPoligonoHa = (typeof calcularAreaPoligonoHa === 'function')
                 ? calcularAreaPoligonoHa(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
                 : 0;
-            function truncar(texto, max) {
-                const t = (texto || '').toString();
-                return t.length > max ? (t.slice(0, max - 1) + '…') : t;
-            }
 
             // Un usuario SIN registro de Formato A-2 (Levantamiento) —
             // ej. elegido desde Padrón CUSSHMI, con o sin Licencia — no
@@ -7721,7 +7717,7 @@ const COMISIONES = {
                     ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
                     ['Se ubica en el bloque', _valorCampoFormatoA2Plano(registro, 'seUbicaBloque', false) || '—'],
                     ['Cultivo', _valorCampoFormatoA2Plano(registro, 'cultivo1', true) || '—'],
-                    ['Observaciones', truncar(_valorCampoFormatoA2Plano(registro, 'observaciones', false), 42) || '—'],
+                    ['Observaciones', _valorCampoFormatoA2Plano(registro, 'observaciones', false) || '—'],
                 ];
             }
 
@@ -7767,8 +7763,36 @@ const COMISIONES = {
                 return [linea1, truncarAlAncho(resto, anchoMax)];
             }
 
-            const filasEnvueltas = filas.map(([etiqueta, valor]) => ({ etiqueta, lineas: envolverDosLineas(valor, anchoValorDisponible) }));
-            const altoTotal = ALTO_FILA + filasEnvueltas.reduce((suma, f) => suma + ALTO_FILA + (f.lineas.length > 1 ? ALTO_LINEA_EXTRA : 0), 0) + 16;
+            // Observaciones, a diferencia del resto de campos, puede traer
+            // varias oraciones seguidas (fecha + motivo + monto de deuda,
+            // etc.) — el límite de 2 líneas que usa el resto no alcanza. A
+            // pedido explícito, se envuelve en TANTAS líneas como haga
+            // falta (por palabra completa), sin recortar nada con "…"; la
+            // caja crece hacia abajo para que siempre entre completo.
+            function envolverTextoCompleto(texto, anchoMax) {
+                const t = (texto == null ? '' : texto).toString();
+                if (!t) return [''];
+                const palabras = t.split(/\s+/).filter(Boolean);
+                const lineas = [];
+                let actual = '';
+                palabras.forEach((palabra) => {
+                    const candidato = actual ? (actual + ' ' + palabra) : palabra;
+                    if (!actual || ctx.measureText(candidato).width <= anchoMax) {
+                        actual = candidato;
+                    } else {
+                        lineas.push(actual);
+                        actual = palabra;
+                    }
+                });
+                if (actual) lineas.push(actual);
+                return lineas.length ? lineas : [''];
+            }
+
+            const filasEnvueltas = filas.map(([etiqueta, valor]) => ({
+                etiqueta,
+                lineas: etiqueta === 'Observaciones' ? envolverTextoCompleto(valor, anchoValorDisponible) : envolverDosLineas(valor, anchoValorDisponible),
+            }));
+            const altoTotal = ALTO_FILA + filasEnvueltas.reduce((suma, f) => suma + ALTO_FILA + Math.max(0, f.lineas.length - 1) * ALTO_LINEA_EXTRA, 0) + 16;
 
             ctx.fillStyle = 'rgba(255,255,255,0.92)';
             ctx.strokeStyle = '#333333'; ctx.lineWidth = 1.5;
@@ -7787,13 +7811,14 @@ const COMISIONES = {
                 ctx.fillText(etiqueta + ':', x0 + 12, yCentro);
                 ctx.font = '700 13px Arial, sans-serif';
                 ctx.fillStyle = '#000000';
-                if (lineas.length === 1) {
-                    ctx.fillText(lineas[0], X_VALOR, yCentro);
-                } else {
-                    ctx.fillText(lineas[0], X_VALOR, yCentro - ALTO_LINEA_EXTRA / 2);
-                    ctx.fillText(lineas[1], X_VALOR, yCentro - ALTO_LINEA_EXTRA / 2 + ALTO_LINEA_EXTRA);
-                }
-                y += ALTO_FILA + (lineas.length > 1 ? ALTO_LINEA_EXTRA : 0);
+                // Generaliza el centrado vertical de 2 líneas a N líneas —
+                // con 1 línea da el mismo yCentro de siempre, con 2 da
+                // exactamente lo mismo que antes.
+                const offsetInicial = -((lineas.length - 1) * ALTO_LINEA_EXTRA) / 2;
+                lineas.forEach((linea, idx) => {
+                    ctx.fillText(linea, X_VALOR, yCentro + offsetInicial + idx * ALTO_LINEA_EXTRA);
+                });
+                y += ALTO_FILA + Math.max(0, lineas.length - 1) * ALTO_LINEA_EXTRA;
             });
             ctx.restore();
             return altoTotal;
