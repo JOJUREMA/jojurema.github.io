@@ -5386,21 +5386,31 @@ const COMISIONES = {
                 // se resuelve UNA VEZ acá cruzando contra TODO el padrón
                 // operativo de la comisión (por unidad catastral, o por
                 // nombre si no hay UC), y se guarda junto con cada fila.
-                const normUC = (v) => (v || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+                // Reutiliza _normUcPlanoA2/_normNombrePlanoA2 (assets/core/
+                // planoPrediosA2.js) en vez de una normalización propia más
+                // débil — el Excel oficial trae UC con ceros a la izquierda
+                // y a veces un prefijo de letra ("035715", "D39332") que el
+                // padrón operativo no tiene (solo "35715"/"39332"), y
+                // nombres con coma ("APELLIDOS, NOMBRES") que pueden no
+                // calzar tal cual contra el padrón operativo — sin esto, la
+                // gran mayoría de las filas quedaban sin toma resuelta
+                // aunque el usuario sí existiera en el padrón operativo.
+                const normUC = (typeof _normUcPlanoA2 === 'function') ? _normUcPlanoA2 : (v) => (v || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+                const normNombreCruce = (typeof _normNombrePlanoA2 === 'function') ? _normNombrePlanoA2 : (v) => (v || '').toString().trim().toUpperCase();
                 const resultadoPadronOperativo = await CusshmiDatos.cargarTodoPadronUsuariosParaCruce(comisionKey);
                 const porUC = new Map();
                 const porNombre = new Map();
                 if (resultadoPadronOperativo.ok) {
                     resultadoPadronOperativo.resultados.forEach((p) => {
                         if (p.unidad_catastral) porUC.set(normUC(p.unidad_catastral), p.toma_nombre);
-                        const nombreNorm = (p.nombre || '').toString().trim().toUpperCase();
+                        const nombreNorm = normNombreCruce(p.nombre);
                         if (nombreNorm && !porNombre.has(nombreNorm)) porNombre.set(nombreNorm, p.toma_nombre);
                     });
                 }
                 let conTomaResuelta = 0;
                 filas.forEach((f) => {
                     const uc = normUC(f.unidadCatastral);
-                    const nombreNorm = (f.apellidosNombres || '').toString().trim().toUpperCase();
+                    const nombreNorm = normNombreCruce(f.apellidosNombres);
                     f.tomaNombre = (uc && porUC.get(uc)) || porNombre.get(nombreNorm) || null;
                     if (f.tomaNombre) conTomaResuelta++;
                 });
