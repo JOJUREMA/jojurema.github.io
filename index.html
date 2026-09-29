@@ -7717,7 +7717,12 @@ const COMISIONES = {
                     ['Estado', _valorCampoFormatoA2Plano(registro, 'estado', false) || '—'],
                     ['Se ubica en el bloque', _valorCampoFormatoA2Plano(registro, 'seUbicaBloque', false) || '—'],
                     ['Cultivo', _valorCampoFormatoA2Plano(registro, 'cultivo1', true) || '—'],
-                    ['Observaciones', _valorCampoFormatoA2Plano(registro, 'observaciones', false) || '—'],
+                    // En mayúsculas al mostrar, igual que el resto de los
+                    // campos del formato oficial — sin tocar el valor
+                    // guardado (algunas Observaciones vienen en minúscula/
+                    // mixtas, ya sea tecleadas a mano o del texto de deuda
+                    // que agrega la importación de "Última fecha de riego").
+                    ['Observaciones', (_valorCampoFormatoA2Plano(registro, 'observaciones', false) || '').toString().toUpperCase() || '—'],
                 ];
             }
 
@@ -8931,7 +8936,14 @@ const COMISIONES = {
         // móvil).
         function _guardarCampoLevantamientoA2Esc(datosParciales) {
             CusshmiDatos.guardarRegistroFormatoA2Levantamiento(datosParciales).then((r) => {
-                if (!r.ok) alert('⚠️ No se pudo guardar: ' + r.error);
+                if (!r.ok) { alert('⚠️ No se pudo guardar: ' + r.error); return; }
+                // Sin esto, el Plano de Predios A2 (que lee de
+                // _cacheRegistrosExportarPoligonosA2) seguía mostrando los
+                // datos de verificación de ANTES de este cambio hasta
+                // recargar la página — cualquier edición de la ficha
+                // (Estado, Observaciones, Este/Norte, polígono, etc.)
+                // fuerza la recarga del próximo plano/selector.
+                _cacheRegistrosExportarPoligonosA2 = null;
             });
         }
 
