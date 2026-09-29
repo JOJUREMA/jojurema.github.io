@@ -17605,7 +17605,7 @@
 			</Polygon>
 		</Placemark>
 		<Placemark>
-			<name>44526.1</name>
+			<name>44527</name>
 			<visibility>0</visibility>
 			<styleUrl>#falseColor100</styleUrl>
 			<ExtendedData>
@@ -17614,8 +17614,8 @@
 					<SimpleData name="NOM_LOC">MIRAFLORES</SimpleData>
 					<SimpleData name="NOM_PRE">MIRAFLORES</SimpleData>
 					<SimpleData name="NOM_BLO">MIRAFLORES</SimpleData>
-					<SimpleData name="CODCAT">44526.1</SimpleData>
-					<SimpleData name="USUARIO"></SimpleData>
+					<SimpleData name="CODCAT">44527</SimpleData>
+					<SimpleData name="USUARIO">OTERO SOTO, DARIO</SimpleData>
 					<SimpleData name="AP_PAT_USU">OTERO</SimpleData>
 					<SimpleData name="AP_MAT_USU">SOTO</SimpleData>
 					<SimpleData name="NOM_USU">DARIO</SimpleData>
