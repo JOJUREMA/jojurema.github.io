@@ -5354,10 +5354,22 @@ const COMISIONES = {
                         areaTotalHa: leerNumero('J', filaNum),
                         areaBajoRiegoHa: leerNumero('K', filaNum),
                         subSectorHidraulico: leerTexto('L', filaNum) || null,
-                        numeroResolucion: leerTexto('N', filaNum) || null,
-                        claseDerecho: leerTexto('Q', filaNum) || null,
-                        tipoUso: leerTexto('R', filaNum) || null,
-                        volumenM3: leerNumero('T', filaNum),
+                        // OJO: el diseño real del Formato A-1 oficial (confirmado
+                        // contra Formato_A1_MARGEN_IZQUIERDA_2026-09-02.xlsx) NO
+                        // deja columnas en blanco entre "Área bajo riego" (K) y
+                        // "Volumen de Agua" (P) — van M,N,O,P seguidas
+                        // (Resolución, Clase de derecho, Tipo de Uso, Volumen).
+                        // Antes se leía N,Q,R,T (con huecos en M,O,P,S) — un
+                        // desfase que en el archivo real hacía que
+                        // numeroResolucion leyera en realidad la Clase de
+                        // Derecho, y claseDerecho/tipoUso/volumenM3 leyeran
+                        // columnas vacías inexistentes (siempre null) — la razón
+                        // real de que tantos predios importados así nunca
+                        // calificaran como "con Licencia" en el Plano de Predios.
+                        numeroResolucion: leerTexto('M', filaNum) || null,
+                        claseDerecho: leerTexto('N', filaNum) || null,
+                        tipoUso: leerTexto('O', filaNum) || null,
+                        volumenM3: leerNumero('P', filaNum),
                     });
                 }
 

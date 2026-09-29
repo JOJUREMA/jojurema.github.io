@@ -37,16 +37,21 @@ function _normNombrePlanoA2(v) {
     return (v || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/,/g, ' ').trim().toUpperCase().replace(/\s+/g, ' ');
 }
-// Quita un prefijo "RE" inicial (ej. Padrón A-1 trae "RE44521.02" para el
-// mismo predio cuyo KML del bloque de riego lo digitalizó como CODCAT
-// "44521.02", sin el prefijo) — caso real confirmado: UC 44521.02 (CRUZ
-// PERALTA, JOSE — SD4/MIRAFLORES) tiene licencia en el Padrón A-1 pero,
-// sin este strip, el cruce por UC fallaba y el predio se pintaba "SIN
-// REGISTRO" (rojo) en el Plano de Predios en vez de "LICENCIA/DERECHO"
-// (verde). Sin este prefijo ambos lados ya comparten el mismo código
-// numérico, así que es seguro asumir que es el mismo predio.
+// Quita cualquier prefijo de letras inicial (ej. Padrón A-1 trae
+// "RE44521.02" o "D39332" para el mismo predio cuyo KML del bloque de
+// riego lo digitalizó como CODCAT "44521.02"/"39332", sin el prefijo) —
+// casos reales confirmados: UC 44521.02 (CRUZ PERALTA, JOSE — SD4/
+// MIRAFLORES) y UC 39332 (SOTO CHERO, LEONARDO — SD6/MIRAFLORES), ambos
+// con Licencia en el Padrón A-1 oficial (Formato_A1_MARGEN_IZQUIERDA)
+// pero con un prefijo (RE/D/DE/R/REF/DES, confirmados en el archivo
+// real) que sin este strip hacía fallar el cruce por UC y el predio se
+// pintaba "SIN REGISTRO" (rojo) en el Plano de Predios en vez de
+// "LICENCIA/DERECHO" (verde). Sin el prefijo ambos lados ya comparten
+// el mismo código numérico, así que es seguro asumir que es el mismo
+// predio — un CODCAT real nunca empieza con letra en el KML del bloque
+// de riego (siempre numérico, con o sin decimales).
 function _normUcPlanoA2(v) {
-    return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^RE/, '').replace(/^0+/, '');
+    return (v || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/^[A-Z]+/, '').replace(/^0+/, '');
 }
 
 function _buscarPorUcPlanoA2(filas, ucPredio) {
@@ -114,35 +119,6 @@ function _tieneDerechoFormalPlanoA2(fila) {
 // apellidos_nombres, origen, clase_derecho). `formatoA2Rows`: filas de
 // formato_a2_levantamiento (con unidad_catastral, apellidos_nombres,
 // se_ubica_bloque). Devuelve { categoria, colorInfo, matchInfo }.
-//
-// EXCEPCIONES TEMPORALES — a pedido explícito del usuario ("solo por
-// esta vez, ya luego lo corrijo"): predios con Licencia ya confirmada
-// contra el catastro oficial de ANA (PARCELAS.shp.kmz) pero cuya fila
-// TODAVÍA no está cargada en el Padrón Oficial A-1 de Supabase. Se
-// simulan acá con la MISMA prioridad que un match real por UC (punto 1
-// de la lista de arriba) para que el plano ya los muestre en verde con
-// su UC mientras se carga la fila real — en cuanto esa fila exista en
-// Supabase, `enPadronA1PorUc` la encontrará primero y esta lista queda
-// inerte para esa UC (no hace falta acordarse de borrar la entrada,
-// aunque es buena idea limpiarla para no dejar código de más).
-const _EXCEPCIONES_TEMPORALES_DERECHO_PLANO_A2 = {
-    // OTERO SOTO DARIO — Bloque Miraflores — R.A. 127-2006-G.R.PIURA-
-    // 420010-AACH-ATDRCH (agregada 2026-09-29).
-    '44527': {
-        unidad_catastral: '44527', apellidos_nombres: 'OTERO SOTO DARIO',
-        clase_derecho: 'LICENCIA', numero_resolucion: '127-2006-G.R.PIURA-420010-AACH-ATDRCH',
-        area_total_ha: 2.65, area_bajo_riego_ha: 2.5, tipo_uso: 'AGRARIO',
-        volumen_m3: 62499.5, origen: 'ana_a1',
-    },
-    // SOTO CHERO LEONARDO — Bloque Miraflores (toma SD6) — misma R.A.
-    // 127-2006-G.R.PIURA-420010-AACH-ATDRCH (agregada 2026-09-29).
-    '39332': {
-        unidad_catastral: '39332', apellidos_nombres: 'SOTO CHERO LEONARDO',
-        clase_derecho: 'LICENCIA', numero_resolucion: '127-2006-G.R.PIURA-420010-AACH-ATDRCH',
-        area_total_ha: 1.05, area_bajo_riego_ha: 1, tipo_uso: 'AGRARIO',
-        volumen_m3: 24999.8, origen: 'ana_a1',
-    },
-};
 function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const ucPredio = _normUcPlanoA2(predio.catastralKey);
     const nombrePredio = _normNombrePlanoA2(predio.usuario);
@@ -150,14 +126,6 @@ function clasificarDerechoPredioA2(predio, padronA1Rows, formatoA2Rows) {
     const enPadronA1PorUc = _buscarPorUcPlanoA2(padronA1Rows, ucPredio);
     if (_tieneDerechoFormalPlanoA2(enPadronA1PorUc)) {
         return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: enPadronA1PorUc };
-    }
-    // Solo se usa la excepción si TODAVÍA no hay ninguna fila real para
-    // esta UC en el Padrón A-1 (enPadronA1PorUc es null) — apenas se
-    // cargue la fila real (tenga o no derecho formal), esta rama ya no
-    // se ejecuta y manda la fila real, sea cual sea.
-    const excepcionTemporal = !enPadronA1PorUc ? _EXCEPCIONES_TEMPORALES_DERECHO_PLANO_A2[ucPredio] : null;
-    if (excepcionTemporal) {
-        return { categoria: 'PERMISO_LICENCIA', colorInfo: DERECHO_PLANO_A2.PERMISO_LICENCIA, matchInfo: excepcionTemporal };
     }
 
     const enFormatoA2 = _buscarPorUcPlanoA2(formatoA2Rows, ucPredio) || _buscarPorNombrePlanoA2(formatoA2Rows, nombrePredio);
