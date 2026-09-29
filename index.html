@@ -7816,12 +7816,16 @@ const COMISIONES = {
                 ctx.fillText(etiqueta + ':', x0 + 12, yCentro);
                 ctx.font = '700 13px Arial, sans-serif';
                 ctx.fillStyle = '#000000';
-                // Generaliza el centrado vertical de 2 líneas a N líneas —
-                // con 1 línea da el mismo yCentro de siempre, con 2 da
-                // exactamente lo mismo que antes.
-                const offsetInicial = -((lineas.length - 1) * ALTO_LINEA_EXTRA) / 2;
+                // Ya NO se centra hacia arriba y hacia abajo del yCentro de
+                // una fila de 1 línea — con 3+ líneas (Observaciones sin
+                // límite) ese centrado empujaba la 1ª línea por ENCIMA del
+                // borde de esta fila, invadiendo la fila anterior (Cultivo).
+                // Ahora la 1ª línea queda en el mismo yCentro de siempre (con
+                // 1 línea, idéntico a antes) y las siguientes crecen solo
+                // hacia abajo, donde el alto extra ya fue reservado (y += más
+                // abajo) para la fila siguiente.
                 lineas.forEach((linea, idx) => {
-                    ctx.fillText(linea, X_VALOR, yCentro + offsetInicial + idx * ALTO_LINEA_EXTRA);
+                    ctx.fillText(linea, X_VALOR, yCentro + idx * ALTO_LINEA_EXTRA);
                 });
                 y += ALTO_FILA + Math.max(0, lineas.length - 1) * ALTO_LINEA_EXTRA;
             });
