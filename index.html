@@ -14087,51 +14087,65 @@ async function confirmarSemanaSimulada(fechaInicioISO, fechaFinISO) {
     }, 100);
 }
 
-// ── Historial de semanas ya trabajadas (mismo patrón que "🕒 Historial" de
-// Huaro, commit 54885be) — a diferencia de Huaro, acá la programación SÍ
-// vive también en Supabase (sincronizarConsolidadoDesdeSupabase), pero el
-// listado en sí se arma solo de lo que haya en localStorage de ESTE
-// navegador (clave 'cusshmi_programacion_por_toma__{comision}__{ini}__
-// {fin}', ver obtenerClaveStorageProgramacion) — no hay forma de listar
-// "qué semanas existen" consultando Supabase sin traerlas todas primero.
-// Antes de esto, "Programar PDA" siempre calculaba la PRÓXIMA semana de
-// reporte (jueves+4 días) sin importar qué semana estuviera realmente en
-// curso o ya trabajada — si volvías a media semana, "Confirmar y
-// Continuar" te mandaba a una semana futura vacía, y como esa semana de
-// verdad no tenía nada guardado, ningún aviso de "ya trabajada" se
-// disparaba (no era un bug de datos perdidos, sino de estar mirando la
-// semana equivocada). Este botón dejó de depender de adivinar la semana:
-// lista todas las que ya tienen algo guardado para poder abrir su Anexo
-// G2 directo, sin tocar el cálculo automático de la próxima semana.
-function _prefijoStorageProgramacionComisionActual() {
+// ── Historial de semanas ya trabajadas — a diferencia del primer intento
+// (que listaba solo lo que hubiera en localStorage de ESTE navegador), esto
+// consulta Supabase directamente (listarSemanasConProgramacion +
+// cargarTodasLasProgramaciones, las mismas funciones que ya usa el
+// selector de semana del móvil y sincronizarConsolidadoDesdeSupabase) —
+// así el listado es el mismo sin importar desde qué computadora/navegador
+// se entre, y muestra el trabajo de TODOS los programadores, no solo el
+// propio guardado localmente. Antes de esto, "Programar PDA" siempre
+// calculaba la PRÓXIMA semana de reporte (jueves+4 días) sin importar qué
+// semana estuviera realmente en curso o ya trabajada — si volvías a media
+// semana, "Confirmar y Continuar" te mandaba a una semana futura vacía, y
+// como esa semana de verdad no tenía nada guardado, ningún aviso de "ya
+// trabajada" se disparaba (no era un bug de datos perdidos, sino de estar
+// mirando la semana equivocada). Este botón dejó de depender de adivinar
+// la semana: lista todas las que ya tienen algo confirmado para poder
+// abrir su Anexo G2 directo, sin tocar el cálculo automático de la
+// próxima semana.
+async function _listarSemanasGuardadasPDA() {
     const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
-    return `cusshmi_programacion_por_toma__${comisionKey}__`;
+    if (!window.CusshmiDatos || typeof CusshmiDatos.listarSemanasConProgramacion !== 'function') return [];
+    const resSemanas = await CusshmiDatos.listarSemanasConProgramacion(comisionKey);
+    if (!resSemanas.ok || !resSemanas.semanas.length) return [];
+
+    // Por cada semana, trae el detalle (tomas + área) con la misma función
+    // que ya usa sincronizarConsolidadoDesdeSupabase, para que el resumen
+    // de acá sea justo lo que se vería al abrir esa semana.
+    const detalles = await Promise.all(resSemanas.semanas.map(async (s) => {
+        const r = await CusshmiDatos.cargarTodasLasProgramaciones(comisionKey, s.semanaInicio);
+        const progs = (r.ok ? r.programaciones : []) || [];
+        const areaTotal = progs.reduce((sum, p) => sum + (parseFloat(p.datos && p.datos.totalArea) || 0), 0);
+        return {
+            ini: s.semanaInicio, fin: s.semanaFin,
+            nTomas: progs.length, areaTotal,
+            tomas: progs.map((p) => p.toma).filter(Boolean),
+        };
+    }));
+    return detalles.filter((s) => s.nTomas > 0);
 }
 
-function _listarSemanasGuardadasPDA() {
-    const prefijo = _prefijoStorageProgramacionComisionActual();
-    const semanas = [];
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (!key || key.indexOf(prefijo) !== 0) continue;
-        const resto = key.slice(prefijo.length); // "{ini}__{fin}"
-        const partes = resto.split('__');
-        if (partes.length !== 2) continue;
-        const [ini, fin] = partes;
-        if (ini === 'SIN_INICIO' || fin === 'SIN_FIN') continue;
-        let payload;
-        try { payload = JSON.parse(localStorage.getItem(key)); } catch (e) { continue; }
-        const consolidado = Array.isArray(payload && payload.consolidadoDemandas) ? payload.consolidadoDemandas : [];
-        if (!consolidado.length) continue; // semana guardada pero sin ninguna toma con datos todavía
-        const areaTotal = consolidado.reduce((s, t) => s + (parseFloat(t.totalArea) || 0), 0);
-        semanas.push({ ini, fin, nTomas: consolidado.length, areaTotal, tomas: consolidado.map(t => t.toma).filter(Boolean) });
-    }
-    semanas.sort((a, b) => b.ini.localeCompare(a.ini));
-    return semanas;
-}
+async function mostrarHistorialSemanasPDA() {
+    // El listado viene de Supabase (todas las tomas que cualquier
+    // programador haya confirmado), así que hace falta esperar la
+    // consulta — se muestra el modal con "Cargando…" de una y se rellena
+    // cuando responde, en vez de dejar el botón sin reacción visible.
+    const modalCargando = `
+    <div id="modalHistorialSemanasPDA" class="modal-overlay active" style="z-index:99996;">
+        <div class="modal-container" style="max-width:720px;text-align:center;padding:40px;">
+            <h3 style="margin-top:0;">🕒 Historial — Semanas ya trabajadas</h3>
+            <p style="color:#666;">Cargando semanas guardadas…</p>
+        </div>
+    </div>`;
+    const divCargando = document.createElement('div');
+    divCargando.innerHTML = modalCargando;
+    document.body.appendChild(divCargando.firstElementChild);
 
-function mostrarHistorialSemanasPDA() {
-    const semanas = _listarSemanasGuardadasPDA();
+    const semanas = await _listarSemanasGuardadasPDA();
+    const modalActual = document.getElementById('modalHistorialSemanasPDA');
+    if (!modalActual) return; // se cerró (❌/clic afuera) mientras cargaba
+
     const filas = semanas.length ? semanas.map(s => `
         <tr>
             <td style="padding:7px 10px;">${formatearFecha(s.ini)} – ${formatearFecha(s.fin)}</td>
@@ -14142,13 +14156,12 @@ function mostrarHistorialSemanasPDA() {
                 <button class="btn btn-primary" style="padding:5px 10px;font-size:11px;" onclick="_verHistorialSemanaComoG2('${s.ini}','${s.fin}')">📄 Ver Anexo G2</button>
                 <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;margin-left:4px;" onclick="cerrarModalHistorialSemanasPDA();confirmarSemanaSimulada('${s.ini}','${s.fin}');">✏️ Continuar</button>
             </td>
-        </tr>`).join('') : `<tr><td colspan="5" style="padding:14px;text-align:center;color:#6b7280;">Todavía no hay ninguna semana con programación guardada en este navegador.</td></tr>`;
+        </tr>`).join('') : `<tr><td colspan="5" style="padding:14px;text-align:center;color:#6b7280;">Todavía no hay ninguna semana con programación confirmada para esta comisión.</td></tr>`;
 
-    const modalHtml = `
-    <div id="modalHistorialSemanasPDA" class="modal-overlay active" style="z-index:99996;">
+    modalActual.innerHTML = `
         <div class="modal-container" style="max-width:720px;max-height:85vh;overflow-y:auto;text-align:left;">
             <h3 style="margin-top:0;">🕒 Historial — Semanas ya trabajadas</h3>
-            <p style="font-size:12px;color:#666;margin-top:-4px;">Guardado en este navegador. "Ver Anexo G2" abre el reporte de esa semana; "Continuar" abre el selector de toma para seguir editándola.</p>
+            <p style="font-size:12px;color:#666;margin-top:-4px;">Semanas con al menos una toma confirmada (de cualquier programador, cualquier computadora). "Ver Anexo G2" abre el reporte de esa semana; "Continuar" abre el selector de toma para seguir editándola.</p>
             <div style="overflow-x:auto;">
                 <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
                     <thead><tr style="background:#003876;color:white;">
@@ -14164,11 +14177,7 @@ function mostrarHistorialSemanasPDA() {
             <div style="margin-top:16px;text-align:right;">
                 <button class="btn btn-secondary" onclick="cerrarModalHistorialSemanasPDA()">Cerrar</button>
             </div>
-        </div>
-    </div>`;
-    const div = document.createElement('div');
-    div.innerHTML = modalHtml;
-    document.body.appendChild(div.firstElementChild);
+        </div>`;
 }
 
 function cerrarModalHistorialSemanasPDA() {
