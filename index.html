@@ -8074,14 +8074,34 @@ const COMISIONES = {
                 const anchoTexto = ctx.measureText(texto).width;
                 const anchoPildora = anchoTexto + 5, altoPildora = 13;
 
-                let labelX, labelY, bbox;
+                // El área de dibujo está recortada con ctx.clip() (más abajo
+                // en areaAncho×areaAlto) — un vértice cerca del borde del
+                // bbox del predio (frecuente en un polígono con varios
+                // vértices apretados en una esquina, como este) podía
+                // terminar con su medida empujada FUERA del recorte por los
+                // offsets crecientes, invisible salvo una esquinita — el bug
+                // reportado. Ahora cada candidato también se descarta si
+                // queda fuera del área visible, prefiriendo "dentro del área
+                // aunque se pise con algo" sobre "sin pisar nada pero
+                // cortada por el borde"; si ni el último offset entra
+                // completo, se recorta (clamp) su posición al recuadro en
+                // vez de dejarla invisible.
+                let labelX, labelY, bbox, mejorPuntaje = -1;
                 const OFFSETS_A_PROBAR = [14, 19, 24, 30, 36];
                 for (let j = 0; j < OFFSETS_A_PROBAR.length; j++) {
-                    labelX = midX + dx * OFFSETS_A_PROBAR[j];
-                    labelY = midY + dy * OFFSETS_A_PROBAR[j];
-                    bbox = _bboxTextoRotadoPlanoA2(labelX, labelY, anchoPildora, altoPildora, angulo);
-                    if (!_colisionaConOcupadosPlanoA2(bbox, ocupadosZoom, GAP_MEDIDA_ZOOM) || j === OFFSETS_A_PROBAR.length - 1) break;
+                    const candX = midX + dx * OFFSETS_A_PROBAR[j];
+                    const candY = midY + dy * OFFSETS_A_PROBAR[j];
+                    const candBbox = _bboxTextoRotadoPlanoA2(candX, candY, anchoPildora, altoPildora, angulo);
+                    const colisiona = _colisionaConOcupadosPlanoA2(candBbox, ocupadosZoom, GAP_MEDIDA_ZOOM);
+                    const fueraDeArea = candBbox.x0 < 0 || candBbox.y0 < 0 || candBbox.x1 > areaAncho || candBbox.y1 > areaAlto;
+                    const puntaje = (fueraDeArea ? 0 : 2) + (colisiona ? 0 : 1);
+                    if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; labelX = candX; labelY = candY; bbox = candBbox; }
+                    if (!colisiona && !fueraDeArea) break; // posición ideal encontrada, no hace falta seguir probando
                 }
+                if (bbox.x0 < 0) { const d = -bbox.x0; labelX += d; bbox.x0 += d; bbox.x1 += d; }
+                if (bbox.x1 > areaAncho) { const d = bbox.x1 - areaAncho; labelX -= d; bbox.x0 -= d; bbox.x1 -= d; }
+                if (bbox.y0 < 0) { const d = -bbox.y0; labelY += d; bbox.y0 += d; bbox.y1 += d; }
+                if (bbox.y1 > areaAlto) { const d = bbox.y1 - areaAlto; labelY -= d; bbox.y0 -= d; bbox.y1 -= d; }
                 ocupadosZoom.push(bbox);
 
                 ctx.save();
