@@ -1397,8 +1397,8 @@
                 ✅ Confirmar y Continuar
             </button>
 
-            <button class="btn btn-secondary" onclick="abrirModalSimularSemana()" style="margin-top: 10px; width: 80%; background:#6c757d; color:white;">
-                🕓 Elegir otra semana (mes/año)
+            <button class="btn btn-secondary" onclick="mostrarHistorialSemanasPDA()" style="margin-top: 10px; width: 80%; background:#6c757d; color:white;">
+                📚 SEMANAS PROGRAMADAS
             </button>
 
             <button class="btn btn-secondary" onclick="cerrarModalSemana()" style="margin-top: 10px; width: 80%;">
@@ -14392,16 +14392,142 @@ async function _listarSemanasGuardadasPDA() {
     return detalles.filter((s) => s.nTomas > 0);
 }
 
+// "SEMANAS PROGRAMADAS": lista las semanas que ya tienen programación
+// confirmada (Supabase) y muestra, por cada una, una miniatura del Anexo G2
+// REAL de esa semana (misma generarDatosAnexoG2 + construirTablaG2Html que el
+// reporte a pantalla completa, escalado con CSS), no una tabla resumida
+// aparte — así lo que se ve en la miniatura es lo que se abre al hacer clic.
+//
+// generarDatosAnexoG2 depende de variables globales de UNA sola semana
+// (consolidadoDemandas, window.usuariosG3, semanaPDA…), así que las
+// miniaturas se generan de a una, cargando temporalmente el estado de cada
+// semana; al terminar (o si se cierra/elige una semana antes) se restaura el
+// estado que había al abrir el modal.
+let _miniG2Cancelar = false;
+let _miniG2Promesa = null;
+
+function _snapshotEstadoSemanaPDA() {
+    return {
+        semanaPDA: semanaPDA,
+        consolidadoDemandas: consolidadoDemandas,
+        datosAnexoG2: datosAnexoG2,
+        programacionPorToma: window.programacionPorToma,
+        usuariosG3: window.usuariosG3,
+        turnosDeRiego: window.turnosDeRiego,
+        g3Programadas: window._g3Programadas,
+        notaAnexoG2: window._notaAnexoG2,
+        usuariosG3Completo: window._usuariosG3Completo,
+    };
+}
+
+function _restaurarEstadoSemanaPDA(snap) {
+    semanaPDA = snap.semanaPDA;
+    consolidadoDemandas = snap.consolidadoDemandas;
+    datosAnexoG2 = snap.datosAnexoG2;
+    window.programacionPorToma = snap.programacionPorToma;
+    window.usuariosG3 = snap.usuariosG3;
+    window.turnosDeRiego = snap.turnosDeRiego;
+    window._g3Programadas = snap.g3Programadas;
+    window._notaAnexoG2 = snap.notaAnexoG2;
+    window._usuariosG3Completo = snap.usuariosG3Completo;
+}
+
+// Carga la semana (ini/fin ISO) en las globales y devuelve el HTML del G2 +
+// un resumen. Debe llamarse dentro de un snapshot/restore.
+async function _generarMiniaturaG2DeSemana(ini, fin) {
+    semanaPDA = { fechaInicio: ini, fechaFin: fin, proximoJueves: null, diasParaJueves: null, diasRiego: 7, esCierreMes: false, esSimulacion: true };
+    cargarProgramacionPorTomaDeStorage();
+    await sincronizarConsolidadoDesdeSupabase();
+    if (!consolidadoDemandas || consolidadoDemandas.length === 0) return null;
+
+    if (window.CusshmiDatos && typeof actualizarUsuariosG3DesdeSupabase === 'function') {
+        const pares = [];
+        consolidadoDemandas.forEach((toma) => {
+            (toma.cultivos || []).forEach((c) => { if (c && c.cultivo) pares.push([toma.toma, c.cultivo]); });
+        });
+        await Promise.all(pares.map(([t, c]) => actualizarUsuariosG3DesdeSupabase(t, c)));
+    }
+
+    const ordenTomasDesktop = Array.from(document.getElementById('tomaSelect')?.options || [])
+        .map((opt) => opt.value).filter((v) => v && v !== 'CONSOLIDADO');
+    // generarDatosAnexoG2 llama a alert() si el consolidado está vacío; ya se verificó arriba.
+    const datos = generarDatosAnexoG2(ordenTomasDesktop);
+    if (!datos) return null;
+
+    const semanaTexto = `DEL ${formatearFecha(ini)} AL ${formatearFecha(fin)}`;
+    const datosCanalSur = datosAnexoG2.filter((f) => f.canalPrincipal === 'CANAL SUR');
+    const datosRioChira = datosAnexoG2.filter((f) => f.canalPrincipal === 'RIO CHIRA');
+    const html = `
+        <div style="margin-bottom:10px; font-family:Arial,sans-serif; color:#000000;">
+            <div style="text-align:center; font-weight:700; font-size:13px; margin-bottom:8px;">
+                ANEXO G2: Programación de Distribución del Agua a nivel de canales de distribución
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:2px 16px; font-size:11px;">
+                <div><strong>AAA</strong> &nbsp; : Jequetepeque Zarumilla</div>
+                <div><strong>Mes</strong> &nbsp; : ${obtenerTextoMesSemana(ini, fin)}</div>
+                <div><strong>ALA</strong> &nbsp; : Chira</div>
+                <div><strong>Semana</strong> &nbsp; : ${semanaTexto}</div>
+                <div style="grid-column: 1 / -1; white-space: nowrap;"><strong>Sector Hidráulico</strong> &nbsp; : JUNTA DE USUARIOS DEL SECTOR HIDRÁULICO MENOR CHIRA - CLASE A</div>
+            </div>
+        </div>
+        ${construirTablaG2Html(datosCanalSur, 'ANEXO G2 — TOMAS QUE RIEGAN POR CANAL SUR')}
+        ${construirTablaG2Html(datosRioChira, 'ANEXO G2 — TOMAS QUE RIEGAN POR RÍO CHIRA')}`;
+    return {
+        html,
+        volumen: datosAnexoG2.reduce((a, t) => a + (t.volumenProgramado || 0), 0),
+        area: datosAnexoG2.reduce((a, t) => a + (t.areaRiego || 0), 0),
+    };
+}
+
+// Rellena de a una las miniaturas (en serie: comparten las globales).
+async function _rellenarMiniaturasSemanasPDA(semanas) {
+    const snap = _snapshotEstadoSemanaPDA();
+    try {
+        for (const s of semanas) {
+            if (_miniG2Cancelar) break;
+            const caja = document.getElementById('miniG2_' + s.ini);
+            if (!caja) break; // modal cerrado
+            let res = null;
+            try { res = await _generarMiniaturaG2DeSemana(s.ini, s.fin); }
+            catch (e) { console.warn('Miniatura G2 falló para ' + s.ini, e); }
+            if (_miniG2Cancelar) break;
+            const cajaAhora = document.getElementById('miniG2_' + s.ini);
+            if (!cajaAhora) break;
+            if (!res) {
+                cajaAhora.innerHTML = '<div style="padding:30px 10px;text-align:center;font-size:11px;color:#9a3412;">No se pudo generar la vista previa</div>';
+                continue;
+            }
+            const ANCHO_CAJA = cajaAhora.clientWidth || 320;
+            cajaAhora.innerHTML = '<div class="miniG2-lienzo" style="width:1500px;transform-origin:top left;pointer-events:none;background:#fff;padding:12px;box-sizing:border-box;"></div>';
+            const lienzo = cajaAhora.firstElementChild;
+            lienzo.innerHTML = res.html;
+            const anchoReal = Math.max(lienzo.scrollWidth, 1500);
+            const escala = ANCHO_CAJA / anchoReal;
+            lienzo.style.transform = 'scale(' + escala.toFixed(4) + ')';
+            // La caja se ajusta al alto real de la miniatura (con tope) para no dejar blanco de sobra.
+            cajaAhora.style.height = Math.min(260, Math.max(90, Math.ceil(lienzo.scrollHeight * escala) + 4)) + 'px';
+            const resumen = document.getElementById('miniG2Res_' + s.ini);
+            if (resumen) resumen.textContent = res.volumen.toLocaleString('es-PE', { maximumFractionDigits: 0 }) + ' m³';
+        }
+    } finally {
+        _restaurarEstadoSemanaPDA(snap);
+    }
+}
+
 async function mostrarHistorialSemanasPDA() {
     // El listado viene de Supabase (todas las tomas que cualquier
     // programador haya confirmado), así que hace falta esperar la
     // consulta — se muestra el modal con "Cargando…" de una y se rellena
     // cuando responde, en vez de dejar el botón sin reacción visible.
+    cerrarModalHistorialSemanasPDA();
+    if (_miniG2Promesa) await _miniG2Promesa;
+    _miniG2Cancelar = false;
+
     const modalCargando = `
     <div id="modalHistorialSemanasPDA" class="modal-overlay active" style="z-index:99996;">
         <div class="modal-container" style="max-width:720px;text-align:center;padding:40px;">
-            <h3 style="margin-top:0;">🕒 Historial — Semanas ya trabajadas</h3>
-            <p style="color:#666;">Cargando semanas guardadas…</p>
+            <h3 style="margin-top:0;">📚 SEMANAS PROGRAMADAS</h3>
+            <p style="color:#666;">Cargando semanas programadas…</p>
         </div>
     </div>`;
     const divCargando = document.createElement('div');
@@ -14412,43 +14538,53 @@ async function mostrarHistorialSemanasPDA() {
     const modalActual = document.getElementById('modalHistorialSemanasPDA');
     if (!modalActual) return; // se cerró (❌/clic afuera) mientras cargaba
 
-    const filas = semanas.length ? semanas.map(s => `
-        <tr>
-            <td style="padding:7px 10px;">${formatearFecha(s.ini)} – ${formatearFecha(s.fin)}</td>
-            <td style="padding:7px 10px;text-align:center;">${s.nTomas}</td>
-            <td style="padding:7px 10px;text-align:right;">${s.areaTotal.toFixed(2)}</td>
-            <td style="padding:7px 10px;text-align:left;font-size:11px;color:#666;">${s.tomas.slice(0, 6).map(escapeHtml).join(', ')}${s.tomas.length > 6 ? '…' : ''}</td>
-            <td style="padding:7px 10px;text-align:center;white-space:nowrap;">
-                <button class="btn btn-primary" style="padding:5px 10px;font-size:11px;" onclick="_verHistorialSemanaComoG2('${s.ini}','${s.fin}')">📄 Ver Anexo G2</button>
-                <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;margin-left:4px;" onclick="cerrarModalHistorialSemanasPDA();confirmarSemanaSimulada('${s.ini}','${s.fin}');">✏️ Continuar</button>
-            </td>
-        </tr>`).join('') : `<tr><td colspan="5" style="padding:14px;text-align:center;color:#6b7280;">Todavía no hay ninguna semana con programación confirmada para esta comisión.</td></tr>`;
+    const tarjetas = semanas.length ? semanas.map((s) => `
+        <div style="border:1px solid #cfd8e3;border-radius:8px;background:#fff;overflow:hidden;display:flex;flex-direction:column;">
+            <div onclick="_verHistorialSemanaComoG2('${s.ini}','${s.fin}')" title="Abrir el Anexo G2 de esta semana"
+                 style="cursor:pointer;background:#f3f6fa;border-bottom:1px solid #cfd8e3;">
+                <div id="miniG2_${s.ini}" style="width:100%;height:150px;overflow:hidden;position:relative;background:#fff;">
+                    <div style="padding:70px 10px;text-align:center;font-size:11px;color:#6b7280;">Generando vista previa del G2…</div>
+                </div>
+            </div>
+            <div style="padding:9px 11px;">
+                <div style="font-weight:700;font-size:13px;color:#003876;">${formatearFecha(s.ini)} – ${formatearFecha(s.fin)}</div>
+                <div style="font-size:11.5px;color:#555;margin:3px 0 8px;">
+                    ${s.nTomas} toma${s.nTomas === 1 ? '' : 's'} · ${s.areaTotal.toFixed(2)} ha · <span id="miniG2Res_${s.ini}"></span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-primary" style="flex:1;padding:5px 8px;font-size:11px;" onclick="_verHistorialSemanaComoG2('${s.ini}','${s.fin}')">📄 Ver Anexo G2</button>
+                    <button class="btn btn-secondary" style="flex:1;padding:5px 8px;font-size:11px;" onclick="_continuarSemanaDesdeHistorialPDA('${s.ini}','${s.fin}')">✏️ Continuar</button>
+                </div>
+            </div>
+        </div>`).join('')
+        : `<div style="grid-column:1/-1;padding:24px;text-align:center;color:#6b7280;">Todavía no hay ninguna semana con programación confirmada para esta comisión.</div>`;
 
     modalActual.innerHTML = `
-        <div class="modal-container" style="max-width:720px;max-height:85vh;overflow-y:auto;text-align:left;">
-            <h3 style="margin-top:0;">🕒 Historial — Semanas ya trabajadas</h3>
-            <p style="font-size:12px;color:#666;margin-top:-4px;">Semanas con al menos una toma confirmada (de cualquier programador, cualquier computadora). "Ver Anexo G2" abre el reporte de esa semana; "Continuar" abre el selector de toma para seguir editándola.</p>
-            <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-                    <thead><tr style="background:#003876;color:white;">
-                        <th style="text-align:left;padding:7px 10px;">Semana (Lun–Dom)</th>
-                        <th style="padding:7px 10px;">Tomas</th>
-                        <th style="padding:7px 10px;text-align:right;">Área (ha)</th>
-                        <th style="padding:7px 10px;text-align:left;">Tomas incluidas</th>
-                        <th style="padding:7px 10px;">Acción</th>
-                    </tr></thead>
-                    <tbody>${filas}</tbody>
-                </table>
-            </div>
+        <div class="modal-container" style="max-width:980px;width:94vw;max-height:88vh;overflow-y:auto;text-align:left;">
+            <h3 style="margin-top:0;">📚 SEMANAS PROGRAMADAS</h3>
+            <p style="font-size:12px;color:#666;margin-top:-4px;">Semanas con al menos una toma confirmada (de cualquier programador, cualquier computadora). Haz clic en la miniatura o en "Ver Anexo G2" para abrir el reporte de esa semana; "Continuar" abre el selector de toma para seguir editándola.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;">${tarjetas}</div>
             <div style="margin-top:16px;text-align:right;">
                 <button class="btn btn-secondary" onclick="cerrarModalHistorialSemanasPDA()">Cerrar</button>
             </div>
         </div>`;
+
+    if (semanas.length) {
+        _miniG2Promesa = _rellenarMiniaturasSemanasPDA(semanas).finally(() => { _miniG2Promesa = null; });
+    }
 }
 
 function cerrarModalHistorialSemanasPDA() {
+    _miniG2Cancelar = true; // frena la generación de miniaturas pendientes (restaura el estado al terminar la actual)
     const m = document.getElementById('modalHistorialSemanasPDA');
     if (m) m.remove();
+}
+
+async function _continuarSemanaDesdeHistorialPDA(fechaInicioISO, fechaFinISO) {
+    cerrarModalHistorialSemanasPDA();
+    if (_miniG2Promesa) await _miniG2Promesa; // que termine y restaure antes de cargar la semana elegida
+    cerrarModalSemana();
+    confirmarSemanaSimulada(fechaInicioISO, fechaFinISO);
 }
 
 // Carga la semana elegida (localStorage + Supabase, mismo pipeline ya
@@ -14456,6 +14592,9 @@ function cerrarModalHistorialSemanasPDA() {
 // del selector de toma — es lo que pidió el usuario explícitamente ("que
 // muestre el Anexo G2 de las semanas ya trabajadas").
 async function _verHistorialSemanaComoG2(fechaInicioISO, fechaFinISO) {
+    cerrarModalHistorialSemanasPDA();
+    if (_miniG2Promesa) await _miniG2Promesa; // que termine y restaure antes de cargar la semana elegida
+
     const fechaInicio = new Date(fechaInicioISO + 'T00:00:00');
     const fechaFin = new Date(fechaFinISO + 'T00:00:00');
     const diasRiego = Math.floor((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24)) + 1;
@@ -14470,7 +14609,6 @@ async function _verHistorialSemanaComoG2(fechaInicioISO, fechaFinISO) {
         esSimulacion: true
     };
 
-    cerrarModalHistorialSemanasPDA();
     cerrarModalSemana();
     cargarProgramacionPorTomaDeStorage();
     await sincronizarConsolidadoDesdeSupabase();
