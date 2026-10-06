@@ -22319,9 +22319,9 @@ async function mostrarAnexoG2() {
                 style="background:#dc3545; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; margin-right:8px; font-size:12px;">
                 🖨️ Imprimir
             </button>
-            <button onclick="volverAG3DesdeG2()"
+            <button onclick="irAMenuTomas()"
                 style="background:#6c757d; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px;">
-                ⬅️ Volver al Anexo G3
+                🏠 Menú Tomas
             </button>
         </div>
     `;
@@ -22396,14 +22396,6 @@ function manejarCambioNotaAnexoG2(valor) {
     if (!semanaInicio || !window.CusshmiDatos) { pintarEstado('error'); return; }
     const comisionKey = localStorage.getItem('cusshmi_comision') || 'DEFAULT';
     CusshmiDatos.guardarNotaAnexoG2Debounced(comisionKey, semanaInicio, semanaPDA?.fechaFin, valor, pintarEstado);
-}
-
-// Vuelve directo al Anexo G-3 de la toma desde la que se entró al G-2, conservando
-// semana/consolidado ya cargados (mostrarAnexoG3 recalcula en memoria, sin red).
-// window._tomaParaAbrirG3 ya lo mantiene actualizado el resto del flujo (ver
-// guardarEnConsolidadoDemandasIndividualConProgramacion y abrirG3DesdeTomaG2).
-function volverAG3DesdeG2() {
-    mostrarAnexoG3(false);
 }
 
 // Hipervínculo (solo vista HTML del G2, nunca en impresión/Excel) del nombre de una
