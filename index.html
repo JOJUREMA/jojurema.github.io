@@ -2832,7 +2832,7 @@ const COMISIONES = {
                     areaKmlOriginal = calcularAreaPoligonoHa(verticesKml);
                 }
                 const verticesActuales = Array.isArray(r.vertices_utm) ? r.vertices_utm : [];
-                const areaActual = verticesActuales.length >= 3 ? calcularAreaPoligonoHa(verticesActuales) : (r.area_medida_ha != null ? parseFloat(r.area_medida_ha) : null);
+                const areaActual = verticesActuales.length >= 3 ? areaPoligonoPartesHa(verticesActuales) : (r.area_medida_ha != null ? parseFloat(r.area_medida_ha) : null);
                 const editado = predioKml
                     ? _poligonosDifierenEsc(verticesActuales, verticesKml, 1)
                     : null; // sin polígono del SIG con qué comparar
@@ -6247,11 +6247,10 @@ const COMISIONES = {
                 const estilo = construirEstiloPoligono(estiloId, colorPoligono, true);
 
                 const placemarks = registros.map((registro) => {
-                    const puntos = registro.vertices_utm
-                        .filter((v) => v.lat != null && v.lon != null)
-                        .sort((a, b) => (a.orden || 0) - (b.orden || 0))
-                        .map((v) => [v.lat, v.lon]);
-                    if (puntos.length < 3) return '';
+                    // Un usuario con varias partes sale como un Placemark por
+                    // parte ("NOMBRE (Parte k)"); con una sola, igual que siempre.
+                    const partes = agruparPartesPoligono(registro.vertices_utm.filter((v) => v.lat != null && v.lon != null));
+                    if (partes.length === 0) return '';
                     const camposObj = {};
                     // Solo cols 18-47 ("datos de verificación/levantamiento", lo que se
                     // completa en campo) — las cols 1-17 ("datos observados" de ANA) se
@@ -6259,7 +6258,9 @@ const COMISIONES = {
                     COLUMNAS_FORMATO_A2_LEVANTAMIENTO.filter((col) => col.col >= 18).forEach((col) => {
                         camposObj[_campoASnakeCase(col.campo).toUpperCase()] = valorCampo(registro, col);
                     });
-                    return construirPlacemarkPoligono(registro.apellidos_nombres || 'Sin nombre', puntos, estiloId, camposObj);
+                    return partes.map((parte, idx) => construirPlacemarkPoligono(
+                        (registro.apellidos_nombres || 'Sin nombre') + (partes.length > 1 ? ' (Parte ' + (idx + 1) + ')' : ''),
+                        parte.map((v) => [v.lat, v.lon]), estiloId, camposObj)).join('');
                 }).filter(Boolean);
 
                 if (placemarks.length === 0) {
@@ -6464,18 +6465,23 @@ const COMISIONES = {
         // reutilizar tal cual el resto del pipeline (clasificación por
         // Derecho, etiquetas, recorte de la vista previa).
         function _prediosObservadosParaPlanoA2(registros) {
-            return (registros || [])
+            // Un registro con varias partes aporta un "predio" por parte.
+            const resultado = [];
+            (registros || [])
                 .filter((r) => Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3)
-                .map((r) => ({
-                    toma: r.toma_nombre || '',
-                    lateral: '',
-                    catastralKey: r.unidad_catastral || '',
-                    usuario: r.apellidos_nombres || '',
-                    areaHa: 0,
-                    coordenadas: r.vertices_utm.slice()
-                        .sort((a, b) => (a.orden || 0) - (b.orden || 0))
-                        .map((v) => [v.lon, v.lat]),
-                }));
+                .forEach((r) => {
+                    agruparPartesPoligono(r.vertices_utm).forEach((parte) => {
+                        resultado.push({
+                            toma: r.toma_nombre || '',
+                            lateral: '',
+                            catastralKey: r.unidad_catastral || '',
+                            usuario: r.apellidos_nombres || '',
+                            areaHa: 0,
+                            coordenadas: parte.map((v) => [v.lon, v.lat]),
+                        });
+                    });
+                });
+            return resultado;
         }
 
         // Clasificación de Derecho para el PLANO — envuelve
@@ -6502,6 +6508,9 @@ const COMISIONES = {
         // de cada polígono: coincide si >=80% de los del observado caen dentro
         // del predio del KML Y >=60% de los del KML caen dentro del observado.
         function _poligonoObservadoCoincideConKmlPlanoA2(verticesUtm, prediosKmlUtm) {
+            // Un polígono de varias partes representa algo que el KML (un solo
+            // predio) no tiene: siempre se muestra.
+            if (numerosPartesPoligono(verticesUtm).length > 1) return false;
             const obs = verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((v) => [v.easting, v.northing]);
             const muestras = (poly) => {
                 const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
@@ -7427,11 +7436,15 @@ const COMISIONES = {
             //      tapado por su relleno. Su etiqueta (nombre+área) se
             //      dibuja aparte, más abajo (sección 5.6) — ver ahí la
             //      prioridad de espacio frente a canales/predios.
-            const _observadosA2InfoPlanoA2 = (usuariosObservadosA2 || []).map((u) => {
-                const verticesOrdenados = u.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
-                const puntosPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
-                return { u, verticesOrdenados, puntosPx };
-            }).filter((info) => info.puntosPx.length >= 3);
+            // Un usuario con varias partes aporta una entrada POR PARTE (cada
+            // una se rellena y se rotula con su propia área).
+            const _observadosA2InfoPlanoA2 = [];
+            (usuariosObservadosA2 || []).forEach((u) => {
+                agruparPartesPoligono(u.verticesUtm).forEach((verticesOrdenados) => {
+                    const puntosPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
+                    _observadosA2InfoPlanoA2.push({ u, verticesOrdenados, puntosPx });
+                });
+            });
             _observadosA2InfoPlanoA2.forEach(({ puntosPx }) => {
                 ctx.beginPath();
                 puntosPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
@@ -7458,7 +7471,23 @@ const COMISIONES = {
             //      de los canales y un canal que pasara por su interior
             //      quedaba oculto bajo el relleno naranja).
             if (usuarioResaltado) {
-                const verticesOrdenados = usuarioResaltado.verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+              // Un usuario puede tener VARIAS PARTES (predio dividido por
+              // canales, etc.): cada una se dibuja/rotula por separado y la
+              // elegida para el centroide se marca.
+              const partesUsuario = agruparPartesPoligono(usuarioResaltado.verticesUtm);
+              const variasPartesUsuario = partesUsuario.length > 1;
+              const numerosPartesUsuario = numerosPartesPoligono(usuarioResaltado.verticesUtm);
+              const parteCentroideElegida = _parteCentroideDeUsuarioPlanoA2(usuarioResaltado);
+              let idxParteCentroide = numerosPartesUsuario.indexOf(parteCentroideElegida);
+              if (idxParteCentroide < 0) {
+                  let mejorArea = -1;
+                  partesUsuario.forEach((p, i) => {
+                      const a = calcularAreaPoligonoHa(p.map((v) => ({ easting: v.easting, northing: v.northing })));
+                      if (a > mejorArea) { mejorArea = a; idxParteCentroide = i; }
+                  });
+              }
+              let numeroVerticeBase = 0;
+              partesUsuario.forEach((verticesOrdenados, idxParte) => {
                 const puntosUsuarioPx = verticesOrdenados.map((v) => proyector.proyectar(v.easting, v.northing));
                 ctx.beginPath();
                 puntosUsuarioPx.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1])));
@@ -7517,7 +7546,11 @@ const COMISIONES = {
                         const partesSolo = partirNombreEnDosLineas(usuarioResaltado.nombre);
                         if (partesSolo[1]) lineasNombreSolo = partesSolo;
                     }
+                    // Con varias partes cada una lleva "PARTE k" (el nombre
+                    // ya va en el membrete) y su propia área.
+                    if (variasPartesUsuario) lineasNombreSolo = ['PARTE ' + (idxParte + 1)];
                     const lineasCentro = lineasNombreSolo.concat(['Área: ' + (areaHaSolo ? areaHaSolo.toFixed(2) : '0.00') + ' ha']);
+                    if (variasPartesUsuario && idxParte === idxParteCentroide) lineasCentro.push('★ centroide');
                     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                     const altoLineaSolo = 26;
                     lineasCentro.forEach((linea, i) => {
@@ -7526,9 +7559,24 @@ const COMISIONES = {
                         ctx.fillText(linea, centroVisual[0], centroVisual[1] + (i - (lineasCentro.length - 1) / 2) * altoLineaSolo);
                     });
                     _dibujarVerticesYMedidasPlanoA2(ctx, puntosUsuarioPx, verticesOrdenados, centroVisual,
-                        { x0: MARGEN, y0: MARGEN, x1: ANCHO - MARGEN, y1: ALTO_MAPA - MARGEN }, 1.6);
+                        { x0: MARGEN, y0: MARGEN, x1: ANCHO - MARGEN, y1: ALTO_MAPA - MARGEN }, 1.6, numeroVerticeBase + 1);
+                    // Marca del centroide en la parte elegida (solo con varias
+                    // partes — con una sola, el cuadro de coordenadas basta).
+                    if (variasPartesUsuario && idxParte === idxParteCentroide) {
+                        const cen = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
+                        if (cen) {
+                            const cpx = proyector.proyectar(cen.easting, cen.northing);
+                            ctx.beginPath(); ctx.arc(cpx[0], cpx[1], 11, 0, Math.PI * 2);
+                            ctx.fillStyle = '#c0392b'; ctx.fill();
+                            ctx.lineWidth = 3; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+                            ctx.beginPath(); ctx.arc(cpx[0], cpx[1], 3.5, 0, Math.PI * 2);
+                            ctx.fillStyle = '#ffffff'; ctx.fill();
+                        }
+                    }
                     ctx.restore();
                 }
+                numeroVerticeBase += verticesOrdenados.length;
+              });
             }
 
             // 4.5) Canales (color real por orden). Se usa canalesParaDibujo
@@ -7917,9 +7965,14 @@ const COMISIONES = {
             } else if (posicionCajas === 'derecha') {
                 xCajaDatos = ANCHO - MARGEN - 15 - ANCHO_CAJA_DATOS;
                 cajasALaIzquierda = false;
-            } else if (usuarioResaltado) {
+            } else if (usuarioResaltado && !modoSoloPoligono) {
+                // (En el plano por usuario el encuadre ya reserva el lado
+                // derecho para las cajas — ver bbox de modoSoloPoligono — así
+                // que en 'auto' siempre van a la derecha; con varias partes el
+                // centroide puede caer en la mitad derecha y las mandaría
+                // encima de otra parte del polígono.)
                 const centroideParaUbicar = (typeof calcularCentroidePoligono === 'function')
-                    ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                    ? centroidePoligonoPartes(usuarioResaltado.verticesUtm, _parteCentroideDeUsuarioPlanoA2(usuarioResaltado))
                     : null;
                 if (centroideParaUbicar) {
                     const centroPxParaUbicar = proyector.proyectar(centroideParaUbicar.easting, centroideParaUbicar.northing);
@@ -7946,7 +7999,7 @@ const COMISIONES = {
                 // que esta segunda caja se omite (evita repetir el dato).
                 if (usuarioResaltado.registro) {
                     const centroidePredio = (typeof calcularCentroidePoligono === 'function')
-                        ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                        ? centroidePoligonoPartes(usuarioResaltado.verticesUtm, _parteCentroideDeUsuarioPlanoA2(usuarioResaltado))
                         : null;
                     const altoCentroide = _dibujarCuadroCentroidePlanoA2(ctx, xCajaDatos, yCajaDatos, centroidePredio, ANCHO_CAJA_DATOS);
                     yCajaDatos += altoCentroide + 12;
@@ -7986,7 +8039,7 @@ const COMISIONES = {
         function _dibujarCuadroDatosUsuarioPlanoA2(ctx, x0, y0, usuarioResaltado, anchoCaja) {
             const registro = usuarioResaltado.registro || {};
             const areaPoligonoHa = (typeof calcularAreaPoligonoHa === 'function')
-                ? calcularAreaPoligonoHa(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                ? areaPoligonoPartesHa(usuarioResaltado.verticesUtm)
                 : 0;
 
             // Un usuario SIN registro de Formato A-2 (Levantamiento) —
@@ -8001,7 +8054,7 @@ const COMISIONES = {
             if (!usuarioResaltado.registro) {
                 const p1 = usuarioResaltado.padronA1 || {};
                 const centroide = (typeof calcularCentroidePoligono === 'function')
-                    ? calcularCentroidePoligono(usuarioResaltado.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })))
+                    ? centroidePoligonoPartes(usuarioResaltado.verticesUtm, _parteCentroideDeUsuarioPlanoA2(usuarioResaltado))
                     : null;
                 titulo = 'DATOS DEL USUARIO (PADRÓN A-1)';
                 filas = [
@@ -8234,7 +8287,7 @@ const COMISIONES = {
 
             for (let i = 0; i < nMostrados; i++) {
                 const u = usuarios[i];
-                const centroide = calcularCentroidePoligono(u.verticesUtm.map((v) => ({ easting: v.easting, northing: v.northing })));
+                const centroide = centroidePoligonoPartes(u.verticesUtm, _parteCentroideDeUsuarioPlanoA2(u));
                 if (i % 2 === 1) { ctx.fillStyle = '#f7f8fa'; ctx.fillRect(x0 + 1, y, anchoCaja - 2, ALTO_FILA); }
                 const yCentro = y + ALTO_FILA / 2;
                 ctx.font = '400 11px Arial, sans-serif'; ctx.fillStyle = '#000000';
@@ -8269,7 +8322,7 @@ const COMISIONES = {
         // pise algo" a "sin pisar nada pero cortada por el borde" — y si ni
         // así entra completa, se recorta (clamp) hacia dentro: nunca queda
         // invisible.
-        function _dibujarVerticesYMedidasPlanoA2(ctx, puntosPx, verticesOrdenados, centroPx, limites, k) {
+        function _dibujarVerticesYMedidasPlanoA2(ctx, puntosPx, verticesOrdenados, centroPx, limites, k, inicioNumero = 1) {
             const RADIO_VERTICE = 7 * k;
             const ocupados = [];
             puntosPx.forEach((pt) => {
@@ -8287,7 +8340,7 @@ const COMISIONES = {
                 ctx.stroke();
                 ctx.fillStyle = '#ffffff';
                 ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                ctx.fillText(String(i + 1), pt[0], pt[1]);
+                ctx.fillText(String(inicioNumero + i), pt[0], pt[1]);
             });
 
             ctx.font = '700 ' + (10 * k).toFixed(1) + 'px Arial, sans-serif';
@@ -8347,9 +8400,39 @@ const COMISIONES = {
         // alto disponible no alcanza se achican las filas (hasta un mínimo
         // legible) y, de seguir sin caber, se corta con "+ N vértices más".
         // Devuelve el alto usado.
+        // Parte (número, 1…n) elegida por quien programa para llevar el
+        // centroide de un usuario con varias partes — guardada en
+        // campos_verificacion.centroideParte. Sin elegir → undefined (el
+        // cálculo usa la parte de mayor área).
+        function _parteCentroideDeUsuarioPlanoA2(u) {
+            const reg = u && u.registro;
+            return Number(reg && reg.campos_verificacion && reg.campos_verificacion.centroideParte) || undefined;
+        }
+
+        // Un usuario con VARIAS PARTES (predio dividido por canales, etc.)
+        // lleva una fila-título "PARTE k — x ha" antes de los vértices de
+        // cada parte; la numeración de vértices es continua entre partes
+        // (igual que en el dibujo) y cada parte cierra consigo misma.
         function _dibujarTablaVerticesPlanoA2(ctx, x0, y0, verticesUtm, anchoCaja, altoDisponible) {
-            const vs = verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
-            const n = vs.length;
+            const partes = agruparPartesPoligono(verticesUtm);
+            const variasPartes = partes.length > 1;
+            const filas = [];
+            let perimetro = 0, numeroBase = 0;
+            partes.forEach((vs, pi) => {
+                const nP = vs.length;
+                if (variasPartes) {
+                    const areaP = calcularAreaPoligonoHa(vs.map((v) => ({ easting: v.easting, northing: v.northing })));
+                    filas.push({ titulo: 'PARTE ' + (pi + 1) + ' — ' + areaP.toFixed(2) + ' ha' });
+                }
+                for (let i = 0; i < nP; i++) {
+                    const a = vs[i], b = vs[(i + 1) % nP];
+                    const dist = Math.sqrt(Math.pow(b.easting - a.easting, 2) + Math.pow(b.northing - a.northing, 2));
+                    perimetro += dist;
+                    filas.push({ num: numeroBase + i + 1, a, dist, lado: (numeroBase + i + 1) + '–' + (numeroBase + ((i + 1) % nP) + 1) });
+                }
+                numeroBase += nP;
+            });
+            const n = filas.length;
             const ALTO_TITULO = 38, ALTO_ENC = 26, ALTO_PIE = 30, PAD = 12;
             let altoFila = 22;
             const cabenFilas = (h) => Math.floor((altoDisponible - ALTO_TITULO - ALTO_ENC - ALTO_PIE - PAD) / h);
@@ -8380,25 +8463,31 @@ const COMISIONES = {
             ctx.fillText('Lado', x0 + COL.lado - 38, yEnc + ALTO_ENC / 2);
             ctx.fillText('Long. (m)', x0 + COL.long - 40, yEnc + ALTO_ENC / 2);
 
-            let perimetro = 0;
-            for (let i = 0; i < n; i++) {
-                const a = vs[i], b = vs[(i + 1) % n];
-                const dist = Math.sqrt(Math.pow(b.easting - a.easting, 2) + Math.pow(b.northing - a.northing, 2));
-                perimetro += dist;
-                if (i >= filasMostradas) continue;
+            let contadorDatos = 0;
+            for (let i = 0; i < filasMostradas; i++) {
+                const fila = filas[i];
                 const yFila = yEnc + ALTO_ENC + i * altoFila;
-                if (i % 2 === 1) { ctx.fillStyle = 'rgba(0,56,118,0.07)'; ctx.fillRect(x0 + 6, yFila, anchoCaja - 12, altoFila); }
                 const yc = yFila + altoFila / 2;
+                if (fila.titulo) {
+                    ctx.fillStyle = 'rgba(179,89,0,0.18)'; ctx.fillRect(x0 + 6, yFila, anchoCaja - 12, altoFila);
+                    ctx.fillStyle = '#5a2d00'; ctx.font = '700 ' + fuente + 'px Arial, sans-serif'; ctx.textAlign = 'left';
+                    ctx.fillText(fila.titulo, x0 + 12, yc);
+                    contadorDatos = 0;
+                    continue;
+                }
+                if (contadorDatos % 2 === 1) { ctx.fillStyle = 'rgba(0,56,118,0.07)'; ctx.fillRect(x0 + 6, yFila, anchoCaja - 12, altoFila); }
+                contadorDatos++;
                 ctx.fillStyle = '#000000'; ctx.font = '600 ' + fuente + 'px Arial, sans-serif'; ctx.textAlign = 'center';
-                ctx.fillText(String(i + 1), x0 + COL.n - 16, yc);
-                ctx.fillText(a.easting.toFixed(2), x0 + COL.este - 56, yc);
-                ctx.fillText(a.northing.toFixed(2), x0 + COL.norte - 62, yc);
-                ctx.fillText((i + 1) + '–' + (((i + 1) % n) + 1), x0 + COL.lado - 38, yc);
-                ctx.fillText(dist.toFixed(2), x0 + COL.long - 40, yc);
+                ctx.fillText(String(fila.num), x0 + COL.n - 16, yc);
+                ctx.fillText(fila.a.easting.toFixed(2), x0 + COL.este - 56, yc);
+                ctx.fillText(fila.a.northing.toFixed(2), x0 + COL.norte - 62, yc);
+                ctx.fillText(fila.lado, x0 + COL.lado - 38, yc);
+                ctx.fillText(fila.dist.toFixed(2), x0 + COL.long - 40, yc);
             }
             if (hayCorte) {
+                const verticesOcultos = filas.slice(filasMostradas).filter((f) => !f.titulo).length;
                 ctx.fillStyle = '#666666'; ctx.font = 'italic 600 ' + fuente + 'px Arial, sans-serif'; ctx.textAlign = 'left';
-                ctx.fillText('… + ' + (n - filasMostradas) + ' vértices más (ver Formato A-2)', x0 + 12, yEnc + ALTO_ENC + filasMostradas * altoFila + altoFila / 2);
+                ctx.fillText('… + ' + verticesOcultos + ' vértices más (ver Formato A-2)', x0 + 12, yEnc + ALTO_ENC + filasMostradas * altoFila + altoFila / 2);
             }
             const yPie = y0 + altoCaja - ALTO_PIE / 2 - PAD / 2;
             ctx.strokeStyle = '#999999'; ctx.lineWidth = 1;
@@ -9518,6 +9607,7 @@ const COMISIONES = {
                             <h4 style="margin:0 0 12px;font-size:13px;color:#9ad8ff;">📍 Predio seleccionado</h4>
                             <div id="textoInfoPredioLevantamientoA2Esc" style="font-size:12.5px;line-height:1.8;margin-bottom:16px;"></div>
                             <button id="btnUsarPredioSeleccionadoLevantamientoA2Esc" style="width:100%;padding:9px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;margin-bottom:8px;">✅ Usar este polígono como área</button>
+                            <button id="btnAgregarPredioParteLevantamientoA2Esc" style="width:100%;padding:9px;background:rgba(255,255,255,0.15);color:#fff;border:1px solid #c8a84b;border-radius:4px;font-weight:600;font-size:12px;cursor:pointer;margin-bottom:8px;" title="Suma este predio como otra parte del polígono total (sin borrar las partes ya guardadas)">➕ Agregar como otra parte</button>
                             <button id="btnCerrarInfoPredioLevantamientoA2Esc" style="width:100%;padding:9px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">✕ Cerrar</button>
                         </div>
                     </div>
@@ -9535,6 +9625,9 @@ const COMISIONES = {
                         </div>
                         <div id="controlesModoPuntoLevantamientoA2Esc" style="display:flex;gap:8px;">
                             <button id="btnMedirAreaLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">📐 Medir área (opcional)</button>
+                            <button id="btnAgregarParteLevantamientoA2Esc" style="display:none;padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;" title="Dibuja otra parte del predio (ej. si un canal lo dividió en dos áreas) — se suma a la actual como un solo polígono total">➕ Agregar otra parte</button>
+                            <select id="selParteLevantamientoA2Esc" style="display:none;padding:7px 8px;border-radius:4px;border:none;font-size:12px;" title="Parte sobre la que actúan «Medir área», «Centroide» y «Eliminar»"></select>
+                            <button id="btnCentroideParteLevantamientoA2Esc" style="display:none;padding:8px 14px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;" title="Pone el centroide (Este/Norte) en el centro de la parte elegida">🎯 Centroide en esta parte</button>
                             <button id="btnEliminarPoligonoLevantamientoA2Esc" style="display:none;padding:8px 14px;background:#8b2c2c;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗑️ Eliminar polígono guardado</button>
                         </div>
                         <div id="controlesModoAreaLevantamientoA2Esc" style="display:none;gap:8px;flex-wrap:wrap;">
@@ -9558,7 +9651,7 @@ const COMISIONES = {
 
             document.getElementById('btnCerrarEditorLevantamientoA2Esc').addEventListener('click', _cerrarEditorUbicacionLevantamientoA2Esc);
             document.getElementById('btnBloqueRiegoLevantamientoA2Esc').addEventListener('click', _toggleBloqueRiegoEditorLevantamientoA2Esc);
-            document.getElementById('btnUsarPredioSeleccionadoLevantamientoA2Esc').addEventListener('click', _usarPredioSeleccionadoLevantamientoA2Esc);
+            document.getElementById('btnUsarPredioSeleccionadoLevantamientoA2Esc').addEventListener('click', function () { _usarPredioSeleccionadoLevantamientoA2Esc(false); });
             document.getElementById('btnCerrarInfoPredioLevantamientoA2Esc').addEventListener('click', _cerrarInfoPredioSeleccionadoLevantamientoA2Esc);
             document.getElementById('btnFinalizarEditorLevantamientoA2Esc').addEventListener('click', function () {
                 if (!_puntoTempLevantamientoA2Esc) { alert('Haz clic en el mapa para colocar el punto antes de finalizar.'); return; }
@@ -9572,14 +9665,31 @@ const COMISIONES = {
             document.getElementById('btnMedirAreaLevantamientoA2Esc').addEventListener('click', function () {
                 // Si ya existe un polígono guardado, se precarga como punto de partida
                 // editable (ajustar/re-cerrar en vez de empezar de cero).
-                _verticesAreaTempLevantamientoA2Esc = _verticesUtmExistentesLevantamientoA2Esc.length >= 3
-                    ? _verticesUtmExistentesLevantamientoA2Esc.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0))
-                        .map((v) => ({ easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon, origen: v.origen }))
+                // Con varias partes se edita la elegida en el selector «Parte».
+                const partesEx = _partesComoObjetosLevantamientoA2Esc();
+                const elegida = partesEx.length ? (partesEx.find((p) => p.numero === _parteSeleccionadaLevantamientoA2Esc()) || partesEx[0]) : null;
+                _parteEditandoLevantamientoA2Esc = elegida ? elegida.numero : 1;
+                _verticesAreaTempLevantamientoA2Esc = elegida
+                    ? elegida.vertices.map((v) => ({ easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon, origen: v.origen }))
                     : [];
-                if (_capaPoligonoExistenteLevantamientoA2Esc) { _mapaEditorLevantamientoA2Esc.removeLayer(_capaPoligonoExistenteLevantamientoA2Esc); _capaPoligonoExistenteLevantamientoA2Esc = null; }
+                // Las OTRAS partes quedan como referencia (no editables) mientras se edita esta.
+                _dibujarPartesExistentesLevantamientoA2Esc(_parteEditandoLevantamientoA2Esc);
                 _redibujarAreaEditorLevantamientoA2Esc();
                 _cambiarModoEditorLevantamientoA2Esc('area');
             });
+            document.getElementById('btnAgregarParteLevantamientoA2Esc').addEventListener('click', function () {
+                const partesEx = _partesComoObjetosLevantamientoA2Esc();
+                _parteEditandoLevantamientoA2Esc = partesEx.length + 1;
+                _verticesAreaTempLevantamientoA2Esc = [];
+                _dibujarPartesExistentesLevantamientoA2Esc(null); // todas las existentes quedan de referencia
+                _redibujarAreaEditorLevantamientoA2Esc();
+                _cambiarModoEditorLevantamientoA2Esc('area');
+            });
+            document.getElementById('selParteLevantamientoA2Esc').addEventListener('change', function () {
+                _dibujarPartesExistentesLevantamientoA2Esc(undefined); // resalta la parte elegida
+            });
+            document.getElementById('btnCentroideParteLevantamientoA2Esc').addEventListener('click', _fijarCentroideEnParteLevantamientoA2Esc);
+            document.getElementById('btnAgregarPredioParteLevantamientoA2Esc').addEventListener('click', function () { _usarPredioSeleccionadoLevantamientoA2Esc(true); });
             document.getElementById('btnVolverModoPuntoLevantamientoA2Esc').addEventListener('click', function () {
                 _verticesAreaTempLevantamientoA2Esc = [];
                 _redibujarAreaEditorLevantamientoA2Esc();
@@ -9610,7 +9720,11 @@ const COMISIONES = {
                 const este = Number(centroide.easting.toFixed(2));
                 const norte = Number(centroide.northing.toFixed(2));
                 r.este = este; r.norte = norte; r.zona = r.zona || '17-S';
-                _guardarCampoLevantamientoA2Esc({ id: r.id, este: este, norte: norte, zona: r.zona });
+                // La parte que se está editando pasa a ser la del centroide
+                // (a criterio de quien programa — ver centroideParte).
+                r.camposVerificacion = r.camposVerificacion || {};
+                r.camposVerificacion.centroideParte = _parteEditandoLevantamientoA2Esc;
+                _guardarCampoLevantamientoA2Esc({ id: r.id, este: este, norte: norte, zona: r.zona, camposVerificacion: r.camposVerificacion });
                 _verticesAreaTempLevantamientoA2Esc = [];
                 _ultimaAreaMedidaLevantamientoA2Esc = null;
                 _redibujarAreaEditorLevantamientoA2Esc();
@@ -9752,25 +9866,143 @@ const COMISIONES = {
         // (_guardarCampoLevantamientoA2Esc) que "Cerrar polígono" (modo
         // área) e Importar Polígonos (KML/KMZ), origen:'bloque_riego' para
         // distinguirlo de 'manual'/'kml_importado' en el dato guardado.
-        function _usarPredioSeleccionadoLevantamientoA2Esc() {
+        // `agregar` = true → suma el predio como OTRA PARTE del polígono total
+        // (predio dividido por canales, etc.), conservando las partes ya
+        // guardadas; false → lo usa como el único polígono (reemplaza).
+        function _usarPredioSeleccionadoLevantamientoA2Esc(agregar) {
             const r = _levantamientoA2Estado.registroActual;
             const p = _predioSeleccionadoLevantamientoA2Esc;
             if (!r || !p) return;
             const nombrePredio = nombreUsuarioPlanoA2(p.usuario);
+            const partesEx = _partesComoObjetosLevantamientoA2Esc();
 
-            const verticesParaGuardar = p.coordenadas.map((par, idx) => {
+            const verticesNuevos = p.coordenadas.map((par) => {
                 const utm = latLonAUtm17S(par[1], par[0]); // p.coordenadas viene [lon,lat] (parsearKmlATomas)
-                return { orden: idx + 1, easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0], origen: 'bloque_riego' };
+                return { easting: utm.easting, northing: utm.northing, lat: par[1], lon: par[0], origen: 'bloque_riego' };
             });
-            r.verticesUtm = verticesParaGuardar;
-            _verticesUtmExistentesLevantamientoA2Esc = verticesParaGuardar.slice();
-            _guardarCampoLevantamientoA2Esc({ id: r.id, verticesUtm: verticesParaGuardar });
+            if (agregar === true && partesEx.length > 0) {
+                _guardarPartesLevantamientoA2Esc(partesEx.map((x) => x.vertices).concat([verticesNuevos]));
+            } else {
+                if (partesEx.length > 1 && !confirm('Este registro ya tiene ' + partesEx.length + ' partes.\n\n«Usar este polígono como área» las reemplaza todas por este único predio.\n\n¿Continuar? (Para conservarlas, cancela y usa «Agregar como otra parte».)')) return;
+                _guardarPartesLevantamientoA2Esc([verticesNuevos], partesEx.length > 1 ? null : undefined);
+            }
             // Refresca de inmediato la capa de referencia (polígono ya
             // guardado) en modo punto para que se vea el cambio sin cerrar
             // el editor.
             if (_modoEditorLevantamientoA2Esc === 'punto') _redibujarPuntoEditorLevantamientoA2Esc();
             _cerrarInfoPredioSeleccionadoLevantamientoA2Esc();
-            alert('✅ Polígono de "' + nombrePredio + '" guardado como el área de este registro.');
+            alert(agregar === true && partesEx.length > 0
+                ? '✅ Predio de "' + nombrePredio + '" agregado como la parte ' + (partesEx.length + 1) + ' del polígono de este registro.'
+                : '✅ Polígono de "' + nombrePredio + '" guardado como el área de este registro.');
+        }
+
+        // ── Polígono de VARIAS PARTES (ver agruparPartesPoligono,
+        //    assets/core/coordenadasUtm.js) ──
+        let _parteEditandoLevantamientoA2Esc = 1; // número de la parte que se dibuja/edita en modo «Medir área»
+
+        // [{numero, vertices}] de lo ya guardado (partes con ≥3 vértices).
+        function _partesComoObjetosLevantamientoA2Esc() {
+            const numeros = numerosPartesPoligono(_verticesUtmExistentesLevantamientoA2Esc);
+            return agruparPartesPoligono(_verticesUtmExistentesLevantamientoA2Esc).map((vertices, i) => ({ numero: numeros[i], vertices }));
+        }
+
+        function _parteSeleccionadaLevantamientoA2Esc() {
+            const sel = document.getElementById('selParteLevantamientoA2Esc');
+            return sel && sel.value ? parseInt(sel.value, 10) : 1;
+        }
+
+        // Guarda una lista de partes ([[vértices], [vértices]…]) como el
+        // arreglo plano de vertices_utm — partes renumeradas 1..n y `orden`
+        // continuo. `centroideParte`: undefined = no tocar, null = quitar la
+        // elección, n = fijar la parte n.
+        function _guardarPartesLevantamientoA2Esc(listaPartes, centroideParte) {
+            const r = _levantamientoA2Estado.registroActual;
+            const plano = [];
+            let orden = 0;
+            listaPartes.forEach((verts, pi) => verts.forEach((v) => {
+                orden++;
+                plano.push({ orden, easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon, origen: v.origen || 'manual', parte: pi + 1 });
+            }));
+            r.verticesUtm = plano;
+            _verticesUtmExistentesLevantamientoA2Esc = plano.slice();
+            const datos = { id: r.id, verticesUtm: plano };
+            if (centroideParte !== undefined) {
+                r.camposVerificacion = r.camposVerificacion || {};
+                if (centroideParte === null) delete r.camposVerificacion.centroideParte;
+                else r.camposVerificacion.centroideParte = centroideParte;
+                datos.camposVerificacion = r.camposVerificacion;
+            }
+            _guardarCampoLevantamientoA2Esc(datos);
+        }
+
+        // Dibuja lo ya guardado (una capa por parte). `excluirNumero`: parte
+        // que se está editando (no se dibuja); null = dibujar todas como
+        // referencia; undefined = modo punto (la elegida en el selector se
+        // resalta). Con varias partes cada una lleva su etiqueta «Parte k».
+        function _dibujarPartesExistentesLevantamientoA2Esc(excluirNumero) {
+            if (!_mapaEditorLevantamientoA2Esc) return;
+            if (_capaPoligonoExistenteLevantamientoA2Esc) { _mapaEditorLevantamientoA2Esc.removeLayer(_capaPoligonoExistenteLevantamientoA2Esc); _capaPoligonoExistenteLevantamientoA2Esc = null; }
+            const partes = _partesComoObjetosLevantamientoA2Esc();
+            if (!partes.length) return;
+            const resaltada = excluirNumero === undefined ? _parteSeleccionadaLevantamientoA2Esc() : null;
+            const grupo = L.layerGroup();
+            partes.forEach((p) => {
+                if (excluirNumero && p.numero === excluirNumero) return;
+                const esResaltada = partes.length > 1 && p.numero === resaltada;
+                const poli = L.polygon(p.vertices.map((v) => [v.lat, v.lon]), {
+                    color: esResaltada ? '#c0392b' : '#1d4ed8', fillColor: esResaltada ? '#c0392b' : '#1d4ed8',
+                    fillOpacity: 0.15, weight: esResaltada ? 3 : 2, interactive: false,
+                });
+                if (partes.length > 1) poli.bindTooltip('Parte ' + p.numero, { permanent: true, direction: 'center', className: 'etiqueta-canal-bloque-a2-esc' });
+                grupo.addLayer(poli);
+            });
+            _capaPoligonoExistenteLevantamientoA2Esc = grupo.addTo(_mapaEditorLevantamientoA2Esc);
+        }
+
+        // Rellena el selector «Parte» y muestra/oculta los controles que solo
+        // tienen sentido con un polígono guardado (o con varias partes).
+        function _actualizarControlesPartesLevantamientoA2Esc() {
+            const partes = _partesComoObjetosLevantamientoA2Esc();
+            const r = _levantamientoA2Estado.registroActual || {};
+            const elegidaCentroide = Number((r.camposVerificacion || {}).centroideParte) || null;
+            const sel = document.getElementById('selParteLevantamientoA2Esc');
+            const previa = sel && sel.value;
+            if (sel) {
+                sel.innerHTML = partes.map((p) => {
+                    const area = calcularAreaPoligonoHa(p.vertices.map((v) => ({ easting: v.easting, northing: v.northing })));
+                    return '<option value="' + p.numero + '">Parte ' + p.numero + ' — ' + area.toFixed(2) + ' ha' + (p.numero === elegidaCentroide ? ' ★' : '') + '</option>';
+                }).join('');
+                if (previa && partes.some((p) => String(p.numero) === previa)) sel.value = previa;
+                sel.style.display = partes.length > 1 ? '' : 'none';
+            }
+            const btnAgregar = document.getElementById('btnAgregarParteLevantamientoA2Esc');
+            if (btnAgregar) btnAgregar.style.display = partes.length >= 1 ? '' : 'none';
+            const btnCentroide = document.getElementById('btnCentroideParteLevantamientoA2Esc');
+            if (btnCentroide) btnCentroide.style.display = partes.length > 1 ? '' : 'none';
+            const btnEliminar = document.getElementById('btnEliminarPoligonoLevantamientoA2Esc');
+            if (btnEliminar) {
+                btnEliminar.style.display = partes.length >= 1 ? '' : 'none';
+                btnEliminar.textContent = partes.length > 1 ? '🗑️ Eliminar la parte elegida' : '🗑️ Eliminar polígono guardado';
+            }
+        }
+
+        // 🎯 Centroide (Este/Norte) en el centro de la parte elegida — a
+        // criterio de quien programa, para predios divididos por canales.
+        function _fijarCentroideEnParteLevantamientoA2Esc() {
+            const r = _levantamientoA2Estado.registroActual;
+            const partes = _partesComoObjetosLevantamientoA2Esc();
+            const numero = _parteSeleccionadaLevantamientoA2Esc();
+            const parte = partes.find((p) => p.numero === numero);
+            if (!r || !parte) return;
+            const centroide = calcularCentroidePoligono(parte.vertices.map((v) => ({ easting: v.easting, northing: v.northing })));
+            if (!centroide) { alert('No se pudo calcular el centroide de esta parte.'); return; }
+            const latlon = utm17SALatLon(centroide.easting, centroide.northing);
+            _puntoTempLevantamientoA2Esc = { easting: centroide.easting, northing: centroide.northing, lat: latlon.lat, lon: latlon.lon };
+            r.este = Number(centroide.easting.toFixed(2)); r.norte = Number(centroide.northing.toFixed(2)); r.zona = r.zona || '17-S';
+            r.camposVerificacion = r.camposVerificacion || {};
+            r.camposVerificacion.centroideParte = numero;
+            _guardarCampoLevantamientoA2Esc({ id: r.id, este: r.este, norte: r.norte, zona: r.zona, camposVerificacion: r.camposVerificacion });
+            _redibujarPuntoEditorLevantamientoA2Esc();
         }
 
         // Recalcula, para cada etiqueta activa, el tamaño de fuente que cabe
@@ -10099,11 +10331,22 @@ const COMISIONES = {
         // predio del KML del bloque de riego (si lo hay).
         function _eliminarPoligonoGuardadoLevantamientoA2Esc() {
             const r = _levantamientoA2Estado.registroActual;
-            if (!r || _verticesUtmExistentesLevantamientoA2Esc.length < 3) return;
-            if (!confirm('¿Eliminar el polígono guardado de "' + (r.apellidosNombres || 'este registro') + '"?\n\nSe borran sus vértices del Formato A-2. El punto (Este/Norte) y los demás datos de la ficha no se modifican.')) return;
-            r.verticesUtm = [];
-            _verticesUtmExistentesLevantamientoA2Esc = [];
-            _guardarCampoLevantamientoA2Esc({ id: r.id, verticesUtm: [] });
+            const partes = _partesComoObjetosLevantamientoA2Esc();
+            if (!r || partes.length === 0) return;
+            if (partes.length > 1) {
+                // Varias partes: se elimina solo la elegida en el selector.
+                const numero = _parteSeleccionadaLevantamientoA2Esc();
+                if (!confirm('¿Eliminar la PARTE ' + numero + ' del polígono de "' + (r.apellidosNombres || 'este registro') + '"?\n\nLas demás partes se conservan (se renumeran).')) return;
+                const restantes = partes.filter((p) => p.numero !== numero).map((p) => p.vertices);
+                const elegidaCentroide = Number((r.camposVerificacion || {}).centroideParte) || null;
+                let nuevoCentroide;
+                if (elegidaCentroide === numero) nuevoCentroide = null;
+                else if (elegidaCentroide && elegidaCentroide > numero) nuevoCentroide = elegidaCentroide - 1;
+                _guardarPartesLevantamientoA2Esc(restantes, nuevoCentroide);
+            } else {
+                if (!confirm('¿Eliminar el polígono guardado de "' + (r.apellidosNombres || 'este registro') + '"?\n\nSe borran sus vértices del Formato A-2. El punto (Este/Norte) y los demás datos de la ficha no se modifican.')) return;
+                _guardarPartesLevantamientoA2Esc([], null);
+            }
             _verticesAreaTempLevantamientoA2Esc = [];
             _ultimaAreaMedidaLevantamientoA2Esc = null;
             _redibujarAreaEditorLevantamientoA2Esc();
@@ -10113,8 +10356,7 @@ const COMISIONES = {
 
         function _redibujarPuntoEditorLevantamientoA2Esc() {
             setTimeout(function () { _mapaEditorLevantamientoA2Esc.invalidateSize(); }, 50);
-            const btnEliminarPoligono = document.getElementById('btnEliminarPoligonoLevantamientoA2Esc');
-            if (btnEliminarPoligono) btnEliminarPoligono.style.display = _verticesUtmExistentesLevantamientoA2Esc.length >= 3 ? '' : 'none';
+            _actualizarControlesPartesLevantamientoA2Esc();
             if (_marcadorPuntoEditorLevantamientoA2Esc) { _mapaEditorLevantamientoA2Esc.removeLayer(_marcadorPuntoEditorLevantamientoA2Esc); _marcadorPuntoEditorLevantamientoA2Esc = null; }
             if (_puntoTempLevantamientoA2Esc) {
                 _marcadorPuntoEditorLevantamientoA2Esc = L.marker([_puntoTempLevantamientoA2Esc.lat, _puntoTempLevantamientoA2Esc.lon], { draggable: true, icon: _iconoEditorLevantamientoA2Esc('📍') }).addTo(_mapaEditorLevantamientoA2Esc);
@@ -10128,13 +10370,7 @@ const COMISIONES = {
             // Polígono ya guardado (medido en campo o importado por KML) — capa de
             // solo referencia, no interactiva, distinta del polígono EDITABLE del
             // modo área (_verticesAreaTempLevantamientoA2Esc/_capaAreaEditorLevantamientoA2Esc).
-            if (_capaPoligonoExistenteLevantamientoA2Esc) { _mapaEditorLevantamientoA2Esc.removeLayer(_capaPoligonoExistenteLevantamientoA2Esc); _capaPoligonoExistenteLevantamientoA2Esc = null; }
-            if (_verticesUtmExistentesLevantamientoA2Esc.length >= 3) {
-                const latlngsExistente = _verticesUtmExistentesLevantamientoA2Esc.slice()
-                    .sort((a, b) => (a.orden || 0) - (b.orden || 0))
-                    .map((v) => [v.lat, v.lon]);
-                _capaPoligonoExistenteLevantamientoA2Esc = L.polygon(latlngsExistente, { color: '#1d4ed8', fillColor: '#1d4ed8', fillOpacity: 0.15, weight: 2, interactive: false }).addTo(_mapaEditorLevantamientoA2Esc);
-            }
+            _dibujarPartesExistentesLevantamientoA2Esc(undefined); // una capa por parte (la elegida resaltada)
             _actualizarEstadoEditorLevantamientoA2Esc();
         }
 
@@ -10249,13 +10485,15 @@ const COMISIONES = {
             document.getElementById('controlesModoAreaLevantamientoA2Esc').style.display = 'none';
             document.getElementById('resultadoAreaLevantamientoA2Esc').style.display = 'flex';
 
-            const verticesParaGuardar = _verticesAreaTempLevantamientoA2Esc.map(function (v, idx) {
-                return { orden: idx + 1, easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon, origen: 'manual' };
+            // Esta parte reemplaza a la que se estaba editando (o se agrega al
+            // final si es nueva); las demás partes se conservan tal cual.
+            const nuevaParte = _verticesAreaTempLevantamientoA2Esc.map(function (v) {
+                return { easting: v.easting, northing: v.northing, lat: v.lat, lon: v.lon, origen: 'manual' };
             });
-            const r = _levantamientoA2Estado.registroActual;
-            r.verticesUtm = verticesParaGuardar;
-            _verticesUtmExistentesLevantamientoA2Esc = verticesParaGuardar.slice(); // si vuelve a modo punto, la referencia ya está actualizada
-            _guardarCampoLevantamientoA2Esc({ id: r.id, verticesUtm: verticesParaGuardar });
+            const partesEx = _partesComoObjetosLevantamientoA2Esc();
+            const lista = partesEx.map(function (p) { return p.numero === _parteEditandoLevantamientoA2Esc ? nuevaParte : p.vertices; });
+            if (!partesEx.some(function (p) { return p.numero === _parteEditandoLevantamientoA2Esc; })) lista.push(nuevaParte);
+            _guardarPartesLevantamientoA2Esc(lista); // si vuelve a modo punto, la referencia ya está actualizada
         }
 
         function _usarAreaMedidaLevantamientoA2Esc(claveJson) {

@@ -144,3 +144,57 @@ function calcularCentroidePoligono(vertices) {
     if (area === 0) return null;
     return { easting: cxAcum / (6 * area), northing: cyAcum / (6 * area) };
 }
+
+// ── Polígonos de VARIAS PARTES (un mismo usuario cuyo predio quedó dividido
+// por canales, caminos, etc.) ──
+// `vertices_utm` sigue siendo un arreglo plano de {orden, easting, northing,
+// lat, lon, origen}; cada vértice puede llevar además `parte` (1, 2, 3…).
+// Sin `parte` (todo lo guardado antes de esta función) = parte 1, así que un
+// polígono simple se comporta exactamente igual que siempre.
+// Devuelve [[vértices de la parte 1 ordenados por `orden`], [parte 2], …],
+// en orden de número de parte, descartando las que tengan menos de 3 vértices.
+function agruparPartesPoligono(vertices) {
+    if (!Array.isArray(vertices)) return [];
+    const porParte = {};
+    vertices.forEach(function (v) {
+        const k = Number(v && v.parte) || 1;
+        (porParte[k] = porParte[k] || []).push(v);
+    });
+    return Object.keys(porParte).map(Number).sort(function (a, b) { return a - b; })
+        .map(function (k) { return porParte[k].slice().sort(function (a, b) { return (a.orden || 0) - (b.orden || 0); }); })
+        .filter(function (p) { return p.length >= 3; });
+}
+
+// Números de parte realmente presentes (con ≥3 vértices), en el mismo orden
+// que agruparPartesPoligono — para poder mapear "posición" → "número de parte".
+function numerosPartesPoligono(vertices) {
+    if (!Array.isArray(vertices)) return [];
+    const cuenta = {};
+    vertices.forEach(function (v) { const k = Number(v && v.parte) || 1; cuenta[k] = (cuenta[k] || 0) + 1; });
+    return Object.keys(cuenta).map(Number).sort(function (a, b) { return a - b; }).filter(function (k) { return cuenta[k] >= 3; });
+}
+
+// Área total (ha) = suma del área de cada parte.
+function areaPoligonoPartesHa(vertices) {
+    return agruparPartesPoligono(vertices).reduce(function (suma, parte) {
+        return suma + calcularAreaPoligonoHa(parte.map(function (v) { return { easting: v.easting, northing: v.northing }; }));
+    }, 0);
+}
+
+// Centroide de UNA parte, a criterio de quien programa: `parteElegida` es el
+// NÚMERO de parte (el que se guarda en campos_verificacion.centroideParte).
+// Sin elegir (o si esa parte ya no existe) se usa la parte de mayor área.
+function centroidePoligonoPartes(vertices, parteElegida) {
+    const numeros = numerosPartesPoligono(vertices);
+    const partes = agruparPartesPoligono(vertices);
+    if (partes.length === 0) return null;
+    let idx = numeros.indexOf(Number(parteElegida));
+    if (idx < 0) {
+        let mejor = -1;
+        partes.forEach(function (p, i) {
+            const a = calcularAreaPoligonoHa(p.map(function (v) { return { easting: v.easting, northing: v.northing }; }));
+            if (a > mejor) { mejor = a; idx = i; }
+        });
+    }
+    return calcularCentroidePoligono(partes[idx].map(function (v) { return { easting: v.easting, northing: v.northing }; }));
+}
