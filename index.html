@@ -9535,10 +9535,12 @@ const COMISIONES = {
                         </div>
                         <div id="controlesModoPuntoLevantamientoA2Esc" style="display:flex;gap:8px;">
                             <button id="btnMedirAreaLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">📐 Medir área (opcional)</button>
+                            <button id="btnEliminarPoligonoLevantamientoA2Esc" style="display:none;padding:8px 14px;background:#8b2c2c;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗑️ Eliminar polígono guardado</button>
                         </div>
                         <div id="controlesModoAreaLevantamientoA2Esc" style="display:none;gap:8px;flex-wrap:wrap;">
                             <button id="btnDeshacerVerticeLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">↩️ Deshacer último punto</button>
                             <button id="btnCerrarPoligonoLevantamientoA2Esc" style="padding:8px 14px;background:#c8a84b;color:#1a1a1a;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;">✔ Cerrar polígono</button>
+                            <button id="btnBorrarPuntosLevantamientoA2Esc" style="padding:8px 14px;background:#8b2c2c;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">🗑️ Borrar todos los puntos</button>
                             <button id="btnVolverModoPuntoLevantamientoA2Esc" style="padding:8px 14px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;">← Volver al punto</button>
                         </div>
                         <div id="resultadoAreaLevantamientoA2Esc" style="display:none;flex-direction:column;gap:8px;">
@@ -9590,6 +9592,13 @@ const COMISIONES = {
                 _redibujarAreaEditorLevantamientoA2Esc();
             });
             document.getElementById('btnCerrarPoligonoLevantamientoA2Esc').addEventListener('click', _cerrarPoligonoAreaLevantamientoA2Esc);
+            document.getElementById('btnEliminarPoligonoLevantamientoA2Esc').addEventListener('click', _eliminarPoligonoGuardadoLevantamientoA2Esc);
+            document.getElementById('btnBorrarPuntosLevantamientoA2Esc').addEventListener('click', function () {
+                if (_verticesAreaTempLevantamientoA2Esc.length === 0) return;
+                if (!confirm('¿Borrar todos los puntos del polígono en edición? (el polígono ya guardado no se toca hasta que lo cierres de nuevo)')) return;
+                _verticesAreaTempLevantamientoA2Esc = [];
+                _redibujarAreaEditorLevantamientoA2Esc();
+            });
             document.getElementById('btnUsarAreaTotalLevantamientoA2Esc').addEventListener('click', function () { _usarAreaMedidaLevantamientoA2Esc('areaTotalVerificadaHa'); });
             document.getElementById('btnUsarAreaBajoRiegoLevantamientoA2Esc').addEventListener('click', function () { _usarAreaMedidaLevantamientoA2Esc('areaBajoRiegoVerificadaHa'); });
             document.getElementById('btnFijarCentroideLevantamientoA2Esc').addEventListener('click', function () {
@@ -10084,8 +10093,28 @@ const COMISIONES = {
             });
         }
 
+        // Elimina el polígono GUARDADO de este registro (vertices_utm = []).
+        // Las demás ediciones (punto/centroide, áreas verificadas, etc.) no
+        // se tocan. Sin polígono propio, el plano vuelve a depender del
+        // predio del KML del bloque de riego (si lo hay).
+        function _eliminarPoligonoGuardadoLevantamientoA2Esc() {
+            const r = _levantamientoA2Estado.registroActual;
+            if (!r || _verticesUtmExistentesLevantamientoA2Esc.length < 3) return;
+            if (!confirm('¿Eliminar el polígono guardado de "' + (r.apellidosNombres || 'este registro') + '"?\n\nSe borran sus vértices del Formato A-2. El punto (Este/Norte) y los demás datos de la ficha no se modifican.')) return;
+            r.verticesUtm = [];
+            _verticesUtmExistentesLevantamientoA2Esc = [];
+            _guardarCampoLevantamientoA2Esc({ id: r.id, verticesUtm: [] });
+            _verticesAreaTempLevantamientoA2Esc = [];
+            _ultimaAreaMedidaLevantamientoA2Esc = null;
+            _redibujarAreaEditorLevantamientoA2Esc();
+            _cambiarModoEditorLevantamientoA2Esc('punto');
+            _redibujarPuntoEditorLevantamientoA2Esc();
+        }
+
         function _redibujarPuntoEditorLevantamientoA2Esc() {
             setTimeout(function () { _mapaEditorLevantamientoA2Esc.invalidateSize(); }, 50);
+            const btnEliminarPoligono = document.getElementById('btnEliminarPoligonoLevantamientoA2Esc');
+            if (btnEliminarPoligono) btnEliminarPoligono.style.display = _verticesUtmExistentesLevantamientoA2Esc.length >= 3 ? '' : 'none';
             if (_marcadorPuntoEditorLevantamientoA2Esc) { _mapaEditorLevantamientoA2Esc.removeLayer(_marcadorPuntoEditorLevantamientoA2Esc); _marcadorPuntoEditorLevantamientoA2Esc = null; }
             if (_puntoTempLevantamientoA2Esc) {
                 _marcadorPuntoEditorLevantamientoA2Esc = L.marker([_puntoTempLevantamientoA2Esc.lat, _puntoTempLevantamientoA2Esc.lon], { draggable: true, icon: _iconoEditorLevantamientoA2Esc('📍') }).addTo(_mapaEditorLevantamientoA2Esc);
@@ -11690,9 +11719,13 @@ const COMISIONES = {
             });
             document.getElementById('btnBorrarEditorPoligonoPadronCusshmi').addEventListener('click', () => {
                 if (!_editorPoligonoPadronCusshmi) return;
-                if (!confirm('¿Borrar todos los puntos del polígono en edición?')) return;
+                const guardado = Array.isArray(_editorPoligonoPadronCusshmi.fila.vertices_utm) && _editorPoligonoPadronCusshmi.fila.vertices_utm.length >= 3;
+                if (!confirm(guardado
+                    ? '¿Eliminar el polígono de este usuario?\n\nSe borra el polígono guardado (el plano volverá a usar el predio del KML del bloque de riego, si existe).'
+                    : '¿Borrar todos los puntos del polígono en edición?')) return;
                 _editorPoligonoPadronCusshmi.vertices = [];
                 _redibujarEditorPoligonoPadronCusshmi();
+                if (guardado) _guardarEditorPoligonoPadronCusshmi(); // persiste el borrado (guarda null) y cierra el editor
             });
             document.getElementById('btnBloqueRiegoEditorPoligonoPadronCusshmi').addEventListener('click', _toggleBloqueRiegoEditorPoligonoPadronCusshmi);
             document.getElementById('btnUsarPredioSeleccionadoPadronCusshmi').addEventListener('click', _usarPredioSeleccionadoPadronCusshmi);
