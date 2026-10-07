@@ -6483,6 +6483,35 @@ const COMISIONES = {
             return clasif;
         }
 
+        // ¿El polígono observado (vertices_utm) coincide con algún predio del
+        // KML (mismo lugar y tamaño)? Se muestrea una grilla de puntos dentro
+        // de cada polígono: coincide si >=80% de los del observado caen dentro
+        // del predio del KML Y >=60% de los del KML caen dentro del observado.
+        function _poligonoObservadoCoincideConKmlPlanoA2(verticesUtm, prediosKmlUtm) {
+            const obs = verticesUtm.slice().sort((a, b) => (a.orden || 0) - (b.orden || 0)).map((v) => [v.easting, v.northing]);
+            const muestras = (poly) => {
+                const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+                const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+                const N = 16, pts = [];
+                for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+                    const x = x0 + (x1 - x0) * (i + 0.5) / N, y = y0 + (y1 - y0) * (j + 0.5) / N;
+                    if (_puntoDentroPoligonoPlanoA2(x, y, poly)) pts.push([x, y]);
+                }
+                return pts;
+            };
+            const ptsObs = muestras(obs);
+            if (!ptsObs.length) return false;
+            return prediosKmlUtm.some((kml) => {
+                if (kml.length < 3) return false;
+                const enKml = ptsObs.filter(([x, y]) => _puntoDentroPoligonoPlanoA2(x, y, kml)).length / ptsObs.length;
+                if (enKml < 0.8) return false;
+                const ptsKml = muestras(kml);
+                if (!ptsKml.length) return true;
+                const enObs = ptsKml.filter(([x, y]) => _puntoDentroPoligonoPlanoA2(x, y, obs)).length / ptsKml.length;
+                return enObs >= 0.6;
+            });
+        }
+
         async function _generarPlanoPrediosA2() {
             const radioAmbito = document.querySelector('input[name="ambitoPlanoA2"]:checked');
             const ambito = radioAmbito ? radioAmbito.value : 'toma'; // 'toma' | 'todos' | 'observados'
@@ -6635,6 +6664,10 @@ const COMISIONES = {
                 if (esUnaToma) {
                     const ucsKmlBloque = new Set(predios.map((p) => _normUcPlanoA2(p.catastralKey)).filter(Boolean));
                     const nombresKmlBloque = new Set(predios.map((p) => _normNombrePlanoA2(p.usuario)).filter(Boolean));
+                    const prediosKmlUtm = predios.map((p) => p.coordenadas.map(([lon, lat]) => {
+                        const u = latLonAUtm17S(lat, lon);
+                        return [u.easting, u.northing];
+                    }));
                     usuariosObservadosA2Candidatos = formatoA2Rows
                         .filter((r) => r.toma_nombre === tomaNombre && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3)
                         .filter((r) => {
@@ -6643,7 +6676,15 @@ const COMISIONES = {
                             const ucReg = _normUcPlanoA2(r.unidad_catastral);
                             const nombreReg = _normNombrePlanoA2(r.apellidos_nombres);
                             const matcheaBloque = (ucReg && ucsKmlBloque.has(ucReg)) || (nombreReg && nombresKmlBloque.has(nombreReg));
-                            return !matcheaBloque; // sin cruce con el bloque KML = "Sin Registro"
+                            if (!matcheaBloque) return true; // sin cruce con el bloque KML = "Sin Registro"
+                            // Cruza por UC/nombre con el KML, pero su polígono
+                            // medido puede NO ser el del KML (ej. un usuario con
+                            // varios predios del mismo nombre y un polígono
+                            // observado en otro lugar/forma): en ese caso el
+                            // KML no lo representa y su polígono observado se
+                            // muestra también. Solo se omite si coincide con un
+                            // predio del KML (mismo lugar y tamaño).
+                            return !_poligonoObservadoCoincideConKmlPlanoA2(r.vertices_utm, prediosKmlUtm);
                         })
                         .map((r) => ({ nombre: r.apellidos_nombres, verticesUtm: r.vertices_utm, registro: r }));
                 }
