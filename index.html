@@ -8375,10 +8375,6 @@ const COMISIONES = {
             const comisionNombreVisible = comisionNombre.replace(/SUBSECTOR/i, 'SUB SECTOR');
             const subtitulo = comisionNombreVisible + ' - PREDIO OBSERVADO (FORMATO A-2)';
             ctx.fillText(subtitulo, 40, alto / 2 + 24);
-            ctx.textAlign = 'right';
-            ctx.font = '400 18px Arial, sans-serif';
-            const fechaTexto = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });
-            ctx.fillText('Generado: ' + fechaTexto, ancho - 40, alto / 2);
             ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
         }
 
