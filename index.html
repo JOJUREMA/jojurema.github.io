@@ -6345,10 +6345,24 @@ const COMISIONES = {
             const registros = await _obtenerRegistrosParaExportarPoligonosA2();
             const filtrados = registros.filter((r) => r.toma_nombre === toma);
             const nombres = Array.from(new Set(filtrados.map((r) => r.apellidos_nombres).filter(Boolean))).sort();
+            const tienePoli = (r) => Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3;
+            // Un usuario con VARIOS registros del Formato A-2 en la misma toma
+            // (varios predios/polígonos) se lista una vez por registro —
+            // valor "nombrek" (k = posición entre sus registros) — para
+            // poder elegir cada polígono por separado. Con un solo registro,
+            // el valor sigue siendo el nombre solo.
             selectUsuario.innerHTML = '<option value="TODOS">Todos (plano general de la toma)</option>' +
                 nombres.map((n) => {
-                    const tienePoligono = filtrados.some((r) => r.apellidos_nombres === n && Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3);
-                    return `<option value="${escapeHtml(n)}">${escapeHtml(n)}${tienePoligono ? ' 📐' : ''}</option>`;
+                    const regs = filtrados.filter((r) => r.apellidos_nombres === n);
+                    if (regs.length === 1) {
+                        return `<option value="${escapeHtml(n)}">${escapeHtml(n)}${tienePoli(regs[0]) ? ' 📐' : ''}</option>`;
+                    }
+                    return regs.map((r, k) => {
+                        const uc = (r.unidad_catastral || '').toString().trim();
+                        const area = parseFloat(r.area_total_ha);
+                        const detalle = ['UC ' + (uc || 's/n'), Number.isFinite(area) ? area.toFixed(2) + ' ha' : ''].filter(Boolean).join(', ');
+                        return `<option value="${escapeHtml(n)}${k}">${escapeHtml(n)} — polígono ${k + 1} de ${regs.length} (${escapeHtml(detalle)})${tienePoli(r) ? ' 📐' : ''}</option>`;
+                    }).join('');
                 }).join('');
         }
 
@@ -6517,7 +6531,8 @@ const COMISIONES = {
             const ambito = radioAmbito ? radioAmbito.value : 'toma'; // 'toma' | 'todos' | 'observados'
             const esUnaToma = ambito === 'toma';
             const tomaNombre = esUnaToma ? document.getElementById('selectTomaPlanoA2').value : null;
-            const usuarioElegido = esUnaToma ? document.getElementById('selectUsuarioPlanoA2').value : 'TODOS'; // 'TODOS' o un apellidos_nombres exacto
+            const valorUsuarioElegido = esUnaToma ? document.getElementById('selectUsuarioPlanoA2').value : 'TODOS'; // 'TODOS', un apellidos_nombres exacto, o "nombrek" (k-ésimo registro de un usuario con varios)
+            const [usuarioElegido, indiceRegistroElegido] = valorUsuarioElegido.split('');
             const conSatelite = document.getElementById('checkSateliteplanoA2').checked;
             const conMembrete = document.getElementById('checkMembretePlanoA2').checked;
             if (esUnaToma && !tomaNombre) { alert('Elige una toma.'); return; }
@@ -6613,7 +6628,10 @@ const COMISIONES = {
                 // CUSSHMI (Formato A-1/A-2 por filtro).
                 let usuarioResaltado = null;
                 if (esUnaToma && usuarioElegido !== 'TODOS') {
-                    const registroUsuario = formatoA2Rows.find((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
+                    const registrosDelUsuario = formatoA2Rows.filter((r) => r.toma_nombre === tomaNombre && r.apellidos_nombres === usuarioElegido);
+                    const registroUsuario = indiceRegistroElegido !== undefined
+                        ? registrosDelUsuario[parseInt(indiceRegistroElegido, 10)]
+                        : (registrosDelUsuario.find((r) => Array.isArray(r.vertices_utm) && r.vertices_utm.length >= 3) || registrosDelUsuario[0]);
                     // Fila del Padrón A-1 de este usuario (por UC del predio
                     // propio del KML, o por nombre si no hay predio propio
                     // con UC) — para el usuario SIN registro de Formato A-2
