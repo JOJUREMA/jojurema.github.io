@@ -9926,12 +9926,20 @@ const COMISIONES = {
             r.verticesUtm = plano;
             _verticesUtmExistentesLevantamientoA2Esc = plano.slice();
             const datos = { id: r.id, verticesUtm: plano };
+            let tocaCampos = false;
+            r.camposVerificacion = r.camposVerificacion || {};
             if (centroideParte !== undefined) {
-                r.camposVerificacion = r.camposVerificacion || {};
                 if (centroideParte === null) delete r.camposVerificacion.centroideParte;
                 else r.camposVerificacion.centroideParte = centroideParte;
-                datos.camposVerificacion = r.camposVerificacion;
+                tocaCampos = true;
             }
+            // Con 2 o más partes, el Área Total Verificada es SIEMPRE la suma
+            // de las áreas de todas las partes (se recalcula en cada guardado).
+            if (listaPartes.length >= 2) {
+                r.camposVerificacion.areaTotalVerificadaHa = Number(areaPoligonoPartesHa(plano).toFixed(4));
+                tocaCampos = true;
+            }
+            if (tocaCampos) datos.camposVerificacion = r.camposVerificacion;
             _guardarCampoLevantamientoA2Esc(datos);
         }
 
@@ -10500,7 +10508,11 @@ const COMISIONES = {
             if (_ultimaAreaMedidaLevantamientoA2Esc == null) return;
             const r = _levantamientoA2Estado.registroActual;
             r.camposVerificacion = r.camposVerificacion || {};
-            r.camposVerificacion[claveJson] = Number(_ultimaAreaMedidaLevantamientoA2Esc.toFixed(2));
+            // Con varias partes, el Área Total es la suma de todas (no solo la de la parte recién medida).
+            const esTotalVariasPartes = claveJson === 'areaTotalVerificadaHa' && numerosPartesPoligono(r.verticesUtm).length >= 2;
+            r.camposVerificacion[claveJson] = esTotalVariasPartes
+                ? Number(areaPoligonoPartesHa(r.verticesUtm).toFixed(4))
+                : Number(_ultimaAreaMedidaLevantamientoA2Esc.toFixed(2));
             _guardarCampoLevantamientoA2Esc({ id: r.id, camposVerificacion: r.camposVerificacion });
             _verticesAreaTempLevantamientoA2Esc = [];
             _ultimaAreaMedidaLevantamientoA2Esc = null;
