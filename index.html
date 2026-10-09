@@ -7532,8 +7532,17 @@ const COMISIONES = {
                 // lado y su nombre + área en el centro (la tabla de
                 // coordenadas va en la columna de cuadros, sección 8).
                 if (modoSoloPoligono) {
-                    const xsP = puntosUsuarioPx.map((p) => p[0]), ysP = puntosUsuarioPx.map((p) => p[1]);
-                    const centroVisual = [(Math.min(...xsP) + Math.max(...xsP)) / 2, (Math.min(...ysP) + Math.max(...ysP)) / 2];
+                    // Etiqueta en el punto interior más alejado de los bordes (no
+                    // el centro de la caja envolvente, que en un predio curvo o
+                    // alargado cae sobre el borde y el texto se montaba en él).
+                    const polo = puntoInteriorMasCentralPlanoA2(puntosUsuarioPx);
+                    const centroVisual = [polo[0], polo[1]];
+                    // Posición del marcador de centroide (solo la parte elegida con varias partes).
+                    let marcadorCentroidePx = null;
+                    if (variasPartesUsuario && idxParte === idxParteCentroide) {
+                        const cenM = calcularCentroidePoligono(verticesOrdenados.map((v) => ({ easting: v.easting, northing: v.northing })));
+                        if (cenM) marcadorCentroidePx = proyector.proyectar(cenM.easting, cenM.northing);
+                    }
                     ctx.save();
                     ctx.beginPath();
                     ctx.rect(MARGEN, MARGEN, ANCHO - MARGEN * 2, ALTO_MAPA - MARGEN * 2);
@@ -7553,6 +7562,15 @@ const COMISIONES = {
                     if (variasPartesUsuario && idxParte === idxParteCentroide) lineasCentro.push('★ centroide');
                     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                     const altoLineaSolo = 26;
+                    // Si el marcador de centroide cae sobre el texto, el texto
+                    // se corre justo debajo (o encima) del marcador.
+                    const altoTexto = lineasCentro.length * altoLineaSolo;
+                    if (marcadorCentroidePx && Math.abs(marcadorCentroidePx[0] - centroVisual[0]) < 100 &&
+                        Math.abs(marcadorCentroidePx[1] - centroVisual[1]) < altoTexto / 2 + 16) {
+                        centroVisual[1] = marcadorCentroidePx[1] <= polo[1]
+                            ? marcadorCentroidePx[1] + 11 + 8 + altoTexto / 2
+                            : marcadorCentroidePx[1] - 11 - 8 - altoTexto / 2;
+                    }
                     lineasCentro.forEach((linea, i) => {
                         ctx.font = (i < lineasNombreSolo.length ? '700 22px' : '600 18px') + ' Arial, sans-serif';
                         ctx.fillStyle = '#5a2d00';

@@ -733,3 +733,44 @@ async function dibujarSateliteEnCanvasPlanoA2(ctx, proyector, bboxUtm) {
     ctx.restore();
     return { zoom, teselas: teselas.length, teselasDescartadasPorSinDatos: cargadas.length - teselas.length };
 }
+
+// Punto INTERIOR más "centrado" de un polígono en píxeles (el más alejado de
+// todos sus bordes — "polo de inaccesibilidad"), para ubicar etiquetas dentro
+// de formas alargadas/curvas (ej. un predio en forma de banana) donde el
+// centro de la caja envolvente cae pegado a un borde o incluso afuera.
+// `poligonoPx`: [[x,y], …]. Devuelve [x, y, radio] (radio = distancia al borde más cercano).
+function puntoInteriorMasCentralPlanoA2(poligonoPx) {
+    const n = poligonoPx.length;
+    const xs = poligonoPx.map((p) => p[0]), ys = poligonoPx.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const distSegmento = (px, py, a, b) => {
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const l2 = dx * dx + dy * dy;
+        let t = l2 ? ((px - a[0]) * dx + (py - a[1]) * dy) / l2 : 0;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+    };
+    const distBorde = (px, py) => {
+        let d = Infinity;
+        for (let i = 0, j = n - 1; i < n; j = i++) d = Math.min(d, distSegmento(px, py, poligonoPx[j], poligonoPx[i]));
+        return d;
+    };
+    let mejor = null;
+    const barrer = (ax, ay, bx, by, N) => {
+        for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+            const x = ax + (bx - ax) * i / N, y = ay + (by - ay) * j / N;
+            if (!_puntoDentroPoligonoPlanoA2(x, y, poligonoPx)) continue;
+            const d = distBorde(x, y);
+            if (!mejor || d > mejor[2]) mejor = [x, y, d];
+        }
+    };
+    barrer(x0, y0, x1, y1, 40);
+    if (!mejor) return [(x0 + x1) / 2, (y0 + y1) / 2, 0];
+    let paso = Math.max(x1 - x0, y1 - y0) / 40;
+    for (let k = 0; k < 3; k++) {
+        const c = mejor;
+        barrer(c[0] - paso, c[1] - paso, c[0] + paso, c[1] + paso, 12);
+        paso /= 5;
+    }
+    return mejor;
+}
