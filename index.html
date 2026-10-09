@@ -9792,7 +9792,13 @@ const COMISIONES = {
                     _canalesInventarioGisTodosA2Esc = resp.ok ? await resp.json() : [];
                 } catch (e) { _canalesInventarioGisTodosA2Esc = []; }
             }
-            const canales = _canalesInventarioGisTodosA2Esc.filter((f) => f.toma === tomaNombre);
+            // El inventario trae los canales de la toma SD14 etiquetados como
+            // "SI14" ("TOMA SI-14"): 59 de los 76 predios del bloque SD14 están
+            // a <120 m de ellos y ninguno cerca de SD14.1/SD13, y no existe una
+            // toma SI14 en el sistema — por eso se leen como SD14 (sin esto, el
+            // plano y el editor de SD14 no mostraban ningún canal).
+            const ALIAS_TOMA_CANAL = { SI14: 'SD14' };
+            const canales = _canalesInventarioGisTodosA2Esc.filter((f) => (ALIAS_TOMA_CANAL[f.toma] || f.toma) === tomaNombre);
             _canalesBloqueRiegoCacheLevantamientoA2Esc[tomaNombre] = canales;
             return canales;
         }
