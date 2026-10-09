@@ -10432,8 +10432,13 @@ const COMISIONES = {
                 const area = _verticesAreaTempLevantamientoA2Esc.length >= 3
                     ? calcularAreaPoligonoHa(_verticesAreaTempLevantamientoA2Esc.map(function (v) { return { easting: v.easting, northing: v.northing }; }))
                     : null;
+                // Las OTRAS partes ya guardadas (las azules) también cuentan en el total.
+                const areaOtras = _partesComoObjetosLevantamientoA2Esc()
+                    .filter(function (p) { return p.numero !== _parteEditandoLevantamientoA2Esc; })
+                    .reduce(function (suma, p) { return suma + calcularAreaPoligonoHa(p.vertices.map(function (v) { return { easting: v.easting, northing: v.northing }; })); }, 0);
                 elEstado.textContent = _verticesAreaTempLevantamientoA2Esc.length + ' vértice(s)' +
-                    (area != null ? ' · Área: ' + area.toFixed(2) + ' ha' : ' · faltan al menos 3 para calcular el área');
+                    (area != null ? ' · Área de esta parte: ' + area.toFixed(2) + ' ha' : ' · faltan al menos 3 para calcular el área') +
+                    (areaOtras > 0 ? ' · Otras partes: ' + areaOtras.toFixed(2) + ' ha' + (area != null ? ' · TOTAL: ' + (area + areaOtras).toFixed(2) + ' ha' : '') : '');
             }
         }
 
@@ -10490,6 +10495,7 @@ const COMISIONES = {
             const area = calcularAreaPoligonoHa(_verticesAreaTempLevantamientoA2Esc.map(function (v) { return { easting: v.easting, northing: v.northing }; }));
             _ultimaAreaMedidaLevantamientoA2Esc = area;
             document.getElementById('textoResultadoAreaLevantamientoA2Esc').textContent = 'Área medida: ' + area.toFixed(2) + ' ha (' + _verticesAreaTempLevantamientoA2Esc.length + ' vértices)';
+            document.getElementById('textoResultadoAreaLevantamientoA2Esc').style.whiteSpace = 'pre-line';
             document.getElementById('controlesModoAreaLevantamientoA2Esc').style.display = 'none';
             document.getElementById('resultadoAreaLevantamientoA2Esc').style.display = 'flex';
 
@@ -10502,6 +10508,16 @@ const COMISIONES = {
             const lista = partesEx.map(function (p) { return p.numero === _parteEditandoLevantamientoA2Esc ? nuevaParte : p.vertices; });
             if (!partesEx.some(function (p) { return p.numero === _parteEditandoLevantamientoA2Esc; })) lista.push(nuevaParte);
             _guardarPartesLevantamientoA2Esc(lista); // si vuelve a modo punto, la referencia ya está actualizada
+            // Con 2 o más partes, el resultado muestra y usa la SUMA de todas
+            // (incluidas las azules, no solo la que se acaba de dibujar).
+            if (lista.length >= 2) {
+                const total = areaPoligonoPartesHa(_verticesUtmExistentesLevantamientoA2Esc);
+                _ultimaAreaMedidaLevantamientoA2Esc = total;
+                document.getElementById('textoResultadoAreaLevantamientoA2Esc').textContent =
+                    'Esta parte: ' + area.toFixed(2) + ' ha (' + _verticesAreaTempLevantamientoA2Esc.length + ' vértices)\n' +
+                    'Otras partes: ' + (total - area).toFixed(2) + ' ha\n' +
+                    'ÁREA TOTAL (' + lista.length + ' partes): ' + total.toFixed(2) + ' ha';
+            }
         }
 
         function _usarAreaMedidaLevantamientoA2Esc(claveJson) {
@@ -10509,7 +10525,7 @@ const COMISIONES = {
             const r = _levantamientoA2Estado.registroActual;
             r.camposVerificacion = r.camposVerificacion || {};
             // Con varias partes, el Área Total es la suma de todas (no solo la de la parte recién medida).
-            const esTotalVariasPartes = claveJson === 'areaTotalVerificadaHa' && numerosPartesPoligono(r.verticesUtm).length >= 2;
+            const esTotalVariasPartes = numerosPartesPoligono(r.verticesUtm).length >= 2; // Área Total y Área Bajo Riego
             r.camposVerificacion[claveJson] = esTotalVariasPartes
                 ? Number(areaPoligonoPartesHa(r.verticesUtm).toFixed(4))
                 : Number(_ultimaAreaMedidaLevantamientoA2Esc.toFixed(2));
