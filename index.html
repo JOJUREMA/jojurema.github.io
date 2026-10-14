@@ -14459,6 +14459,12 @@ async function sincronizarConsolidadoDesdeSupabase() {
 }
 
 async function confirmarSemanaAutomatica() {
+    // Si "SEMANAS PROGRAMADAS" sigue generando miniaturas (carga temporalmente
+    // otras semanas en las variables globales), se espera a que termine y
+    // restaure el estado ANTES de cargar la semana elegida — si no, esa
+    // carga de fondo mezclaba tomas de otras semanas en la actual.
+    _miniG2Cancelar = true;
+    if (_miniG2Promesa) await _miniG2Promesa;
     // Cerrar modal
     cerrarModalSemana();
 
@@ -14708,6 +14714,8 @@ function generarListaSemanasSimulacion() {
 }
 
 async function confirmarSemanaSimulada(fechaInicioISO, fechaFinISO) {
+    _miniG2Cancelar = true; // ver confirmarSemanaAutomatica
+    if (_miniG2Promesa) await _miniG2Promesa;
     const fechaInicio = new Date(fechaInicioISO + 'T00:00:00');
     const fechaFin = new Date(fechaFinISO + 'T00:00:00');
     const diasRiego = Math.floor((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24)) + 1;
@@ -22758,6 +22766,17 @@ function imprimirConsolidado() {
 // mas abajo) en vez de leer document.getElementById('tomaSelect') internamente.
 
 async function mostrarAnexoG2() {
+    // El G2 es SOLO de la semana en programación (semanaPDA): se descarta del
+    // consolidado cualquier toma que traiga otra semana (p. ej. mezcladas por
+    // una carga/lectura de otra semana en segundo plano) para que el reporte
+    // nunca junte tomas de varias semanas.
+    if (semanaPDA?.fechaInicio && Array.isArray(consolidadoDemandas)) {
+        const ajenas = consolidadoDemandas.filter((t) => t && t.semanaInicio && t.semanaInicio !== semanaPDA.fechaInicio);
+        if (ajenas.length) {
+            console.warn('Anexo G2: se descartaron ' + ajenas.length + ' toma(s) de otra semana (' + ajenas.map((t) => t.toma + ' ' + t.semanaInicio).join(', ') + ') — la semana en programación es ' + semanaPDA.fechaInicio);
+            consolidadoDemandas = consolidadoDemandas.filter((t) => !ajenas.includes(t));
+        }
+    }
     // ✅ Verificar ANTES de tocar contentArea — si no, el mensaje de "Cargando..."
     // de más abajo quedaba trabado para siempre (generarDatosAnexoG2() solo mostraba
     // un alert y retornaba null, sin restaurar la pantalla).
