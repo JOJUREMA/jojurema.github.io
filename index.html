@@ -18079,9 +18079,25 @@ function cerrarModalGrupos() {
 // realmente ya trabajó) — a pedido explícito, ahora abre el mismo listado
 // de "semanas ya trabajadas" para elegir cuál visualizar, en vez de
 // depender de qué semana haya quedado cargada.
-function abrirAnexoG2DesdeSelectorToma() {
+// (Historia: una versión intermedia abría el listado de semanas ya trabajadas.)
+// ACTUALIZACIÓN (a pedido explícito): ya no abre el listado — abre
+// directamente el G2 de la semana que se está programando (semanaPDA, la del
+// encabezado "Semana: …" de este modal), refrescando lo programado desde
+// Supabase por si otro programador agregó tomas. El listado de otras semanas
+// sigue en "SEMANAS PROGRAMADAS" (modal "Semana de evaluación").
+async function abrirAnexoG2DesdeSelectorToma() {
     cerrarModalGrupos();
-    mostrarHistorialSemanasPDA();
+    _miniG2Cancelar = true;
+    if (_miniG2Promesa) await _miniG2Promesa;
+    if (semanaPDA?.fechaInicio) await sincronizarConsolidadoDesdeSupabase();
+    if (!consolidadoDemandas || consolidadoDemandas.length === 0) {
+        alert('Todavía no hay tomas programadas para la semana del ' +
+            (semanaPDA?.fechaInicio ? formatearFecha(semanaPDA.fechaInicio) + ' al ' + formatearFecha(semanaPDA.fechaFin) : 'actual') +
+            '.\n\nProgramas una toma y vuelve a abrir el Anexo G2.');
+        mostrarSelectorDeGrupos();
+        return;
+    }
+    mostrarAnexoG2();
 }
 
 function generarAvanceSiembraPorGrupo(tomasGrupo, nombreGrupo) {
