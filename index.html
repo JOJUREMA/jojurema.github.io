@@ -4328,7 +4328,7 @@ const COMISIONES = {
                     <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
                     <div id="huaroResumenTexto"></div>
                     ${window._huaroPerfilKey === 'PATACANCHA' ? `<div class="huaro-mini" style="margin-top:10px;padding:8px 10px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:6px;">
-                        Anexos <b>G-2, G-3 y G-4</b> del comité: <b>${escapeHtml(_huaroComiteActivo())}</b> (cámbialo en "1) Selecciona el comité"). El <b>G-1</b> reúne los ${_huaroComitesLista().length} comités.
+                        Anexos <b>G-2, G-3 y G-4</b> del comité: <b>${escapeHtml(_huaroComiteActivo())}</b> (cámbialo en "1) Selecciona el comité"). El <b>G-1</b> reúne los comités que tengan algo programado esa semana.
                     </div>` : ''}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
@@ -4375,7 +4375,7 @@ const COMISIONES = {
                             return `<option value="${escapeHtml(c)}"${c === _comiteAct ? ' selected' : ''}>${escapeHtml(c)} — ${nProg}/${nTot} bocatomas programadas</option>`;
                         }).join('')}</select>
                     </label>
-                    <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités.</div>
+                    <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités programados.</div>
                 </div>` : ''}
                 ${window._huaroPerfilKey === 'PATACANCHA' ? `
                 <div class="huaro-card" style="border-color:#2f7d6d;background:#f1f8f6;">
@@ -4892,10 +4892,10 @@ const COMISIONES = {
         }
 
         // G-1 de PATACANCHA = a NIVEL DE COMITÉ: una sola tabla con una fila por
-        // cada comité de usuarios (los 4), que suma sus bocatomas programadas
-        // (usuarios, volumen, área; tiempo = el mayor de sus bocatomas, que riegan
-        // en paralelo; caudal por día = suma). Los comités sin nada programado
-        // aparecen igual, en blanco. En otras comisiones, igual que el G-2.
+        // cada comité de usuarios CON ALGO PROGRAMADO esa semana, que suma sus bocatomas
+        // programadas (usuarios, volumen, área; tiempo = el mayor de sus bocatomas, que
+        // riegan en paralelo; caudal por día = suma). Un comité sin nada programado
+        // no aparece. En otras comisiones, igual que el G-2.
         function _huaroDatosG1() {
             if (window._huaroPerfilKey !== 'PATACANCHA') return _huaroDatosG2();
             HuaroCore.huaroSetComiteActivo(''); // el G-1 es de toda la comisión, no de un comité
@@ -4903,7 +4903,7 @@ const COMISIONES = {
             const m = window._huaroComitePorBoc || {};
             const iso = bocs.length ? _huaroResultados[bocs[0]].agregado.semanaInicioISO : _huaroSemanaSeleccionada();
             const fin = _huaroSumarDiasHuaroHist(iso, 6);
-            const filas = _huaroComitesLista().map(c => {
+            const filas = _huaroComitesLista().filter(c => bocs.some(b => m[b] === c)).map(c => { // solo comités con algo programado
                 const todas = _huaroOrden.filter(b => m[b] === c);
                 const bs = bocs.filter(b => m[b] === c);
                 const ags = bs.map(b => _huaroResultados[b].agregado);
