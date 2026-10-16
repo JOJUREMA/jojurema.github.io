@@ -154,11 +154,11 @@ const HUARO_SIMULTANEOS_PATACANCHA = {
     // Choquebamba Pumamarca (164 usuarios, 25 l/s): 3 a la vez + jornada ampliada → recorrido de ~15 días.
     'CHOQUEBAMBAPUMAMARCA': 3,
 };
-// Jornada diaria por bocatoma cuando NO es la general (06:00–16:00). Choquebamba Pumamarca riega
+// Jornada diaria por bocatoma cuando NO es la general (06:00–16:00). Choquebamba Pumamarca riega (jornada de 20 h, de 02:00 a 22:00, para terminar antes de medianoche)
 // de 04:00 a 23:59 (≈20 h): con 25 l/s no entran sus 164 usuarios en menos de ~16 días con 10 h
 // diarias (hacen falta ~54 l/s); ampliando la jornada el recorrido baja a 15–16 días sin subir el caudal.
 const HUARO_VENTANA_PATACANCHA = {
-    'CHOQUEBAMBAPUMAMARCA': { ini: '04:00', fin: '23:59' },
+    'CHOQUEBAMBAPUMAMARCA': { ini: '02:00', fin: '22:00' },
 };
 // ── Caudal por bocatoma — PATACANCHA (Esquema Hidráulico "Sub Sector Hidráulico
 // Quebrada Patacancha Yuracmayo", asignado por bocatoma por el sectorista) ──
