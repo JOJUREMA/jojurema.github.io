@@ -5411,26 +5411,28 @@ const COMISIONES = {
                 if (tipo === 'G2') return HuaroCore.huaroConstruirG2Html(_huaroDatosG2());
                 return HuaroCore.huaroConstruirG3Html(_huaroDatosG3());
             };
-            const html = semanas.map(w => `<div style="page-break-after:always;">${_huaroBannerSemana(w, nombreMes)}${_huaroEnSemana(w.lunesISO, construir)}</div>`).join('');
+            // En pantalla cada semana lleva su banner; al IMPRIMIR sale solo el anexo (sin el encabezado del número de semana).
+            const armar = (conBanner) => semanas.map(w => `<div style="page-break-after:always;">${conBanner ? _huaroBannerSemana(w, nombreMes) : ''}${_huaroEnSemana(w.lunesISO, construir)}</div>`).join('');
+            const html = armar(true);
             _huaroPanelAnexo(titulo + ' — ' + semanas.length + ' semana(s)', html,
-                () => _huaroImprimir(titulo, html, 'landscape'),
+                () => _huaroImprimir(titulo, armar(false), 'landscape'),
                 () => _huaroExcelMes(tipo, semanas, nombreMes, null));
         }
         function _huaroAnexoMesG4(semanas, nombreMes, titulo) {
             const bocs = [];
             semanas.forEach(w => w.bocs.forEach(b => { if (bocs.indexOf(b) < 0) bocs.push(b); }));
             const ordenados = _huaroOrden.filter(b => bocs.indexOf(b) >= 0);
-            const htmlBoc = (boc) => semanas.map(w => _huaroEnSemana(w.lunesISO, () => {
+            const htmlBoc = (boc, conBanner = true) => semanas.map(w => _huaroEnSemana(w.lunesISO, () => {
                 const r = _huaroResultados && _huaroResultados[boc];
                 if (!r || !r.programados.length) return '';
-                return `<div>${_huaroBannerSemana(w, nombreMes)}${r.programados.map(p => HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(boc))).join('')}</div>`;
+                return `<div>${conBanner ? _huaroBannerSemana(w, nombreMes) : ''}${r.programados.map(p => HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(boc))).join('')}</div>`;
             })).join('');
             const cab = `<label style="font-size:13px;font-weight:600;">Bocatoma:
                 <select id="huaroSelG4Mes" style="margin-left:8px;padding:5px 8px;min-width:260px;">${ordenados.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}</select></label>
                 <span class="huaro-mini" style="margin-left:10px;">Órdenes de suministro de ${semanas.length} semana(s) de ${nombreMes}.</span>
                 <div id="huaroG4MesCont" style="margin-top:12px;"></div>`;
             _huaroPanelAnexo(titulo + ' — ' + semanas.length + ' semana(s)', cab,
-                () => { const b = document.getElementById('huaroSelG4Mes').value; _huaroImprimir(titulo + ' ' + b, htmlBoc(b), 'portrait'); },
+                () => { const b = document.getElementById('huaroSelG4Mes').value; _huaroImprimir(titulo + ' ' + b, htmlBoc(b, false), 'portrait'); },
                 () => _huaroExcelMes('G4', semanas, nombreMes, document.getElementById('huaroSelG4Mes').value));
             const sel = document.getElementById('huaroSelG4Mes');
             const pintar = () => { document.getElementById('huaroG4MesCont').innerHTML = htmlBoc(sel.value); };
