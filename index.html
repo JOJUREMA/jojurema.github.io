@@ -5331,10 +5331,34 @@ const COMISIONES = {
             } finally { _huaroResultados = gR; _huaroSemanaActualISO = gS; }
         }
         // Semanas del mes con programación. soloComite: solo las bocatomas del comité elegido.
-        function _huaroSemanasMes(anio, mes0, soloComite) {
+        // Periodo mostrado: un solo mes (selectores Mes/Año) o, en Patacancha con VARIOS meses marcados, todos
+        // los meses marcados juntos. En el periodo las semanas se numeran seguidas (Semana 1, 2, 3…) y una
+        // semana que cruza dos meses (ej. 29/06 – 05/07) sale UNA sola vez, en el mes donde empieza.
+        function _huaroPeriodoMostrado() {
+            const { anio, mes0 } = _huaroMesAnioMostrado();
+            const meses = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroPatCfg().meses : null;
+            if (meses && meses.length > 1 && meses.indexOf(mes0 + 1) >= 0) {
+                const ms = meses.slice().sort((a, b) => a - b);
+                const visto = {}, base = [];
+                ms.forEach(m => _huaroSemanasDelMes(anio, m - 1).forEach(w => {
+                    if (visto[w.lunesISO]) return;
+                    visto[w.lunesISO] = true;
+                    const mLun = parseInt(w.lunesISO.slice(5, 7), 10);
+                    base.push({ lunesISO: w.lunesISO, domISO: w.domISO, mes0: ms.indexOf(mLun) >= 0 ? mLun - 1 : m - 1 });
+                }));
+                base.sort((a, b) => a.lunesISO.localeCompare(b.lunesISO));
+                base.forEach((w, i) => { w.n = i + 1; });
+                const contiguo = ms.every((m, i) => i === 0 || m === ms[i - 1] + 1);
+                const nom = m => _HUARO_MESES[m - 1];
+                const nombre = (contiguo ? (ms.length > 2 ? nom(ms[0]) + ' A ' + nom(ms[ms.length - 1]) : ms.map(nom).join(' – ')) : ms.map(nom).join(', ')) + ' ' + anio;
+                return { multi: true, anio, mes0, nombre, base };
+            }
+            return { multi: false, anio, mes0, nombre: _HUARO_MESES[mes0] + ' ' + anio, base: _huaroSemanasDelMes(anio, mes0) };
+        }
+        function _huaroSemanasMes(anio, mes0, soloComite, base) {
             const m = window._huaroComitePorBoc || {};
             const com = soloComite ? _huaroComiteActivo() : null;
-            return _huaroSemanasDelMes(anio, mes0).map(w => {
+            return (base || _huaroSemanasDelMes(anio, mes0)).map(w => {
                 const pda = _huaroLeerPda(w.lunesISO);
                 const r = (pda && pda.resultados) || {};
                 let bocs = Object.keys(r).filter(b => r[b] && r[b].programados && r[b].programados.length);
@@ -5349,15 +5373,14 @@ const COMISIONES = {
             return `<div style="font-family:Arial,sans-serif;font-weight:700;font-size:12px;background:#e3f1ee;border:1px solid #9cc7be;color:#12453b;padding:6px 10px;margin:22px 0 10px;">Semana ${w.n} de ${nombreMes} · del ${fc(w.lunesISO)} al ${fc(w.domISO)}</div>`;
         }
         function _huaroTituloMes(tipo) {
-            const { anio, mes0 } = _huaroMesAnioMostrado();
-            return 'Anexo ' + tipo.replace('G', 'G-') + ' — ' + HuaroCore.huaroPerfilActual().titulo + ' — ' + _HUARO_MESES[mes0] + ' ' + anio;
+            return 'Anexo ' + tipo.replace('G', 'G-') + ' — ' + HuaroCore.huaroPerfilActual().titulo + ' — ' + _huaroPeriodoMostrado().nombre;
         }
         // Muestra el anexo `tipo` ('G1'..'G4') de TODAS las semanas programadas del mes (o solo de `soloLunes`).
         function huaroMostrarAnexoMes(tipo, soloLunes) {
-            const { anio, mes0 } = _huaroMesAnioMostrado();
-            const nombreMes = _HUARO_MESES[mes0] + ' ' + anio;
+            const P = _huaroPeriodoMostrado();
+            const nombreMes = P.nombre;
             const esG1 = tipo === 'G1';
-            let semanas = _huaroSemanasMes(anio, mes0, !esG1);
+            let semanas = _huaroSemanasMes(P.anio, P.mes0, !esG1, P.base);
             if (soloLunes) semanas = semanas.filter(w => w.lunesISO === soloLunes);
             if (!semanas.length) {
                 alert(esG1 ? 'No hay bocatomas programadas en ' + nombreMes + '.\n\nUsa "Programar ' + nombreMes + '" o activa la programación automática.'
@@ -5414,17 +5437,19 @@ const COMISIONES = {
                 });
             }
             const sufijo = (tipo === 'G1' ? '' : _huaroSufijoComite()) + (tipo === 'G4' && boc ? ' - ' + boc : '');
-            await _descargarWorkbook(wb, 'Anexo ' + tipo + ' - ' + nombreMes + sufijo + '.xlsx');
+            await _descargarWorkbook(wb, 'Anexo ' + tipo + ' - ' + nombreMes.replace(/\s*[–,]\s*/g, '-') + sufijo + '.xlsx');
         }
         // Tarjeta de Patacancha: resumen del MES por semana + botones de los 4 anexos del mes.
         function _huaroResumenMesPatHtml(anio, mes0) {
             const fc = s => s.split('-').reverse().join('/');
-            const nombreMes = _HUARO_MESES[mes0] + ' ' + anio;
+            const P = _huaroPeriodoMostrado();
+            const nombreMes = P.nombre;
             const comite = _huaroComiteActivo();
-            const semC = _huaroSemanasMes(anio, mes0, true);
-            const semT = _huaroSemanasMes(anio, mes0, false);
+            const semC = _huaroSemanasMes(P.anio, P.mes0, true, P.base);
+            const semT = _huaroSemanasMes(P.anio, P.mes0, false, P.base);
             const filas = semC.map(w => `<tr>
                     <td style="text-align:center;">Semana ${w.n}</td>
+                    ${P.multi ? `<td style="text-align:center;">${_HUARO_MESES[w.mes0]}</td>` : ''}
                     <td style="text-align:center;">${fc(w.lunesISO)} – ${fc(w.domISO)}</td>
                     <td style="text-align:center;">${w.bocs.length}</td>
                     <td style="text-align:center;">${w.nUsuarios}</td>
@@ -5436,18 +5461,18 @@ const COMISIONES = {
             const tot = semC.reduce((a, w) => ({ u: a.u + w.nUsuarios, ha: a.ha + w.areaHa, v: a.v + w.volumen }), { u: 0, ha: 0, v: 0 });
             const tabla = semC.length ? `
                     <table class="huaro-tabla" style="margin-top:6px;">
-                        <thead><tr><th>Semana</th><th>Fechas</th><th>Bocatomas</th><th>Usuarios</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Anexos de la semana</th></tr></thead>
+                        <thead><tr><th>Semana</th>${P.multi ? '<th>Mes</th>' : ''}<th>Fechas</th><th>Bocatomas</th><th>Usuarios</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Anexos de la semana</th></tr></thead>
                         <tbody>${filas}
-                            <tr style="font-weight:700;background:#f3ede6;"><td colspan="3" style="text-align:center;">TOTAL ${nombreMes}</td><td style="text-align:center;">${tot.u}</td><td style="text-align:right;">${tot.ha.toFixed(2)}</td><td style="text-align:right;">${tot.v.toFixed(2)}</td><td></td></tr>
+                            <tr style="font-weight:700;background:#f3ede6;"><td colspan="${P.multi ? 4 : 3}" style="text-align:center;">TOTAL ${nombreMes}</td><td style="text-align:center;">${tot.u}</td><td style="text-align:right;">${tot.ha.toFixed(2)}</td><td style="text-align:right;">${tot.v.toFixed(2)}</td><td></td></tr>
                         </tbody>
                     </table>` : `<div class="huaro-mini" style="margin-top:6px;">Este comité aún no tiene programación en ${nombreMes}. Pulsa <b>Programar ${nombreMes}</b> (o cambia el mes arriba).</div>`;
             return `
                 <div class="huaro-card" id="huaroResumenResultados">
                     <h3 style="margin:0 0 4px;font-size:15px;">📋 Programación de ${nombreMes} — por semana</h3>
-                    <div class="huaro-mini">Comité: <b>${escapeHtml(comite)}</b>. El mes es el de los selectores Mes/Año de arriba.</div>
+                    <div class="huaro-mini">Comité: <b>${escapeHtml(comite)}</b>. ${P.multi ? 'Meses programados: <b>' + P.nombre + '</b> — las semanas van numeradas seguidas y una semana que cruza de un mes a otro sale una sola vez.' : 'El mes es el de los selectores Mes/Año de arriba.'}</div>
                     ${tabla}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                        <button class="huaro-btn ok" onclick="huaroPatProgramarMesMostrado()" title="Programa solo este mes para el comité elegido, semana por semana">⚙️ Programar ${nombreMes}</button>
+                        <button class="huaro-btn ok" onclick="huaroPatProgramarMesMostrado()" title="${P.multi ? 'Vuelve a programar todos los meses marcados' : 'Programa solo este mes'} para el comité elegido, semana por semana">⚙️ Programar ${nombreMes}</button>
                         <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G1')" ${semT.length ? '' : 'disabled'}>📄 Anexo G-1 del mes (los comités, por semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G2')" ${semC.length ? '' : 'disabled'}>📄 Anexo G-2 del mes (por semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G3')" ${semC.length ? '' : 'disabled'}>📄 Anexo G-3 del mes (por semana y bocatoma)</button>
@@ -5460,8 +5485,7 @@ const COMISIONES = {
         function huaroPatProgramarMesMostrado() {
             const { mes0 } = _huaroMesAnioMostrado();
             const cfg = _huaroPatCfg();
-            cfg.meses = [mes0 + 1];
-            _huaroPatGuardarCfg(cfg);
+            if (!_huaroPeriodoMostrado().multi) { cfg.meses = [mes0 + 1]; _huaroPatGuardarCfg(cfg); } // con varios meses marcados se conservan todos
             window._huaroAutoMsg = '';
             _huaroPatAutoProgramarComite(_huaroComiteActivo(), true);
             renderPanelHuaro();
