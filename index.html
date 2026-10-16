@@ -3850,6 +3850,17 @@ const COMISIONES = {
         }
         // Semanas Lun–Dom cuyo rango toca el mes/año dado. Devuelve
         // [{ n, lunesISO, domISO }], numeradas 1..k.
+        // Número de semana DEL AÑO (ISO 8601: semanas Lun–Dom; la 1 es la que tiene el primer jueves). 01/06/2026 → 23.
+        function _huaroSemanaDelAnio(lunesISO) {
+            const d = new Date(lunesISO + 'T00:00:00');
+            d.setDate(d.getDate() + 3); // jueves de esa semana
+            const ini = new Date(d.getFullYear(), 0, 1);
+            return Math.floor(Math.round((d - ini) / 864e5) / 7) + 1;
+        }
+        // Patacancha numera sus semanas con la semana del año; Huaro conserva Semana 1…k del mes.
+        function _huaroNumSem(w) {
+            return window._huaroPerfilKey === 'PATACANCHA' ? _huaroSemanaDelAnio(w.lunesISO) : w.n;
+        }
         function _huaroSemanasDelMes(anio, mes0) {
             const ultimo = new Date(anio, mes0 + 1, 0);
             const lun = new Date(anio, mes0, 1);
@@ -4616,15 +4627,15 @@ const COMISIONES = {
             let _semN = 0;
             let _optSem = _sems.map(w => {
                 const sel = (w.lunesISO === semanaISO);
-                if (sel) _semN = w.n;
-                return `<option value="${w.lunesISO}"${sel ? ' selected' : ''}>Semana ${w.n} · ${_fc(w.lunesISO)} – ${_fc(w.domISO)}</option>`;
+                if (sel) _semN = _huaroNumSem(w);
+                return `<option value="${w.lunesISO}"${sel ? ' selected' : ''}>Semana ${_huaroNumSem(w)} · ${_fc(w.lunesISO)} – ${_fc(w.domISO)}</option>`;
             }).join('');
             if (!_semN) {
                 _optSem += `<option value="${semanaISO}" selected>Semana del ${_fc(semanaISO)} (fuera del mes elegido)</option>`;
             }
             const _optMes = _HUARO_MESES.map((m, i) => `<option value="${i}"${i === _mes0 ? ' selected' : ''}>${m}</option>`).join('');
             const _semLbl = _semN
-                ? `Semana ${_semN} de ${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
+                ? `Semana ${_semN} ${window._huaroPerfilKey === 'PATACANCHA' ? 'del año · ' : 'de '}${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
                 : `Semana del Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)} (fuera de ${_HUARO_MESES[_mes0]} ${_anio})`;
 
             // Selector de bocatoma — marca ✓ las ya programadas esta semana.
@@ -5370,7 +5381,7 @@ const COMISIONES = {
         }
         function _huaroBannerSemana(w, nombreMes) {
             const fc = s => s.split('-').reverse().join('/');
-            return `<div style="font-family:Arial,sans-serif;font-weight:700;font-size:12px;background:#e3f1ee;border:1px solid #9cc7be;color:#12453b;padding:6px 10px;margin:22px 0 10px;">Semana ${w.n} de ${nombreMes} · del ${fc(w.lunesISO)} al ${fc(w.domISO)}</div>`;
+            return `<div style="font-family:Arial,sans-serif;font-weight:700;font-size:12px;background:#e3f1ee;border:1px solid #9cc7be;color:#12453b;padding:6px 10px;margin:22px 0 10px;">Semana N° ${_huaroNumSem(w)} del año · ${nombreMes} · del ${fc(w.lunesISO)} al ${fc(w.domISO)}</div>`;
         }
         function _huaroTituloMes(tipo) {
             return 'Anexo ' + tipo.replace('G', 'G-') + ' — ' + HuaroCore.huaroPerfilActual().titulo + ' — ' + _huaroPeriodoMostrado().nombre;
@@ -5427,7 +5438,7 @@ const COMISIONES = {
             const wb = new ExcelJS.Workbook();
             for (const w of semanas) {
                 const dd = iso => iso.slice(8) + '.' + iso.slice(5, 7);
-                const hoja = ('S' + w.n + ' ' + dd(w.lunesISO) + '-' + dd(w.domISO)).slice(0, 31);
+                const hoja = ('S' + _huaroNumSem(w) + ' ' + dd(w.lunesISO) + '-' + dd(w.domISO)).slice(0, 31);
                 await _huaroEnSemanaAsync(w.lunesISO, async () => {
                     const ctx = { wb, hoja };
                     if (tipo === 'G1') await _huaroExcelG1Oficial(_huaroDatosG1(), ctx);
@@ -5448,7 +5459,7 @@ const COMISIONES = {
             const semC = _huaroSemanasMes(P.anio, P.mes0, true, P.base);
             const semT = _huaroSemanasMes(P.anio, P.mes0, false, P.base);
             const filas = semC.map(w => `<tr>
-                    <td style="text-align:center;">Semana ${w.n}</td>
+                    <td style="text-align:center;">Semana ${_huaroNumSem(w)}</td>
                     ${P.multi ? `<td style="text-align:center;">${_HUARO_MESES[w.mes0]}</td>` : ''}
                     <td style="text-align:center;">${fc(w.lunesISO)} – ${fc(w.domISO)}</td>
                     <td style="text-align:center;">${w.bocs.length}</td>
@@ -5469,7 +5480,7 @@ const COMISIONES = {
             return `
                 <div class="huaro-card" id="huaroResumenResultados">
                     <h3 style="margin:0 0 4px;font-size:15px;">📋 Programación de ${nombreMes} — por semana</h3>
-                    <div class="huaro-mini">Comité: <b>${escapeHtml(comite)}</b>. ${P.multi ? 'Meses programados: <b>' + P.nombre + '</b> — las semanas van numeradas seguidas y una semana que cruza de un mes a otro sale una sola vez.' : 'El mes es el de los selectores Mes/Año de arriba.'}</div>
+                    <div class="huaro-mini">Comité: <b>${escapeHtml(comite)}</b>. ${P.multi ? 'Meses programados: <b>' + P.nombre + '</b> — las semanas llevan su número de semana del año y una semana que cruza de un mes a otro sale una sola vez.' : 'El mes es el de los selectores Mes/Año de arriba.'}</div>
                     ${tabla}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
                         <button class="huaro-btn ok" onclick="huaroPatProgramarMesMostrado()" title="${P.multi ? 'Vuelve a programar todos los meses marcados' : 'Programa solo este mes'} para el comité elegido, semana por semana">⚙️ Programar ${nombreMes}</button>
