@@ -150,7 +150,16 @@ function huaroMasaDeAgua(bocatoma) {
 // Usuarios que riegan a la vez por defecto: 2 en todas (según los tomeros). Aquí se podrían
 // fijar excepciones por bocatoma; con el caudal total fijo, subir los usuarios a la vez no
 // acorta el recorrido (cada uno recibe menos caudal y tarda más).
-const HUARO_SIMULTANEOS_PATACANCHA = {};
+const HUARO_SIMULTANEOS_PATACANCHA = {
+    // Choquebamba Pumamarca (164 usuarios, 25 l/s): 3 a la vez + jornada ampliada → recorrido de ~15 días.
+    'CHOQUEBAMBAPUMAMARCA': 3,
+};
+// Jornada diaria por bocatoma cuando NO es la general (06:00–16:00). Choquebamba Pumamarca riega
+// de 04:00 a 23:59 (≈20 h): con 25 l/s no entran sus 164 usuarios en menos de ~16 días con 10 h
+// diarias (hacen falta ~54 l/s); ampliando la jornada el recorrido baja a 15–16 días sin subir el caudal.
+const HUARO_VENTANA_PATACANCHA = {
+    'CHOQUEBAMBAPUMAMARCA': { ini: '04:00', fin: '23:59' },
+};
 // ── Caudal por bocatoma — PATACANCHA (Esquema Hidráulico "Sub Sector Hidráulico
 // Quebrada Patacancha Yuracmayo", asignado por bocatoma por el sectorista) ──
 // Es el caudal derivado (l/s) que se precarga en cada bocatoma; se puede editar
@@ -1225,7 +1234,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1238,7 +1247,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,

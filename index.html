@@ -4000,7 +4000,9 @@ const COMISIONES = {
             const anio = parseInt((referenciaISO || _huaroSemanaSeleccionada()).slice(0, 4), 10);
             const inicioDef = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
             const caudalEditado = o.caudal != null && o.caudal !== '' && isFinite(parseFloat(o.caudal));
-            const hIni = _huaroMinDeHHMM(o.horaIni), hFin = _huaroMinDeHHMM(o.horaFin);
+            // Jornada: lo editado → la de la bocatoma por defecto (ej. Choquebamba 04:00–23:59) → la general.
+            const vDef = (HuaroCore.HUARO_VENTANA_PATACANCHA || {})[HuaroCore.huaroNormNombre(boc)] || {};
+            const hIni = _huaroMinDeHHMM(o.horaIni != null ? o.horaIni : vDef.ini), hFin = _huaroMinDeHHMM(o.horaFin != null ? o.horaFin : vDef.fin);
             const caudal = caudalEditado ? parseFloat(o.caudal) : ((masa && masa.caudalLs != null) ? masa.caudalLs : 0);
             const simDef = (HuaroCore.HUARO_SIMULTANEOS_PATACANCHA || {})[HuaroCore.huaroNormNombre(boc)] || 2;
             const simultaneos = Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || simDef);
