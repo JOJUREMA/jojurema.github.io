@@ -5412,7 +5412,15 @@ const COMISIONES = {
                 return HuaroCore.huaroConstruirG3Html(_huaroDatosG3());
             };
             // En pantalla cada semana lleva su banner; al IMPRIMIR sale solo el anexo (sin el encabezado del número de semana).
-            const armar = (conBanner) => semanas.map(w => `<div style="page-break-after:always;">${conBanner ? _huaroBannerSemana(w, nombreMes) : ''}${_huaroEnSemana(w.lunesISO, construir)}</div>`).join('');
+            // G-3: UNA HOJA (página) POR BOCATOMA dentro de cada semana, no todas las bocatomas seguidas.
+            const armarG3 = (conBanner) => {
+                const pags = [];
+                semanas.forEach(w => _huaroEnSemana(w.lunesISO, () => {
+                    _huaroBocsParaAnexo().forEach((b, k) => pags.push((conBanner && k === 0 ? _huaroBannerSemana(w, nombreMes) : '') + HuaroCore.huaroConstruirG3Html(_huaroDatosG3De(b))));
+                }));
+                return pags.map((p, i) => `<div style="${i < pags.length - 1 ? 'page-break-after:always;margin-bottom:28px;' : ''}">${p}</div>`).join('');
+            };
+            const armar = tipo === 'G3' ? armarG3 : (conBanner) => semanas.map(w => `<div style="page-break-after:always;">${conBanner ? _huaroBannerSemana(w, nombreMes) : ''}${_huaroEnSemana(w.lunesISO, construir)}</div>`).join('');
             const html = armar(true);
             _huaroPanelAnexo(titulo + ' — ' + semanas.length + ' semana(s)', html,
                 () => _huaroImprimir(titulo, armar(false), 'landscape'),
@@ -5449,7 +5457,9 @@ const COMISIONES = {
                     const ctx = { wb, hoja };
                     if (tipo === 'G1') await _huaroExcelG1Oficial(_huaroDatosG1(), ctx);
                     else if (tipo === 'G2') { _huaroBocsParaAnexo(); await _huaroExcelGOficial(_huaroDatosG2(), 'G-2', ctx); }
-                    else if (tipo === 'G3') { _huaroBocsParaAnexo(); await _huaroExcelG3PorUsuario(_huaroDatosG3(), ctx); }
+                    else if (tipo === 'G3') { // una hoja por bocatoma en cada semana
+                        for (const b of _huaroBocsParaAnexo()) await _huaroExcelG3PorUsuario(_huaroDatosG3De(b), { wb, hoja: (hoja.split(' ')[0] + ' ' + b).replace(/[\\\/?*\[\]:]/g, ' ').slice(0, 31) });
+                    }
                     else if (tipo === 'G4') { _huaroBocsParaAnexo(); if (_huaroResultados && _huaroResultados[boc]) await _huaroExcelG4(boc, ctx); }
                 });
             }
