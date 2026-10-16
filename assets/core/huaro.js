@@ -125,8 +125,35 @@ function huaroNormNombre(s) {
 }
 // Devuelve { caudalLs, volumenAnualM3, bloque, caudalEstimado? } o null.
 function huaroMasaDeAgua(bocatoma) {
+    if (HUARO_PERFIL_KEY === 'PATACANCHA') {
+        const q = HUARO_CAUDAL_ESQUEMA_PATACANCHA[huaroNormNombre(bocatoma)];
+        return q != null ? { caudalLs: q, volumenAnualM3: null, bloque: 'Esquema hidráulico', desdeEsquema: true } : null;
+    }
     return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
 }
+// ── Caudal por bocatoma — PATACANCHA (Esquema Hidráulico "Sub Sector Hidráulico
+// Quebrada Patacancha Yuracmayo", asignado por bocatoma por el sectorista) ──
+// Es el caudal derivado (l/s) que se precarga en cada bocatoma; se puede editar
+// en la pantalla. Clave = nombre de la bocatoma normalizado (huaroNormNombre).
+const HUARO_CAUDAL_ESQUEMA_PATACANCHA = {
+    'PUCARUMIYOCHUAYRACPUNCO': 90,
+    'PUCARUMIYOCMASCABAMBA': 50,
+    'MAYUMBAMBA': 15,
+    'MURIS02': 15,
+    'SEPILLO': 15,
+    'MEDIALUNA': 15,
+    'CHACCHAPATAJUANDELAYOC': 15,
+    'MURIS01': 15,
+    'CHOQUEBAMBAPUMAMARCA': 15,
+    'MUSCAPUGIO': 15,
+    'MUNAYPATA': 15,
+    'CAPULIYOCMARGENIZQUIERDA': 30,
+    'CCOLLCCARACCAYMARGENDERECHA': 30,
+    'CHUSPICHACA': 30,
+    'PONGORO': 30,
+    'TRANCAPUNCO': 30,
+    'UNCATRANCA': 30,
+};
 
 // ── Canal de conducción / derivación por bocatoma ──
 // Nombres tal cual el inventario GIS de la comisión (COMISIÓN DE REGANTES
@@ -1152,7 +1179,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1165,7 +1192,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,

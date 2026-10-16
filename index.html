@@ -4190,15 +4190,15 @@ const COMISIONES = {
                 <div class="huaro-detalle">
                     <div class="huaro-detalle-head">
                         <h3>🚰 ${escapeHtml(boc)}${yaProg ? '<span class="huaro-pill">Programada ✓</span>' : ''}</h3>
-                        <span style="font-size:12px;opacity:.9;">${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) : ((window._huaroComitePorBoc && window._huaroComitePorBoc[boc]) ? 'Comité: ' + escapeHtml(window._huaroComitePorBoc[boc]) : 'Sin licencia mapeada')}</span>
+                        <span style="font-size:12px;opacity:.9;">${(window._huaroComitePorBoc && window._huaroComitePorBoc[boc] && (!masa || masa.desdeEsquema)) ? 'Comité: ' + escapeHtml(window._huaroComitePorBoc[boc]) : (masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) : 'Sin licencia mapeada')}</span>
                     </div>
                     <div class="huaro-detalle-body">
                         ${avisoOk}
                         <div class="huaro-grid">
                             <div class="huaro-box"><div class="k">N° usuarios</div><div class="v">${us.length}</div></div>
                             <div class="huaro-box"><div class="k">Área total</div><div class="v">${areaTot.toFixed(2)} <small>ha</small></div></div>
-                            <div class="huaro-box res"><div class="k">Caudal según resolución</div><div class="v">${masaCaudal} <small>l/s</small></div></div>
-                            <div class="huaro-box res"><div class="k">Volumen anual (resolución)</div><div class="v">${masaVol} <small>m³</small></div></div>
+                            <div class="huaro-box res"><div class="k">${masa && masa.desdeEsquema ? 'Caudal según esquema hidráulico' : 'Caudal según resolución'}</div><div class="v">${masaCaudal} <small>l/s</small></div></div>
+                            ${masa && masa.desdeEsquema ? '' : `<div class="huaro-box res"><div class="k">Volumen anual (resolución)</div><div class="v">${masaVol} <small>m³</small></div></div>`}
                         </div>
 
                         <div class="huaro-grid" style="align-items:end;">
