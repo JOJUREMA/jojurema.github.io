@@ -5347,7 +5347,11 @@ const COMISIONES = {
         // semana que cruza dos meses (ej. 29/06 – 05/07) sale UNA sola vez, en el mes donde empieza.
         function _huaroPeriodoMostrado() {
             const { anio, mes0 } = _huaroMesAnioMostrado();
-            const meses = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroPatCfg().meses : null;
+            let meses = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroPatCfg().meses : null;
+            if (!meses && window._huaroPerfilKey === 'PATACANCHA') { // modo 'inicio de campaña hasta hoy': los meses desde el inicio hasta el mes de hoy
+                const hoy = new Date(), ini = HuaroCore.huaroPerfilActual().campanaMesIni;
+                if (hoy.getFullYear() === anio && hoy.getMonth() + 1 > ini) { meses = []; for (let m = ini; m <= hoy.getMonth() + 1; m++) meses.push(m); }
+            }
             if (meses && meses.length > 1 && meses.indexOf(mes0 + 1) >= 0) {
                 const ms = meses.slice().sort((a, b) => a - b);
                 const visto = {}, base = [];
