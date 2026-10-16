@@ -4854,8 +4854,15 @@ const COMISIONES = {
                 const dfechas = [..._setDias].sort().filter(iso => iso >= (a.semanaInicioISO || '') && iso <= (a.semanaFinISO || '9999'))
                     .map(iso => parseInt(String(iso).slice(8, 10), 10));
                 const colDias = dfechas.length ? 'Días ' + dfechas.join(', ') : '—';
-                const _delPadron = (a.usuariosPadron && a.usuariosPadron > a.nUsuarios)
-                    ? ` <span style="font-size:10px;color:#b26a00;" title="Esta semana riegan ${a.nUsuarios} de los ${a.usuariosPadron} usuarios del padrón: con ${a.simultaneos} a la vez, cada usuario riega cada ${a.cicloDias} días.">de ${a.usuariosPadron} ⚠ ciclo ${a.cicloDias} d</span>` : '';
+                // "n de N": esta semana riegan n de los N usuarios del padrón. Es NORMAL: cada usuario riega una vez
+                // por ciclo (cada 8 o 15 días), así que en una semana solo le toca a una parte. Solo se marca con ⚠
+                // cuando el recorrido pasa del máximo y quedan usuarios pendientes.
+                let _delPadron = '';
+                if (a.usuariosPadron && a.usuariosPadron > a.nUsuarios) {
+                    _delPadron = a.excedeFrecuencia
+                        ? ` <span style="font-size:10px;color:#b26a00;" title="El recorrido de todos los usuarios pasa de 16 días: quedan ${a.nPendientes} pendientes para las semanas siguientes.">de ${a.usuariosPadron} ⚠ pendientes</span>`
+                        : ` <span style="font-size:10px;color:#6b7280;" title="Esta semana riegan ${a.nUsuarios} de los ${a.usuariosPadron} usuarios del padrón. Los demás tienen su turno en otra semana: cada usuario riega una vez cada ${a.cicloDias} días.">de ${a.usuariosPadron} · cada ${a.cicloDias} d</span>`;
+                }
                 return `<tr><td>${escapeHtml(b)}</td><td style="text-align:center;">${a.nUsuarios}${_delPadron}</td>
                     <td style="text-align:right;">${a.areaProgramadaHa.toFixed(2)}</td>
                     <td style="text-align:right;">${a.volumenTotalM3.toFixed(2)}</td>
