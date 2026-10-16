@@ -3887,6 +3887,45 @@ const COMISIONES = {
             return _huaroOrden.filter(b => _huaroResultados[b] && _huaroResultados[b].programados.length > 0);
         }
 
+        // ── Patacancha: cada COMITÉ de usuarios tiene sus propios anexos ──
+        // Comités en el orden del padrón (una hoja del Excel = un comité).
+        function _huaroComitesLista() {
+            const m = window._huaroComitePorBoc || {};
+            const out = [];
+            _huaroOrden.forEach(b => { if (m[b] && out.indexOf(m[b]) < 0) out.push(m[b]); });
+            return out;
+        }
+        let _huaroComiteSel = null;
+        // Comité elegido: el seleccionado en pantalla; si no hay (o ya no existe),
+        // el primero que tenga bocatomas programadas esta semana, o el primero.
+        function _huaroComiteActivo() {
+            if (window._huaroPerfilKey !== 'PATACANCHA') return '';
+            const lista = _huaroComitesLista();
+            if (_huaroComiteSel && lista.indexOf(_huaroComiteSel) >= 0) return _huaroComiteSel;
+            const m = window._huaroComitePorBoc || {};
+            const prog = _huaroBocsConDatos().map(b => m[b]);
+            return lista.find(c => prog.indexOf(c) >= 0) || lista[0] || '';
+        }
+        function huaroCambiarComite(nombre) { _huaroComiteSel = nombre; renderPanelHuaro(); }
+        // Bocatomas programadas esta semana QUE PERTENECEN al comité activo (Patacancha);
+        // en Huaro, todas. También fija el comité en los encabezados de los anexos.
+        function _huaroBocsParaAnexo() {
+            const bocs = _huaroBocsConDatos();
+            if (window._huaroPerfilKey !== 'PATACANCHA') { HuaroCore.huaroSetComiteActivo(''); return bocs; }
+            const com = _huaroComiteActivo();
+            HuaroCore.huaroSetComiteActivo(com);
+            const m = window._huaroComitePorBoc || {};
+            return bocs.filter(b => m[b] === com);
+        }
+        function _huaroSufijoComite() {
+            const c = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroComiteActivo() : '';
+            return c ? ' - ' + c.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+        }
+        function _huaroMsgSinBocsComite() {
+            const c = _huaroComiteActivo();
+            return c ? 'El comité "' + c + '" no tiene bocatomas programadas en esta semana.\n\nElige otra semana o programa sus bocatomas.' : 'No hay bocatomas con usuarios programados esta semana.';
+        }
+
         function _huaroSemanaSeleccionada() {
             // Fuente de verdad: _huaroSemanaActualISO (lo fijan los selectores de
             // Mes/Semana y la fecha exacta). Solo se lee el input directo del DOM
@@ -4282,6 +4321,23 @@ const COMISIONES = {
                 <div class="huaro-card" id="huaroResumenResultados" ${hayAnexos ? '' : 'style="display:none;"'}>
                     <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
                     <div id="huaroResumenTexto"></div>
+                    ${window._huaroPerfilKey === 'PATACANCHA' ? (() => {
+                        const lista = _huaroComitesLista();
+                        const act = _huaroComiteActivo();
+                        const m = window._huaroComitePorBoc || {};
+                        const prog = _huaroBocsConDatos();
+                        const ops = lista.map(c => {
+                            const nProg = prog.filter(b => m[b] === c).length;
+                            const nTot = _huaroOrden.filter(b => m[b] === c).length;
+                            return `<option value="${escapeHtml(c)}"${c === act ? ' selected' : ''}>${escapeHtml(c)} (${nProg}/${nTot} bocatomas programadas)</option>`;
+                        }).join('');
+                        return `<div style="margin-top:12px;padding:10px 12px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:8px;">
+                            <label style="font-weight:700;font-size:13px;">🏛️ Comité de los anexos:<br>
+                                <select class="huaro-sel" onchange="huaroCambiarComite(this.value)" style="margin-top:5px;width:100%;max-width:760px;">${ops}</select>
+                            </label>
+                            <div class="huaro-mini" style="margin-top:5px;">Cada comité de usuarios tiene sus propios Anexos G-1, G-2, G-3 y G-4: los botones de abajo generan los del comité elegido (solo con sus bocatomas).</div>
+                        </div>`;
+                    })() : ''}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
                         <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 (canales de derivación)</button>
@@ -4820,12 +4876,13 @@ const COMISIONES = {
         }
 
         function _huaroDatosG2() {
-            const bocs = _huaroBocsConDatos();
+            const bocs = _huaroBocsParaAnexo();
+            const comiteNombre = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroComiteActivo() : '';
             const iso = _huaroResultados[bocs[0]].agregado.semanaInicioISO;
             return {
                 semanaInicioISO: iso,
                 semanaFinISO: _huaroResultados[bocs[0]].agregado.semanaFinISO,
-                mesTexto: _huaroMesTexto(iso),
+                mesTexto: _huaroMesTexto(iso), comiteNombre,
                 filas: bocs.map(b => _huaroResultados[b].agregado),
             };
         }
@@ -4836,19 +4893,19 @@ const COMISIONES = {
         // son lo mismo) — se reusa _huaroDatosG2() tal cual, solo cambia
         // cómo se renderiza (huaroConstruirG1Html).
         function huaroMostrarG1() {
-            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            if (!_huaroBocsParaAnexo().length) { alert(_huaroMsgSinBocsComite()); return; }
             const datos = _huaroDatosG2();
             const html = HuaroCore.huaroConstruirG1Html(datos);
-            _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
+            _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo + _huaroSufijoComite(), html,
                 () => _huaroImprimir('Anexo G1', html, 'landscape'),
                 () => _huaroExcelG1Oficial(datos));
         }
 
         function huaroMostrarG2() {
-            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            if (!_huaroBocsParaAnexo().length) { alert(_huaroMsgSinBocsComite()); return; }
             const datos = _huaroDatosG2();
             const html = HuaroCore.huaroConstruirG2Html(datos);
-            _huaroPanelAnexo('Anexo G-2 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
+            _huaroPanelAnexo('Anexo G-2 — ' + HuaroCore.huaroPerfilActual().titulo + _huaroSufijoComite(), html,
                 () => _huaroImprimir('Anexo G2', html, 'landscape'),
                 () => _huaroExcelGOficial(datos, 'G-2'));
         }
@@ -4856,7 +4913,7 @@ const COMISIONES = {
         // G-3 = detalle POR USUARIO (caudal a distribuir + horario de cada
         // usuario), agrupado por bocatoma.
         function _huaroDatosG3() {
-            const bocs = _huaroBocsConDatos();
+            const bocs = _huaroBocsParaAnexo();
             const iso = _huaroResultados[bocs[0]].agregado.semanaInicioISO;
             return {
                 semanaInicioISO: iso,
@@ -4885,13 +4942,13 @@ const COMISIONES = {
         }
 
         function huaroMostrarG3(bocInicial) {
-            const bocs = _huaroBocsConDatos();
-            if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const bocs = _huaroBocsParaAnexo();
+            if (!bocs.length) { alert(_huaroMsgSinBocsComite()); return; }
             const sel = `<label style="font-size:13px;font-weight:600;">Bocatoma:
                 <select id="huaroSelG3" style="margin-left:8px;padding:5px 8px;min-width:220px;">
                     ${bocs.map(b => `<option value="${escapeHtml(b)}"${b === bocInicial ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}
                 </select></label><div id="huaroG3Cont" style="margin-top:12px;"></div>`;
-            _huaroPanelAnexo('Anexo G-3 — ' + HuaroCore.huaroPerfilActual().titulo + '', sel,
+            _huaroPanelAnexo('Anexo G-3 — ' + HuaroCore.huaroPerfilActual().titulo + _huaroSufijoComite(), sel,
                 () => {
                     const b = document.getElementById('huaroSelG3').value;
                     _huaroImprimir('Anexo G3 ' + b, HuaroCore.huaroConstruirG3Html(_huaroDatosG3De(b)), 'landscape');
@@ -4906,8 +4963,8 @@ const COMISIONES = {
         }
 
         function huaroMostrarG4() {
-            const bocs = _huaroBocsConDatos();
-            if (!bocs.length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const bocs = _huaroBocsParaAnexo();
+            if (!bocs.length) { alert(_huaroMsgSinBocsComite()); return; }
             const html = `
                 <label style="font-size:13px;font-weight:600;">Bocatoma:
                     <select id="huaroSelG4Boc" style="margin-left:8px;padding:5px 8px;">
@@ -4917,7 +4974,7 @@ const COMISIONES = {
                     <select id="huaroSelG4Usr" style="margin-left:8px;padding:5px 8px;min-width:260px;"></select></label>
                 <button class="huaro-btn sec" id="huaroG4Todos" style="margin-left:14px;">🖨️ Imprimir todas (bocatoma)</button>
                 <div id="huaroG4Cont" style="margin-top:12px;"></div>`;
-            _huaroPanelAnexo('Anexo G-4 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
+            _huaroPanelAnexo('Anexo G-4 — ' + HuaroCore.huaroPerfilActual().titulo + _huaroSufijoComite(), html,
                 () => {
                     const b = document.getElementById('huaroSelG4Boc').value;
                     const idx = +document.getElementById('huaroSelG4Usr').value;
@@ -5145,7 +5202,7 @@ const COMISIONES = {
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
-                    HuaroCore.HUARO_COMISION_NOMBRE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
+                    HuaroCore.huaroSubsectorTexto(), f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
                     (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
@@ -5167,7 +5224,7 @@ const COMISIONES = {
                 if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00';
                 _huaroBorde(c); alinear(c, i);
             });
-            await _descargarWorkbook(wb, 'Anexo G1.xlsx');
+            await _descargarWorkbook(wb, 'Anexo G1' + _huaroSufijoComite() + '.xlsx');
         }
 
         async function _huaroExcelGOficial(datos, formato) {
@@ -5197,7 +5254,7 @@ const COMISIONES = {
             poner(3, 'AAA:', HuaroCore.HUARO_AAA);
             poner(4, 'ALA:', HuaroCore.HUARO_ALA);
             poner(5, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(6, 'Subsector Hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(6, 'Subsector Hidráulico:', HuaroCore.huaroSubsectorTexto());
             poner(7, 'Mes:', datos.mesTexto || '');
             poner(8, 'Semana:', semTxt);
             let r = 10;
@@ -5229,7 +5286,7 @@ const COMISIONES = {
             const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
             tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); alinear(c, i); });
-            await _descargarWorkbook(wb, 'Anexo G2.xlsx');
+            await _descargarWorkbook(wb, 'Anexo G2' + _huaroSufijoComite() + '.xlsx');
         }
 
         // Excel del G-3 (detalle por usuario, por bocatoma).
@@ -5255,7 +5312,7 @@ const COMISIONES = {
             ws.getCell(1, 1).value = 'Formato G-3: Parte diario de Distribución de Agua a los Usuarios';
             ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
             poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(4, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(4, 'Subsector hidráulico:', HuaroCore.huaroSubsectorTexto());
             poner(5, 'Canal de abastecimiento de agua:', canalG3);
             poner(6, 'Caudal:', caudalG3);
             poner(7, 'Mes:', datos.mesTexto || '');
@@ -5295,7 +5352,7 @@ const COMISIONES = {
                 r++;
             });
             const _bocG3 = (datos.bloques && datos.bloques[0]) ? datos.bloques[0].bocatoma : '';
-            await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + '.xlsx');
+            await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + _huaroSufijoComite() + '.xlsx');
         }
 
         // Excel del G-4 — una fila por usuario (todos los programados de la
@@ -5324,7 +5381,7 @@ const COMISIONES = {
             ws.getCell(1, 1).value = 'Formato G-4: Orden de Suministro de Agua';
             ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
             poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(4, 'Subsector hidráulico:', HuaroCore.HUARO_COMISION_NOMBRE);
+            poner(4, 'Subsector hidráulico:', HuaroCore.huaroSubsectorTexto());
             poner(5, 'Canal de abastecimiento de agua:', HuaroCore.huaroCanalBocatoma(boc));
             poner(6, 'Caudal:', (r.agregado.caudalLs || 0).toFixed(2) + ' (l/s)');
             poner(7, 'Fecha:', fechaTexto);
@@ -5342,7 +5399,7 @@ const COMISIONES = {
                 vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
                 fila++;
             });
-            await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + '.xlsx');
+            await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + _huaroSufijoComite() + '.xlsx');
         }
 
         // Procesar datos del workbook

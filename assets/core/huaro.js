@@ -76,6 +76,15 @@ const HUARO_PERFILES = {
     },
 };
 let HUARO_PERFIL_KEY = 'HUARO';
+// Comité cuyo anexo se está generando (Patacancha: cada comité de usuarios
+// tiene sus propios G-1…G-4). Vacío = sin comité (Huaro / vista general).
+let HUARO_COMITE_ACTIVO = '';
+function huaroSetComiteActivo(nombre) { HUARO_COMITE_ACTIVO = nombre ? String(nombre) : ''; }
+function huaroComiteActivo() { return HUARO_COMITE_ACTIVO; }
+// Texto del "Subsector hidráulico" de los anexos: el de la comisión + el comité si lo hay.
+function huaroSubsectorTexto() {
+    return HUARO_COMISION_NOMBRE + (HUARO_COMITE_ACTIVO ? ' — ' + HUARO_COMITE_ACTIVO : '');
+}
 function huaroPerfilActual() { return HUARO_PERFILES[HUARO_PERFIL_KEY] || HUARO_PERFILES.HUARO; }
 function huaroAplicarPerfil(key) {
     const p = HUARO_PERFILES[key];
@@ -820,7 +829,7 @@ function huaroConstruirG1Html(datos) {
             ? `Pendientes: ${f.nPendientes} usuario(s) / ${_huaroFmtNum(f.areaPendienteHa)} ha` : '';
         body += `
         <tr>
-            <td style="${tdL}">${_huaroEsc(HUARO_COMISION_NOMBRE)}</td>
+            <td style="${tdL}">${_huaroEsc(huaroSubsectorTexto())}</td>
             <td style="${tdL}font-weight:600;">${_huaroEsc(f.bocatoma)}</td>
             <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
@@ -939,7 +948,7 @@ function huaroConstruirG2Html(datos) {
             <div><strong>AAA:</strong> ${HUARO_AAA}</div>
             <div><strong>ALA:</strong> ${HUARO_ALA}</div>
             <div><strong>Sector Hidráulico:</strong> ${HUARO_JUNTA}</div>
-            <div><strong>Subsector Hidráulico:</strong> ${HUARO_COMISION_NOMBRE}</div>
+            <div><strong>Subsector Hidráulico:</strong> ${_huaroEsc(huaroSubsectorTexto())}</div>
         </div>
         <div style="line-height:1.6;white-space:nowrap;">
             <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
@@ -1073,7 +1082,7 @@ function huaroConstruirG3Html(datos) {
     </div>
     <table style="font-family:Arial,sans-serif;color:#000;font-size:10px;border-collapse:collapse;margin:6px 0 10px;">
         <tr><td style="${_lbl}">Sector hidráulico:</td><td>${HUARO_JUNTA}</td></tr>
-        <tr><td style="${_lbl}">Subsector hidráulico:</td><td>${HUARO_COMISION_NOMBRE}</td></tr>
+        <tr><td style="${_lbl}">Subsector hidráulico:</td><td>${_huaroEsc(huaroSubsectorTexto())}</td></tr>
         <tr><td style="${_lbl}">Canal de abastecimiento de agua:</td><td>${_huaroEsc(canalCab)}</td></tr>
         <tr><td style="${_lbl}">Caudal:</td><td>${_huaroEsc(caudalCab)}</td></tr>
         <tr><td style="${_lbl}">Mes:</td><td>${_huaroEsc(datos.mesTexto || '')}</td></tr>
@@ -1179,7 +1188,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1192,7 +1201,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
