@@ -5896,11 +5896,11 @@ const COMISIONES = {
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
                     HuaroCore.huaroSubsectorTexto(), f.bocatoma, (f.canalTexto != null ? f.canalTexto : HuaroCore.huaroCanalBocatoma(f.bocatoma)),
-                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
+                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(2),
                     (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
                     (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
                     ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)),
-                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
+                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha') : '',
                 ];
                 vals.forEach((v, i) => {
                     const c = ws.getCell(r, i + 1); c.value = v;
@@ -5910,7 +5910,7 @@ const COMISIONES = {
                 r++;
             });
             const totalFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
-            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
+            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(2), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
             tot.forEach((v, i) => {
                 const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; c.fill = totalFill;
@@ -5932,6 +5932,7 @@ const COMISIONES = {
                 ..._diaHeads,
                 'OBSERVACIONES',
             ];
+            const COLS_NUM_2DEC = new Set([4, 5, 6, 11, 12, 13, 14, 15, 16, 17]);
             const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
             const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: (i === 0 || i === 1 || i === 2 || i === 18) ? 22 : 12 }));
@@ -5969,18 +5970,18 @@ const COMISIONES = {
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
                     HuaroCore.HUARO_FUENTE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
-                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
+                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(2),
                     (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
                     (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
                     ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)),
-                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toFixed(2) + ' ha') : '',
+                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha') : '',
                 ];
-                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
+                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
                 r++;
             });
-            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
+            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(2), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
-            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); alinear(c, i); });
+            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, 'Anexo G2' + _huaroSufijoComite() + '.xlsx');
         }
 
@@ -6033,11 +6034,11 @@ const COMISIONES = {
                     const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
                         +(p.tiempoH || 0).toFixed(2), +((p.caudalLs != null ? p.caudalLs : (bl.caudalLs || 0))).toFixed(2),
                         _fd, p.inicioTexto, _ft, p.terminoTexto, ''];
-                    vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); alinear(c, j); });
+                    vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; if (j >= 2 && j <= 5) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, j); });
                     r++;
                 });
                 ['TOTAL', '', +tA.toFixed(2), +tV.toFixed(2), +tH.toFixed(2), '', '', '', '', '', ''].forEach((v, j) => {
-                    const c = ws.getCell(r, j + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); alinear(c, j);
+                    const c = ws.getCell(r, j + 1); c.value = v; c.font = { bold: true }; if (j >= 2 && j <= 5) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, j);
                 });
                 r++;
                 if (bl.pendientesUsuarios && bl.pendientesUsuarios.length) {
@@ -6095,7 +6096,7 @@ const COMISIONES = {
                     _fd, p.inicioTexto, _ft, p.terminoTexto,
                     +(p.tiempoH || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2), fechaTexto,
                     '', '', ''];
-                vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
+                vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; if (i === 3 || i === 8 || i === 9) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
                 fila++;
             });
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + _huaroSufijoComite() + '.xlsx');

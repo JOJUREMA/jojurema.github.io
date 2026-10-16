@@ -964,18 +964,18 @@ function huaroConstruirG2Html(datos) {
         (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
 
         const dias = (f.caudalPorDia || []).map(c =>
-            `<td style="${td}">${(c || 0).toFixed(2)}</td>`).join('');
+            `<td style="${td}">${_huaroFmtNum((c || 0))}</td>`).join('');
         const obs = f.nPendientes > 0
-            ? `Pendientes: ${f.nPendientes} usuario(s) / ${f.areaPendienteHa.toFixed(2)} ha` : '';
+            ? `Pendientes: ${f.nPendientes} usuario(s) / ${_huaroFmtNum(f.areaPendienteHa)} ha` : '';
         body += `
         <tr>
             <td style="${tdL}font-weight:600;">${_huaroEsc(HUARO_FUENTE)}</td>
             <td style="${tdL}">${_huaroEsc(f.bocatoma)}</td>
             <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
-            <td style="${td}">${f.volumenTotalM3.toFixed(2)}</td>
-            <td style="${td}">${f.areaProgramadaHa.toFixed(2)}</td>
-            <td style="${td}">${f.tiempoTotalH.toFixed(1)}</td>
+            <td style="${td}">${_huaroFmtNum(f.volumenTotalM3)}</td>
+            <td style="${td}">${_huaroFmtNum(f.areaProgramadaHa)}</td>
+            <td style="${td}">${_huaroFmtNum(f.tiempoTotalH)}</td>
             <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoInicioISO || f.semanaInicioISO)}</td>
             <td style="${td}">${f.periodoInicioHora || '04:00'}</td>
             <td style="${td}font-size:9px;white-space:nowrap;">${_huaroFechaCorta(f.periodoFinISO || f.semanaFinISO)}</td>
@@ -984,7 +984,7 @@ function huaroConstruirG2Html(datos) {
             <td style="${tdL}">${_huaroEsc(obs)}</td>
         </tr>`;
     });
-    const totDias = tDia.map(c => `<td style="${td}font-weight:700;">${(c || 0).toFixed(2)}</td>`).join('');
+    const totDias = tDia.map(c => `<td style="${td}font-weight:700;">${_huaroFmtNum((c || 0))}</td>`).join('');
 
     return `
     <div style="text-align:center;font-family:Arial,sans-serif;color:#000;font-weight:700;font-size:13px;margin-bottom:8px;">
@@ -1029,9 +1029,9 @@ function huaroConstruirG2Html(datos) {
             <tr style="background:#E6E6E6;color:#000;font-weight:bold;">
                 <td style="${td}" colspan="3">TOTAL</td>
                 <td style="${td}">${tU}</td>
-                <td style="${td}">${tVol.toFixed(2)}</td>
-                <td style="${td}">${tArea.toFixed(2)}</td>
-                <td style="${td}">${tTiempoMax.toFixed(1)}</td>
+                <td style="${td}">${_huaroFmtNum(tVol)}</td>
+                <td style="${td}">${_huaroFmtNum(tArea)}</td>
+                <td style="${td}">${_huaroFmtNum(tTiempoMax)}</td>
                 <td style="${td}">-</td><td style="${td}">-</td>
                 <td style="${td}">-</td><td style="${td}">-</td>
                 ${totDias}
@@ -1064,10 +1064,10 @@ function huaroConstruirG3Html(datos) {
             <tr>
                 <td style="${td}">${i + 1}</td>
                 <td style="${tdL}">${_huaroEsc(p.nombre)}</td>
-                <td style="${td}">${(p.areaHa || 0).toFixed(2)}</td>
-                <td style="${td}">${(p.volumenM3 || 0).toFixed(2)}</td>
-                <td style="${td}">${(p.tiempoH || 0).toFixed(2)}</td>
-                <td style="${td}">${(p.caudalLs != null ? p.caudalLs : caudalLs).toFixed(2)}</td>
+                <td style="${td}">${_huaroFmtNum((p.areaHa || 0))}</td>
+                <td style="${td}">${_huaroFmtNum((p.volumenM3 || 0))}</td>
+                <td style="${td}">${_huaroFmtNum((p.tiempoH || 0))}</td>
+                <td style="${td}">${_huaroFmtNum((p.caudalLs != null ? p.caudalLs : caudalLs))}</td>
                 <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
                 <td style="${td}">${p.inicioTexto}</td>
                 <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaTerminoISO || p.fechaISO)}</td>
@@ -1083,7 +1083,7 @@ function huaroConstruirG3Html(datos) {
         const pend = bl.pendientesUsuarios || [];
         const pendHtml = pend.length ? `
             <div style="font-size:9.5px;color:#000;margin:4px 0 16px;">
-                <strong>Pendientes para la próxima semana (${pend.length} · ${pend.reduce((s, u) => s + (u.areaHa || 0), 0).toFixed(2)} ha):</strong>
+                <strong>Pendientes para la próxima semana (${pend.length} · ${_huaroFmtNum(pend.reduce((s, u) => s + (u.areaHa || 0), 0))} ha):</strong>
                 ${pend.map(u => 'N°' + u.nOrden + ' ' + _huaroEsc(u.nombre)).join(' · ')}
             </div>` : '<div style="margin-bottom:16px;"></div>';
 
@@ -1112,9 +1112,9 @@ function huaroConstruirG3Html(datos) {
                 ${filas}
                 <tr style="background:#E6E6E6;color:#000;font-weight:bold;">
                     <td style="${td}" colspan="2">TOTAL</td>
-                    <td style="${td}">${tArea.toFixed(2)}</td>
-                    <td style="${td}">${tVol.toFixed(2)}</td>
-                    <td style="${td}">${tTiempo.toFixed(2)}</td>
+                    <td style="${td}">${_huaroFmtNum(tArea)}</td>
+                    <td style="${td}">${_huaroFmtNum(tVol)}</td>
+                    <td style="${td}">${_huaroFmtNum(tTiempo)}</td>
                     <td style="${td}" colspan="5">-</td>
                 </tr>
             </tbody>
@@ -1165,14 +1165,14 @@ function huaroConstruirG4Html(p, ctx) {
             según el Plan de Aprovechamiento de la Disponibilidad Hídrica aprobado, utilizará el agua según el detalle siguiente:
         </div>
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Nombre del canal: <span style="${line}">${_huaroEsc(ctx.bocatoma)}</span></div>
-        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Caudal: <span style="${line}">${caudalLs.toFixed(2)}</span> l/s.</div>
+        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Caudal: <span style="${line}">${_huaroFmtNum(caudalLs)}</span> l/s.</div>
         <div style="margin:7px 0;font-size:11px;">
             <span style="${box}"></span> A partir del día:
             <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.inicioTexto}</span>
             hasta el día: <span style="${line}">${_huaroFechaCorta(p.fechaTerminoISO || p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.terminoTexto}</span>
         </div>
-        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Horas total del uso del agua: <span style="${line}">${(p.tiempoH || 0).toFixed(2)}</span></div>
-        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Volumen de agua a entregar (m³): <span style="${line}">${(p.volumenM3 || 0).toFixed(2)}</span></div>
+        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Horas total del uso del agua: <span style="${line}">${_huaroFmtNum((p.tiempoH || 0))}</span></div>
+        <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Volumen de agua a entregar (m³): <span style="${line}">${_huaroFmtNum((p.volumenM3 || 0))}</span></div>
         <div style="text-align:right;margin-top:24px;font-size:11px;">
             ${_huaroFechaLargaEs(ctx.fechaInicioSemanaISO ? new Date(ctx.fechaInicioSemanaISO + 'T00:00:00') : new Date())}
         </div>
