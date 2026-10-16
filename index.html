@@ -4035,6 +4035,39 @@ const COMISIONES = {
             return { semanas: n, rango, crono };
         }
 
+        // Programa la campaña de TODAS las bocatomas de una vez (caudal escrito
+        // en pantalla si lo hay; si no, el del esquema hidráulico) → deja listos
+        // los Anexos G-1…G-4 de cada semana sin tener que ir bocatoma por bocatoma.
+        function huaroProgramarTodasPat() {
+            if (!window.HuaroCore || !_huaroOrden.length) { alert('Primero carga el padrón de Patacancha.'); return; }
+            const sinCaudal = [], excede = [];
+            let ok = 0, semanas = 0, rango = null;
+            _huaroOrden.forEach(boc => {
+                const masa = HuaroCore.huaroMasaDeAgua(boc);
+                const q = parseFloat(_huaroCaudalTemp[boc]) || (masa && masa.caudalLs) || 0;
+                if (!(q > 0)) { sinCaudal.push(boc); return; }
+                const r = _huaroProgramarCampanaPat(boc, q);
+                delete _huaroCaudalTemp[boc];
+                if (!r.crono) return;
+                ok++; semanas = Math.max(semanas, r.semanas); rango = r.rango;
+                if (r.crono.excedeFrecuencia) excede.push(boc + ' (cada ' + r.crono.periodoDias + ' días)');
+            });
+            _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null;
+            const fc = s => s.split('-').reverse().join('/');
+            const nl = '\n';
+            let msg;
+            if (ok) {
+                msg = '✅ ' + ok + ' bocatoma(s) programadas — campaña ' + fc(rango.desdeISO) + ' → ' + fc(rango.hastaISO) + ' (' + semanas + ' semanas).' + nl + nl +
+                    'Ya puedes ver los Anexos G-1, G-2, G-3 y G-4 de cada semana (elige la semana arriba).';
+                if (excede.length) msg += nl + nl + '⚠️ No cumplen la frecuencia de ' + _huaroPatCfg().frecuencia + ' días con los usuarios simultáneos configurados:' + nl + '· ' + excede.join(nl + '· ');
+                if (sinCaudal.length) msg += nl + nl + 'Sin caudal (no se programaron): ' + sinCaudal.join(', ');
+            } else {
+                msg = 'No se programó ninguna bocatoma' + (sinCaudal.length ? ' — falta el caudal en: ' + sinCaudal.join(', ') : ' (el rango de campaña no tiene semanas).');
+            }
+            alert(msg);
+            renderPanelHuaro();
+        }
+
         function _huaroPreviewBocatoma(boc, caudalLs) {
             if (window._huaroPerfilKey === 'PATACANCHA') {
                 // Vista previa de la semana elegida dentro del rol de campaña
@@ -4285,6 +4318,15 @@ const COMISIONES = {
                     <div class="huaro-mini" style="margin-top:8px;"><b>${_semLbl}</b></div>
                 </div>
 
+                ${window._huaroPerfilKey === 'PATACANCHA' ? `
+                <div class="huaro-card" style="border-color:#2f7d6d;background:#f1f8f6;">
+                    <label style="font-weight:700;font-size:14px;">⚙️ Generar los Anexos G-1, G-2, G-3 y G-4 de toda la campaña<br>
+                        <span style="font-weight:400;font-size:12px;color:#355;">No necesitas ningún anexo previo: el sistema los crea a partir del padrón. Con un clic programa las ${_huaroOrden.length} bocatomas (campaña completa, con el caudal del esquema hidráulico) y deja listos los 4 anexos de cada semana. También puedes programar una bocatoma a la vez, más abajo.</span>
+                    </label>
+                    <div style="margin-top:10px;">
+                        <button class="huaro-btn ok" onclick="huaroProgramarTodasPat()" ${_huaroOrden.length ? '' : 'disabled'}>⚙️ Programar TODAS las bocatomas y crear los anexos</button>
+                    </div>
+                </div>` : `
                 <div class="huaro-card">
                     <label style="font-weight:600;font-size:13px;">📤 ¿Ya tienes un Anexo G-2 generado antes (Excel), pero esta semana no aparece en el Historial?<br>
                         <span style="font-weight:400;font-size:12px;color:#555;">Súbelo acá para generar su Anexo G-1 directamente a partir de esos datos, sin necesitar el PDA guardado en este navegador.</span>
@@ -4293,7 +4335,7 @@ const COMISIONES = {
                         <input type="file" id="huaroInputG2ParaG1" accept=".xlsx,.xls" style="display:none;" onchange="huaroImportarG2ParaG1(event)">
                         <button class="huaro-btn" onclick="document.getElementById('huaroInputG2ParaG1').click()">📤 Subir Anexo G-2 (Excel) y generar G-1</button>
                     </div>
-                </div>
+                </div>`}
 
                 <div class="huaro-card">
                     <label style="font-weight:600;font-size:13px;">1) Selecciona la bocatoma a programar<br>
