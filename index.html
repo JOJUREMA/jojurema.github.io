@@ -3711,7 +3711,8 @@ const COMISIONES = {
 
             btnLimpiar.disabled = false;
             window._huaroAutoMsg = '';
-            if (esPatacancha) _huaroPatAutoProgramarComite(_huaroComiteActivo());
+            if (esPatacancha) _huaroPatMigrar();
+            if (esPatacancha) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
             renderPanelHuaro();
         }
 
@@ -3993,10 +3994,10 @@ const COMISIONES = {
         // pantalla (caudal, día y hora de inicio, hora de término diaria, usuarios
         // a la vez) o, si no se tocó, el valor por defecto (caudal del esquema
         // hidráulico, 1° de junio, 06:00–16:00, 2 a la vez).
-        function _huaroPatBoc(boc, referenciaISO) {
+        function _huaroPatBoc(boc, referenciaISO, sinOverrides) {
             const cfg = _huaroPatCfg();
             const perfil = HuaroCore.huaroPerfilActual();
-            const o = cfg.boc[boc] || {};
+            const o = sinOverrides ? {} : (cfg.boc[boc] || {});
             const masa = HuaroCore.huaroMasaDeAgua(boc);
             const anio = parseInt((referenciaISO || _huaroSemanaSeleccionada()).slice(0, 4), 10);
             const inicioDef = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
@@ -4148,17 +4149,17 @@ const COMISIONES = {
                                 <div class="k">Ciclo de riego (campaña) — editable</div>
                                 <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:6px;font-size:12px;">
                                     <span>Día de inicio</span>
-                                    <input type="date" id="huaroPatInicio" value="${p.inicio}" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
+                                    <input type="date" id="huaroPatInicio" value="${p.inicio}" onchange="huaroPatCfgCambio('Inicio')" class="huaro-sel" style="${inpStyle}">
                                     <span>Hora de inicio</span>
-                                    <input type="time" id="huaroPatHIni" value="${hh(p.horaIniMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
+                                    <input type="time" id="huaroPatHIni" value="${hh(p.horaIniMin)}" step="900" onchange="huaroPatCfgCambio('HIni')" class="huaro-sel" style="${inpStyle}">
                                     <span>Horas por topo</span>
-                                    <span><input type="number" id="huaroPatHTopo" value="${+p.horasPorTopo.toFixed(2)}" min="0.05" max="24" step="0.01" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> h</span>
+                                    <span><input type="number" id="huaroPatHTopo" value="${+p.horasPorTopo.toFixed(2)}" min="0.05" max="24" step="0.01" onchange="huaroPatCfgCambio('HTopo')" class="huaro-sel" style="${inpStyle}width:62px;"> h</span>
                                     <span>Hora de término</span>
-                                    <input type="time" id="huaroPatHFin" value="${hh(p.horaFinMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
+                                    <input type="time" id="huaroPatHFin" value="${hh(p.horaFinMin)}" step="900" onchange="huaroPatCfgCambio('HFin')" class="huaro-sel" style="${inpStyle}">
                                     <span>Se repite</span>
                                     <span style="font-size:11px;line-height:1.3;">cada <b>8 días</b> si el recorrido de todos dura hasta 7; si dura más, cada <b>15</b></span>
                                     <span>Riegan a la vez</span>
-                                    <span><input type="number" id="huaroPatSimul" value="${p.simultaneos}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> usuarios</span>
+                                    <span><input type="number" id="huaroPatSimul" value="${p.simultaneos}" min="1" max="60" step="1" onchange="huaroPatCfgCambio('Simul')" class="huaro-sel" style="${inpStyle}width:62px;"> usuarios</span>
                                 </div>
                                 <div class="huaro-mini" style="margin-top:6px;">Se programa <b>${_huaroPatRangoTexto(rango)}</b>, de ${hh(p.horaIniMin)} a ${hh(p.horaFinMin)} cada día.</div>
                                 <div class="huaro-mini" id="huaroCicloInfoBoc" style="margin-top:4px;"></div>
@@ -4229,22 +4230,109 @@ const COMISIONES = {
             _huaroPatAutoProgramar(_huaroBocSel);
             renderPanelHuaro();
         }
-        // Guarda lo editado en la caja del ciclo (por bocatoma) y repinta.
-        function huaroPatCfgCambio() {
-            if (!_huaroBocSel) return;
+        // Quita de cfg.boc[boc] todo valor que coincida con el por defecto (así lo "editado" que en realidad
+        // no se cambió no tapa los valores por defecto nuevos, p. ej. la jornada o el caudal de Choquebamba).
+        function _huaroPatLimpiarOverrides(cfg, boc) {
+            const o = cfg.boc[boc]; if (!o) return;
+            const def = _huaroPatBoc(boc, null, true);
+            const masa = HuaroCore.huaroMasaDeAgua(boc);
+            if (o.caudal != null && masa && masa.caudalLs != null && Math.abs(parseFloat(o.caudal) - masa.caudalLs) < 1e-9) delete o.caudal;
+            if (o.inicio && o.inicio === def.inicio) delete o.inicio;
+            if (o.horaIni && _huaroMinDeHHMM(o.horaIni) === def.horaIniMin) delete o.horaIni;
+            if (o.horaFin && _huaroMinDeHHMM(o.horaFin) === def.horaFinMin) delete o.horaFin;
+            if (o.simultaneos != null && parseInt(o.simultaneos, 10) === def.simultaneos) delete o.simultaneos;
+            if (!Object.keys(o).length) delete cfg.boc[boc];
+        }
+        // Migración única: versiones anteriores guardaban como "editados" campos que no se habían tocado
+        // (jornada, usuarios a la vez, horas por topo) y esos valores tapaban los nuevos por defecto.
+        // Se limpian y se restablece Choquebamba Pumamarca a lo acordado (30 l/s, 3 a la vez, 02:00–22:00).
+        function _huaroPatMigrar() {
+            if (window._huaroPerfilKey !== 'PATACANCHA') return;
             const cfg = _huaroPatCfg();
-            const val = id => (document.getElementById(id) || {}).value;
-            const o = cfg.boc[_huaroBocSel] = cfg.boc[_huaroBocSel] || {};
-            const s = parseInt(val('huaroPatSimul'), 10);
-            if (s > 0) o.simultaneos = s;
-            const ini = val('huaroPatInicio');
-            if (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) o.inicio = ini;
-            if (_huaroMinDeHHMM(val('huaroPatHIni')) != null) o.horaIni = val('huaroPatHIni');
-            if (_huaroMinDeHHMM(val('huaroPatHFin')) != null) o.horaFin = val('huaroPatHFin');
-            const ht = parseFloat(val('huaroPatHTopo'));
-            if (ht > 0) o.horasTopo = ht;
+            if (cfg.mig2) return;
+            Object.keys(cfg.boc).forEach(b => { delete cfg.boc[b].horasTopo; });
+            const CHO = 'CHOQUEBAMBA PUMAMARCA';
+            delete cfg.boc[CHO]; delete cfg.simultaneos[CHO];
+            if (cfg.auto) delete cfg.auto[CHO]; // para que se re-programe con los valores por defecto
+            Object.keys(cfg.boc).forEach(b => _huaroPatLimpiarOverrides(cfg, b));
+            cfg.mig2 = true;
             _huaroPatGuardarCfg(cfg);
-            _huaroPatAutoProgramar(_huaroBocSel);
+            window._huaroAutoMsg = 'ℹ️ Se restablecieron los valores por defecto de Choquebamba Pumamarca (30 l/s, 3 a la vez, 02:00–22:00) y se limpiaron ajustes antiguos.';
+        }
+        // Restablece una bocatoma a sus valores por defecto (caudal del esquema, jornada, usuarios a la vez, horas automáticas).
+        function huaroPatResetBoc(boc) {
+            const cfg = _huaroPatCfg();
+            delete cfg.boc[boc]; delete cfg.simultaneos[boc];
+            delete _huaroCaudalTemp[boc];
+            _huaroPatGuardarCfg(cfg);
+            _huaroPatAutoProgramar(boc);
+            renderPanelHuaro();
+        }
+        function huaroPatResetComite() {
+            const m = window._huaroComitePorBoc || {}, com = _huaroComiteActivo();
+            if (!confirm('¿Restablecer a sus valores por defecto TODAS las bocatomas del comité?\n\nSe pierden los caudales, jornadas y usuarios a la vez que hayas editado (en modo automático se vuelve a programar).')) return;
+            const cfg = _huaroPatCfg();
+            _huaroOrden.filter(b => m[b] === com).forEach(b => { delete cfg.boc[b]; delete cfg.simultaneos[b]; delete _huaroCaudalTemp[b]; });
+            _huaroPatGuardarCfg(cfg);
+            _huaroOrden.filter(b => m[b] === com).forEach(b => _huaroPatAutoProgramar(b));
+            renderPanelHuaro();
+        }
+        // Elimina la programación (campaña) de una bocatoma: en modo "meses" solo las semanas de los meses
+        // marcados; si no, todas. Queda marcada como ya auto-programada para que no se rehaga sola al cargar.
+        function _huaroPatBorrarProgramacion(boc) {
+            const cfg = _huaroPatCfg();
+            const prefijo = _huaroPrefijoStorage() + 'pda__';
+            let semanas = 0;
+            const claves = [];
+            for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(prefijo) === 0) claves.push(k); }
+            claves.forEach(k => {
+                const iso = k.slice(prefijo.length);
+                if (cfg.meses && !_huaroSemanaTocaMeses(iso, cfg.meses)) return;
+                const pda = _huaroLeerPda(iso);
+                if (!pda || !pda.resultados || !pda.resultados[boc]) return;
+                delete pda.resultados[boc];
+                if (pda.caudales) delete pda.caudales[boc];
+                if (pda.horarios) delete pda.horarios[boc];
+                _huaroGuardarPda(pda);
+                semanas++;
+            });
+            cfg.auto = cfg.auto || {}; cfg.auto[boc] = true;
+            _huaroPatGuardarCfg(cfg);
+            return semanas;
+        }
+        function huaroPatEliminar(boc) {
+            const cfg = _huaroPatCfg();
+            const alcance = cfg.meses ? 'las semanas de los meses marcados (' + cfg.meses.map(m => _HUARO_MESES_CORTO[m]).join(', ') + ')' : 'TODAS las semanas de la campaña';
+            if (!confirm('¿Eliminar la programación de "' + boc + '"?\n\nSe borran sus turnos de ' + alcance + '. Los parámetros (caudal, jornada…) se conservan; puedes volver a programarla con los botones.')) return;
+            const n = _huaroPatBorrarProgramacion(boc);
+            window._huaroAutoMsg = '🗑 Programación de "' + boc + '" eliminada (' + n + ' semana(s)).';
+            renderPanelHuaro();
+        }
+        function huaroPatEliminarComite() {
+            const m = window._huaroComitePorBoc || {}, com = _huaroComiteActivo();
+            const cfg = _huaroPatCfg();
+            const alcance = cfg.meses ? 'las semanas de los meses marcados (' + cfg.meses.map(x => _HUARO_MESES_CORTO[x]).join(', ') + ')' : 'TODAS las semanas de la campaña';
+            if (!confirm('¿Eliminar la programación de TODAS las bocatomas del comité elegido?\n\nSe borran sus turnos de ' + alcance + '. Los parámetros se conservan.')) return;
+            let n = 0;
+            _huaroOrden.filter(b => m[b] === com).forEach(b => { n += _huaroPatBorrarProgramacion(b); });
+            window._huaroAutoMsg = '🗑 Programación del comité eliminada (' + n + ' registro(s) semana-bocatoma). Con "Programar automáticamente" activado, un nuevo cambio vuelve a programar.';
+            renderPanelHuaro();
+        }
+        // Guarda lo editado en la caja del ciclo (por bocatoma), SOLO el campo tocado, y repinta.
+        function huaroPatCfgCambio(campo) {
+            if (!_huaroBocSel) return;
+            const boc = _huaroBocSel;
+            const cfg = _huaroPatCfg();
+            const o = cfg.boc[boc] = cfg.boc[boc] || {};
+            const val = id => (document.getElementById(id) || {}).value;
+            if (campo === 'Simul') { const n = parseInt(val('huaroPatSimul'), 10); if (n > 0) o.simultaneos = n; }
+            else if (campo === 'Inicio') { const v = val('huaroPatInicio'); if (/^\d{4}-\d{2}-\d{2}$/.test(v)) o.inicio = v; }
+            else if (campo === 'HIni') { const v = val('huaroPatHIni'); if (_huaroMinDeHHMM(v) != null) o.horaIni = v; }
+            else if (campo === 'HFin') { const v = val('huaroPatHFin'); if (_huaroMinDeHHMM(v) != null) o.horaFin = v; }
+            else if (campo === 'HTopo') { const ht = parseFloat(val('huaroPatHTopo')); if (ht > 0) o.horasTopo = ht; else delete o.horasTopo; }
+            _huaroPatLimpiarOverrides(cfg, boc);
+            _huaroPatGuardarCfg(cfg);
+            _huaroPatAutoProgramar(boc);
             _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             renderPanelHuaro();
         }
@@ -4283,6 +4371,7 @@ const COMISIONES = {
             } else if (campo === 'horasTopo') {
                 const h = parseFloat(valor); if (h > 0) o.horasTopo = h; else delete o.horasTopo;
             }
+            _huaroPatLimpiarOverrides(cfg, boc);
             _huaroPatGuardarCfg(cfg);
             _huaroPatAutoProgramar(boc);
             renderPanelHuaro();
@@ -4329,6 +4418,10 @@ const COMISIONES = {
                     <td style="text-align:center;"><input type="number" min="0.05" max="24" step="0.01" value="${+p.horasPorTopo.toFixed(2)}" style="${inp}width:64px;text-align:right;" title="${(p.horasPorTopo / 0.33).toFixed(2)} h por hectárea" onchange="huaroPatBocCfg('${q(b)}','horasTopo',this.value)"> ${p.horasPorTopoEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al tiempo automático (proporcional al caudal)" onclick="huaroPatBocCfg('${q(b)}','horasTopo','')">↺ auto</a>` : '<span style="font-size:10px;color:#1f6b3a;" title="Calculado: proporcional al caudal por usuario">auto</span>'}<div style="font-size:10px;color:#6b7280;">${(p.horasPorTopo / 0.33).toFixed(2)} h/ha</div></td>
                     <td style="text-align:center;"><input type="number" min="1" max="60" step="1" value="${p.simultaneos}" style="${inp}width:56px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','simultaneos',this.value)"></td>
                     <td style="text-align:center;font-size:11px;white-space:nowrap;">${ciclo}</td>
+                    <td style="text-align:center;white-space:nowrap;">
+                        <button class="huaro-btn sec" style="padding:3px 7px;font-size:11px;" title="Restablecer esta bocatoma a sus valores por defecto (caudal del esquema, jornada, usuarios a la vez)" onclick="huaroPatResetBoc('${q(b)}')">↺</button>
+                        <button class="huaro-btn sec" style="padding:3px 7px;font-size:11px;" title="Eliminar la programación de esta bocatoma" onclick="huaroPatEliminar('${q(b)}')">🗑</button>
+                    </td>
                 </tr>`;
             }).join('');
             return `
@@ -4338,9 +4431,13 @@ const COMISIONES = {
                         <b>Tiempo de riego proporcional al caudal:</b> tomando Huaro como base (1.5 h por topo = 4.55 h/ha con <input type="number" min="0.1" step="0.1" value="${+_huaroPatBoc(bocs[0], semanaISO).refQ.toFixed(2)}" style="${inp}width:64px;" onchange="huaroPatRefQ(this.value)" title="Caudal por usuario de referencia en Huaro (promedio de sus bocatomas)"> l/s por usuario), en cada bocatoma las horas por topo = 1.5 × referencia ÷ (caudal ÷ usuarios a la vez). A más caudal por usuario, menos horas; mismo volumen por hectárea. Si escribes "Horas/topo" a mano, esa cifra manda (↺ auto la deja otra vez automática).</div>
                     <div style="overflow-x:auto;">
                     <table class="huaro-tabla">
-                        <thead><tr><th style="text-align:left;">Bocatoma</th><th>Usuarios</th><th>Caudal (l/s)</th><th>Día de inicio</th><th>Hora inicio</th><th>Hora término</th><th>Horas/topo<br><span style="font-weight:400;font-size:10px;">(≈ h/ha)</span></th><th>A la vez</th><th>Ciclo</th></tr></thead>
+                        <thead><tr><th style="text-align:left;">Bocatoma</th><th>Usuarios</th><th>Caudal (l/s)</th><th>Día de inicio</th><th>Hora inicio</th><th>Hora término</th><th>Horas/topo<br><span style="font-weight:400;font-size:10px;">(≈ h/ha)</span></th><th>A la vez</th><th>Ciclo</th><th>Acción</th></tr></thead>
                         <tbody>${filas}</tbody>
                     </table>
+                    </div>
+                    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+                        <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" onclick="huaroPatResetComite()" title="Vuelve al caudal del esquema, jornada y usuarios a la vez por defecto en todas las bocatomas del comité">↺ Restablecer parámetros del comité</button>
+                        <button class="huaro-btn sec" style="padding:5px 10px;font-size:12px;" onclick="huaroPatEliminarComite()" title="Borra la programación de todas las bocatomas del comité (los parámetros se conservan)">🗑 Eliminar programación del comité</button>
                     </div>
                 </div>`;
         }
