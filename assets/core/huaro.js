@@ -22,9 +22,9 @@
 
 // ── Constantes del modelo ──
 const HUARO_HA_POR_TOPO    = 0.33;
-const HUARO_H_POR_TOPO      = 1.5;
-const HUARO_MIN_INICIO_DIA  = 4 * 60;   // 04:00
-const HUARO_MIN_FIN_DIA     = 20 * 60;  // 20:00
+let HUARO_H_POR_TOPO      = 1.5;        // Patacancha: 3 h (ver HUARO_PERFILES)
+let HUARO_MIN_INICIO_DIA  = 4 * 60;     // 04:00 — Patacancha: 06:00
+let HUARO_MIN_FIN_DIA     = 20 * 60;    // 20:00 — Patacancha: 16:00
 const HUARO_DIAS_SEMANA     = 7;
 // Datos institucionales — dependen de la comisión activa (Huaro por defecto);
 // cambian con huaroAplicarPerfil(key). Son `let` (no `const`) por eso.
@@ -52,6 +52,8 @@ const HUARO_PERFILES = {
         aaa: 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA',
         ala: 'ADMINISTRACIÓN LOCAL DE AGUA CUSCO',
         prefijoStorage: 'huaro',
+        horasPorTopo: 1.5, minInicio: 4 * 60, minFin: 20 * 60,
+        cicloContinuo: false,
     },
     PATACANCHA: {
         titulo: 'Patacancha', archivoPadron: 'PADDRON - PATACANCHA.xlsx', toposDesdeArea: 'cuarto',
@@ -62,6 +64,15 @@ const HUARO_PERFILES = {
         aaa: 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA',
         ala: 'ADMINISTRACIÓN LOCAL DE AGUA CUSCO',
         prefijoStorage: 'patacancha',
+        // Regla de los tomeros: 1 topo = 3 h de riego; riegan de 06:00 a 16:00;
+        // en TODAS las bocatomas hay usuarios regando a la vez (es un río), con
+        // 2 usuarios simultáneos por bocatoma; cada usuario vuelve a regar cada
+        // 8 días (a veces 15, según el cultivo — sin dato de cultivo se asume
+        // el mismo para todos); campaña de junio a noviembre, programada desde
+        // su inicio hasta la fecha actual.
+        horasPorTopo: 3, minInicio: 6 * 60, minFin: 16 * 60,
+        cicloContinuo: true, simultaneos: 2, frecuenciaDias: 8,
+        campanaMesIni: 6, campanaMesFin: 11,
     },
 };
 let HUARO_PERFIL_KEY = 'HUARO';
@@ -72,6 +83,7 @@ function huaroAplicarPerfil(key) {
     HUARO_PERFIL_KEY = key;
     HUARO_JUNTA = p.junta; HUARO_SUBSECTOR = p.subsector; HUARO_COMISION_NOMBRE = p.comisionNombre;
     HUARO_FUENTE = p.fuente; HUARO_AAA = p.aaa; HUARO_ALA = p.ala;
+    HUARO_H_POR_TOPO = p.horasPorTopo; HUARO_MIN_INICIO_DIA = p.minInicio; HUARO_MIN_FIN_DIA = p.minFin;
     return true;
 }
 const HUARO_DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -393,6 +405,165 @@ function huaroParsearPadronPatacancha(filas2D, sheetName) {
     }
     bocatomas.forEach(b => { if (!b.comite) b.comite = limpiar(sheetName); });
     return bocatomas.filter(b => b.usuarios.length);
+}
+
+// ══ Cronograma de CAMPAÑA con ciclos continuos (Patacancha) ══
+// Genera el rol de riego de una bocatoma desde el inicio de la campaña hasta
+// una fecha, respetando la regla de los tomeros:
+//   · 'simultaneos' usuarios riegan A LA VEZ en la bocatoma (carriles); cada
+//     usuario toma el carril que primero se libera, en el orden del padrón.
+//   · turno = topos × horasPorTopo, dentro de la ventana diaria [ini, fin]
+//     (06:00–16:00). Un turno que cabe en un día NO se parte (si no entra en
+//     lo que resta del día, pasa al día siguiente); uno más largo que la
+//     ventana continúa los días siguientes desde la hora de inicio.
+//   · cada usuario vuelve a regar cada 'frecuenciaDias' (8); si recorrer a todo
+//     el padrón toma más días que eso, el ciclo real es esa duración (se avisa
+//     con excedeFrecuencia). Todos se tratan con la misma frecuencia (no hay
+//     dato de cultivo).
+//   · el caudal de la bocatoma se reparte entre los que riegan a la vez
+//     (caudal por turno = caudal / simultáneos), así el volumen total es
+//     caudal × horas de operación.
+// Devuelve { semanas: { 'YYYY-MM-DD'(lunes): {programados, pendientes, agregado} },
+//            periodoDias, pasadaDias, excedeFrecuencia, nTurnosPasada, horasPasada }.
+function huaroCronogramaCampana(opts) {
+    const excluidos = new Set(opts.excluidos || []);
+    const usuarios = (opts.usuarios || []).filter(u => !excluidos.has(huaroClaveUsuario(u)))
+        .slice().sort((a, b) => a.nOrden - b.nOrden);
+    const caudalLs = parseFloat(opts.caudalLs) || 0;
+    const desdeISO = opts.desdeISO;
+    const hastaISO = opts.hastaISO;
+    const frecuencia = Math.max(1, parseInt(opts.frecuenciaDias, 10) || 8);
+    const lanes = Math.max(1, parseInt(opts.simultaneos, 10) || 2);
+    const ini = (opts.ventanaIniMin != null) ? opts.ventanaIniMin : HUARO_MIN_INICIO_DIA;
+    const fin = (opts.ventanaFinMin != null) ? opts.ventanaFinMin : HUARO_MIN_FIN_DIA;
+    const hxt = (opts.horasPorTopo != null) ? opts.horasPorTopo : HUARO_H_POR_TOPO;
+    const win = fin - ini;
+
+    // ── 1) Plantilla de UNA pasada (días relativos al inicio de la pasada) ──
+    const plantillaPara = (nLanes) => {
+        const cursores = Array.from({ length: nLanes }, () => ({ dia: 0, min: ini }));
+        const out = [];
+        usuarios.forEach(u => {
+            let L = 0;
+            for (let i = 1; i < nLanes; i++) {
+                if (cursores[i].dia * 1440 + cursores[i].min < cursores[L].dia * 1440 + cursores[L].min) L = i;
+            }
+            const c = cursores[L];
+            const total = Math.round(u.topos * hxt * 60);
+            let dia = c.dia, min = c.min;
+            // Un turno que cabe en un día completo no se parte entre dos días.
+            if (total <= win && total > fin - min) { dia++; min = ini; }
+            const dia0 = dia, min0 = min;
+            let resto = total;
+            while (resto > fin - min) { resto -= (fin - min); dia++; min = ini; }
+            min += resto;
+            out.push({ u, lane: L, dia0, inicioMin: min0, diaFin: dia, finMin: min });
+            if (min >= fin) { c.dia = dia + 1; c.min = ini; } else { c.dia = dia; c.min = min; }
+        });
+        return out;
+    };
+    const diasDePlantilla = (pl) => pl.reduce((mx, t) => Math.max(mx, t.diaFin + 1), 0);
+    const plantilla = plantillaPara(lanes);
+    const pasadaDias = diasDePlantilla(plantilla);
+    // Usuarios simultáneos que harían falta para cumplir la frecuencia (con el
+    // mismo reparto real de turnos, no solo horas ÷ capacidad).
+    let simultaneosNecesarios = lanes;
+    if (pasadaDias > frecuencia) {
+        simultaneosNecesarios = null;
+        for (let n = lanes + 1; n <= Math.max(usuarios.length, lanes + 1); n++) {
+            if (diasDePlantilla(plantillaPara(n)) <= frecuencia) { simultaneosNecesarios = n; break; }
+        }
+    }
+    const periodoDias = Math.max(frecuencia, pasadaDias);
+    const horasPasada = plantilla.reduce((s, t) => s + t.u.topos * hxt, 0);
+
+    // ── 2) Repetir la pasada cada 'periodoDias' hasta la fecha ──
+    const diasTotales = Math.floor((new Date(hastaISO + 'T00:00:00') - new Date(desdeISO + 'T00:00:00')) / 864e5);
+    const turnos = [];
+    for (let k = 0; plantilla.length && k * periodoDias <= diasTotales; k++) {
+        plantilla.forEach(t => {
+            const absIni = k * periodoDias + t.dia0;
+            if (absIni > diasTotales) return;
+            const fechaISO = _huaroSumarDias(desdeISO, absIni);
+            const fechaTerminoISO = _huaroSumarDias(desdeISO, k * periodoDias + t.diaFin);
+            const tiempoH = t.u.topos * hxt;
+            const caudalTurno = caudalLs / lanes;
+            turnos.push({
+                nOrden: t.u.nOrden, nombre: t.u.nombre, apellidos: t.u.apellidos, nombres: t.u.nombres,
+                areaHa: t.u.areaHa, topos: t.u.topos, toposTexto: t.u.toposTexto,
+                fechaISO, fechaTerminoISO,
+                inicioMin: t.inicioMin, terminoMin: t.finMin,
+                inicioTexto: _huaroHHMM(t.inicioMin), terminoTexto: _huaroHHMM(t.finMin),
+                tiempoH, caudalLs: caudalTurno, volumenM3: caudalTurno * tiempoH * 3.6,
+                carril: t.lane + 1, ciclo: k + 1,
+            });
+        });
+    }
+
+    // ── 3) Agrupar por semana (lunes–domingo) ──
+    const porSemana = {};
+    turnos.forEach(t => {
+        const lunes = huaroLunesDeLaSemana(t.fechaISO);
+        (porSemana[lunes] = porSemana[lunes] || []).push(t);
+    });
+    const semanas = {};
+    Object.keys(porSemana).sort().forEach(lunes => {
+        const prog = porSemana[lunes].sort((a, b) =>
+            a.fechaISO.localeCompare(b.fechaISO) || (a.inicioMin - b.inicioMin) || (a.carril - b.carril));
+        const dow = (iso) => Math.round((new Date(iso + 'T00:00:00') - new Date(lunes + 'T00:00:00')) / 864e5); // 0..6 (puede pasar de 6 si termina la semana siguiente)
+        prog.forEach((p, i) => { p.ordenSuministro = i + 1; p.dia = dow(p.fechaISO) + 1; p.nombreDia = HUARO_DIAS_NOMBRE[p.dia - 1]; });
+
+        // Intervalos de funcionamiento por día (para horas de operación y días usados)
+        const intervalos = {}; // fechaISO → [[a,b], …]
+        prog.forEach(p => {
+            const nDias = Math.round((new Date(p.fechaTerminoISO + 'T00:00:00') - new Date(p.fechaISO + 'T00:00:00')) / 864e5);
+            for (let d = 0; d <= nDias; d++) {
+                const iso = _huaroSumarDias(p.fechaISO, d);
+                const a = d === 0 ? p.inicioMin : ini;
+                const b = d === nDias ? p.terminoMin : fin;
+                (intervalos[iso] = intervalos[iso] || []).push([a, b]);
+            }
+        });
+        let minOperacion = 0;
+        const caudalPorDia = new Array(HUARO_DIAS_SEMANA).fill(0);
+        let diasUsados = 0;
+        Object.keys(intervalos).forEach(iso => {
+            const arr = intervalos[iso].sort((x, y) => x[0] - y[0]);
+            let fin0 = -1, suma = 0;
+            arr.forEach(([a, b]) => { if (a > fin0) { suma += b - a; fin0 = b; } else if (b > fin0) { suma += b - fin0; fin0 = b; } });
+            const idx = dow(iso);
+            if (idx >= 0 && idx < HUARO_DIAS_SEMANA) {
+                minOperacion += suma;
+                caudalPorDia[idx] = caudalLs;
+                diasUsados = Math.max(diasUsados, idx + 1);
+            }
+        });
+        const pIni = prog[0], pFin = prog.reduce((m, p) => (p.fechaTerminoISO > m.fechaTerminoISO || (p.fechaTerminoISO === m.fechaTerminoISO && p.terminoMin > m.terminoMin)) ? p : m, prog[0]);
+        semanas[lunes] = {
+            programados: prog, pendientes: [],
+            agregado: {
+                bocatoma: opts.bocatoma || '', caudalLs, semanaInicioISO: lunes,
+                semanaFinISO: _huaroSumarDias(lunes, HUARO_DIAS_SEMANA - 1),
+                diasRiego: huaroDiasRiegoDefault(),
+                periodoInicioISO: pIni.fechaISO, periodoInicioHora: pIni.inicioTexto,
+                periodoFinISO: pFin.fechaTerminoISO, periodoFinHora: pFin.terminoTexto,
+                nUsuarios: prog.length,
+                areaProgramadaHa: prog.reduce((s, p) => s + (p.areaHa || 0), 0),
+                toposTotal: prog.reduce((s, p) => s + (p.topos || 0), 0),
+                tiempoTotalH: minOperacion / 60, // horas que el canal estuvo operando (no la suma de turnos simultáneos)
+                horasUsuarios: prog.reduce((s, p) => s + (p.tiempoH || 0), 0),
+                volumenTotalM3: prog.reduce((s, p) => s + (p.volumenM3 || 0), 0),
+                diasUsados, caudalPorDia, nPendientes: 0, areaPendienteHa: 0,
+                simultaneos: lanes, cicloContinuo: true, sinUsuarios: false,
+            },
+        };
+    });
+
+    return {
+        semanas, periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > frecuencia,
+        frecuenciaDias: frecuencia, simultaneos: lanes, simultaneosNecesarios,
+        nTurnosPasada: plantilla.length, horasPasada,
+    };
 }
 
 // clave estable de un usuario dentro de un padrón cargado
@@ -812,10 +983,10 @@ function huaroConstruirG3Html(datos) {
                 <td style="${td}">${(p.areaHa || 0).toFixed(2)}</td>
                 <td style="${td}">${(p.volumenM3 || 0).toFixed(2)}</td>
                 <td style="${td}">${(p.tiempoH || 0).toFixed(2)}</td>
-                <td style="${td}">${caudalLs.toFixed(2)}</td>
+                <td style="${td}">${(p.caudalLs != null ? p.caudalLs : caudalLs).toFixed(2)}</td>
                 <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
                 <td style="${td}">${p.inicioTexto}</td>
-                <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaISO)}</td>
+                <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaTerminoISO || p.fechaISO)}</td>
                 <td style="${td}">${p.terminoTexto}</td>
                 <td style="${td}"></td>
             </tr>`).join('');
@@ -893,7 +1064,7 @@ function huaroConstruirG3Html(datos) {
 // fechaInicioSemanaISO } — la fecha es el lunes de la semana programada, no la
 // fecha en que se imprime/exporta.
 function huaroConstruirG4Html(p, ctx) {
-    const caudalLs = parseFloat(ctx.caudalLs) || 0;
+    const caudalLs = (p.caudalLs != null) ? p.caudalLs : (parseFloat(ctx.caudalLs) || 0);
     const line = 'border-bottom:1.6px solid #111;display:inline-block;min-width:150px;padding:0 6px;';
     const box = 'display:inline-block;width:11px;height:11px;border:1.5px solid #111;margin-right:8px;vertical-align:middle;';
     return `
@@ -913,7 +1084,7 @@ function huaroConstruirG4Html(p, ctx) {
         <div style="margin:7px 0;font-size:11px;">
             <span style="${box}"></span> A partir del día:
             <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.inicioTexto}</span>
-            hasta el día: <span style="${line}">${_huaroFechaCorta(p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.terminoTexto}</span>
+            hasta el día: <span style="${line}">${_huaroFechaCorta(p.fechaTerminoISO || p.fechaISO)}</span> hora: <span style="${line}min-width:70px;">${p.terminoTexto}</span>
         </div>
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Horas total del uso del agua: <span style="${line}">${(p.tiempoH || 0).toFixed(2)}</span></div>
         <div style="margin:7px 0;font-size:11px;"><span style="${box}"></span> Volumen de agua a entregar (m³): <span style="${line}">${(p.volumenM3 || 0).toFixed(2)}</span></div>
@@ -974,13 +1145,15 @@ function huaroDocumentoImprimible(titulo, fragmentoHtml, orientacion) {
 // ── Exponer en window (para pruebas y para el HTML del escritorio) ──
 if (typeof window !== 'undefined') {
     window.HuaroCore = {
-        HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
+        HUARO_HA_POR_TOPO, HUARO_DIAS_SEMANA,
+        get HUARO_H_POR_TOPO() { return HUARO_H_POR_TOPO; },
+        get HUARO_MIN_INICIO_DIA() { return HUARO_MIN_INICIO_DIA; }, get HUARO_MIN_FIN_DIA() { return HUARO_MIN_FIN_DIA; },
         // Datos institucionales: getters (cambian con huaroAplicarPerfil).
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
-        huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
         huaroConstruirG1Html, huaroConstruirG2Html, huaroConstruirG3Html, huaroConstruirG4Html,
@@ -992,7 +1165,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,

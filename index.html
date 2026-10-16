@@ -3923,7 +3923,130 @@ const COMISIONES = {
         // Corrida "en seco" del programador para una bocatoma con el caudal y los
         // días/horas actuales — NO persiste nada. Se programan TODOS los usuarios
         // (menos los excluidos); el volumen depende del caudal y los días/horas.
+        // ══ PATACANCHA — rol de CAMPAÑA con ciclos continuos ══
+        // Parámetros editables (guardados en este navegador): inicio de campaña
+        // (por defecto 1° de junio del año de la semana elegida), cada cuántos
+        // días vuelve a regar cada usuario (8) y cuántos usuarios riegan a la
+        // vez en la bocatoma (2; por bocatoma). Ver huaroCronogramaCampana.
+        function _huaroPatCfg() {
+            let c = {};
+            try { c = JSON.parse(localStorage.getItem('cusshmi_patacancha_cfg')) || {}; } catch (e) { c = {}; }
+            c.frecuencia = parseInt(c.frecuencia, 10) || 8;
+            c.simultaneos = c.simultaneos || {};
+            c.inicio = c.inicio || {}; // { 'AAAA': 'AAAA-MM-DD' }
+            return c;
+        }
+        function _huaroPatGuardarCfg(c) { try { localStorage.setItem('cusshmi_patacancha_cfg', JSON.stringify(c)); } catch (e) { /* noop */ } }
+        function _huaroPatSimultaneos(boc) { return Math.max(1, parseInt(_huaroPatCfg().simultaneos[boc], 10) || 2); }
+        function _huaroHoyISO() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        // Rango de la campaña a programar: desde el inicio de campaña hasta lo
+        // que sea mayor entre hoy y el fin de la semana elegida (sin pasar del 30/nov).
+        function _huaroPatRango(semanaISO) {
+            const perfil = HuaroCore.huaroPerfilActual();
+            const anio = parseInt(semanaISO.slice(0, 4), 10);
+            const cfg = _huaroPatCfg();
+            const desdeISO = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
+            const finCampISO = anio + '-' + String(perfil.campanaMesFin).padStart(2, '0') + '-30';
+            const finSemISO = _huaroSumarDiasHuaroHist(semanaISO, 6);
+            const hoy = _huaroHoyISO();
+            let hastaISO = hoy > finSemISO ? hoy : finSemISO;
+            if (hastaISO > finCampISO) hastaISO = finCampISO;
+            return { desdeISO, hastaISO, finCampISO };
+        }
+        function _huaroPatCronograma(boc, caudalLs) {
+            const semanaISO = _huaroSemanaSeleccionada();
+            const rango = _huaroPatRango(semanaISO);
+            const camp = _huaroLeerCampana(boc);
+            if (rango.hastaISO < rango.desdeISO) return { rango, crono: null };
+            const crono = HuaroCore.huaroCronogramaCampana({
+                usuarios: _huaroPadron[boc] || [], caudalLs: parseFloat(caudalLs) || 0, bocatoma: boc,
+                desdeISO: rango.desdeISO, hastaISO: rango.hastaISO,
+                frecuenciaDias: _huaroPatCfg().frecuencia, simultaneos: _huaroPatSimultaneos(boc),
+                excluidos: camp.excluidos,
+            });
+            return { rango, crono };
+        }
+        // Caja con los parámetros del ciclo (reemplaza "Días y horas de la semana").
+        function _huaroPatCajaCicloHtml(boc, semanaISO) {
+            const cfg = _huaroPatCfg();
+            const rango = _huaroPatRango(semanaISO);
+            const fc = s => s.split('-').reverse().join('/');
+            return `
+                            <div class="huaro-box">
+                                <div class="k">Ciclo de riego (campaña)</div>
+                                <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:6px;font-size:12px;">
+                                    <span>Inicio campaña</span>
+                                    <input type="date" id="huaroPatInicio" value="${rango.desdeISO}" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;">
+                                    <span>Repite cada</span>
+                                    <span><input type="number" id="huaroPatFrec" value="${cfg.frecuencia}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;width:62px;"> días</span>
+                                    <span>Riegan a la vez</span>
+                                    <span><input type="number" id="huaroPatSimul" value="${_huaroPatSimultaneos(boc)}" min="1" max="40" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;width:62px;"> usuarios</span>
+                                </div>
+                                <div class="huaro-mini" style="margin-top:6px;">Se programa del <b>${fc(rango.desdeISO)}</b> al <b>${fc(rango.hastaISO)}</b> · ${HuaroCore.huaroPerfilActual().minInicio / 60}:00–${HuaroCore.huaroPerfilActual().minFin / 60}:00</div>
+                                <div class="huaro-mini" id="huaroCicloInfoBoc" style="margin-top:4px;"></div>
+                            </div>`;
+        }
+        function huaroPatCfgCambio() {
+            if (!_huaroBocSel) return;
+            const cfg = _huaroPatCfg();
+            const f = parseInt((document.getElementById('huaroPatFrec') || {}).value, 10);
+            if (f > 0) cfg.frecuencia = f;
+            const s = parseInt((document.getElementById('huaroPatSimul') || {}).value, 10);
+            if (s > 0) cfg.simultaneos[_huaroBocSel] = s;
+            const ini = (document.getElementById('huaroPatInicio') || {}).value;
+            const anio = parseInt(_huaroSemanaSeleccionada().slice(0, 4), 10);
+            if (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) cfg.inicio[anio] = ini;
+            _huaroPatGuardarCfg(cfg);
+            renderPanelHuaro();
+        }
+        // Programa TODA la campaña de la bocatoma (inicio → hoy) y la deja
+        // repartida en el PDA de cada semana (alimenta G-1…G-4 por semana).
+        function _huaroProgramarCampanaPat(boc, caudalLs) {
+            const semanaSel = _huaroSemanaSeleccionada();
+            const { crono, rango } = _huaroPatCronograma(boc, caudalLs);
+            if (!crono) return { semanas: 0, rango, crono: null };
+            // Semanas del rango: se reescribe lo de esta bocatoma en cada una
+            // (las que ya no tienen turnos pierden su entrada anterior).
+            let lunes = HuaroCore.huaroLunesDeLaSemana(rango.desdeISO);
+            const lunesFin = HuaroCore.huaroLunesDeLaSemana(rango.hastaISO);
+            let n = 0;
+            while (lunes <= lunesFin) {
+                const res = crono.semanas[lunes];
+                const pdaPrevio = _huaroLeerPda(lunes);
+                if (res || (pdaPrevio && pdaPrevio.resultados && pdaPrevio.resultados[boc])) {
+                    const pda = pdaPrevio || {};
+                    pda.semanaInicio = lunes; pda.semanaFin = _huaroSumarDiasHuaroHist(lunes, 6);
+                    pda.caudales = pda.caudales || {}; pda.horarios = pda.horarios || {}; pda.resultados = pda.resultados || {};
+                    if (res) {
+                        pda.caudales[boc] = caudalLs;
+                        pda.horarios[boc] = res.agregado.diasRiego;
+                        pda.resultados[boc] = { programados: res.programados, pendientes: [], agregado: res.agregado, pendientesPreviosUsados: [] };
+                        n++;
+                    } else {
+                        delete pda.resultados[boc]; delete pda.caudales[boc]; delete pda.horarios[boc];
+                    }
+                    _huaroGuardarPda(pda);
+                }
+                lunes = _huaroSumarDiasHuaroHist(lunes, 7);
+            }
+            return { semanas: n, rango, crono };
+        }
+
         function _huaroPreviewBocatoma(boc, caudalLs) {
+            if (window._huaroPerfilKey === 'PATACANCHA') {
+                // Vista previa de la semana elegida dentro del rol de campaña
+                const semanaISO = _huaroSemanaSeleccionada();
+                const { crono } = _huaroPatCronograma(boc, caudalLs);
+                const res = crono && crono.semanas[semanaISO];
+                const vacio = { programados: [], pendientes: [], agregado: { volumenTotalM3: 0, tiempoTotalH: 0, nUsuarios: 0, nPendientes: 0 } };
+                const out = res || vacio;
+                out.ciclo = crono ? { periodoDias: crono.periodoDias, pasadaDias: crono.pasadaDias, excede: crono.excedeFrecuencia,
+                    frecuencia: crono.frecuenciaDias, simultaneos: crono.simultaneos, horasPasada: crono.horasPasada, necesarios: crono.simultaneosNecesarios } : null;
+                return out;
+            }
             const q = parseFloat(caudalLs) || 0;
             const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
@@ -3958,7 +4081,17 @@ const COMISIONES = {
                 setTxt('huaroVolBoc', '—'); setTxt('huaroTiempoBoc', '—'); setTxt('huaroUsuBoc', '—');
                 return;
             }
-            const a = _huaroPreviewBocatoma(_huaroBocSel, q).agregado;
+            const prev = _huaroPreviewBocatoma(_huaroBocSel, q);
+            const a = prev.agregado;
+            if (prev.ciclo) {
+                const c = prev.ciclo;
+                // Cuántos usuarios simultáneos harían falta para cumplir la frecuencia.
+                const necesarios = c.necesarios || '—';
+                const info = document.getElementById('huaroCicloInfoBoc');
+                if (info) info.innerHTML = c.excede
+                    ? `⚠️ Con ${c.simultaneos} a la vez, recorrer a todos toma <b>${c.pasadaDias} días</b>: cada usuario riega cada <b>${c.periodoDias}</b> (no cada ${c.frecuencia}). Para cumplir ${c.frecuencia} días harían falta ~<b>${necesarios}</b> a la vez.`
+                    : `✔ Recorrer a todos toma ${c.pasadaDias} días; cada usuario riega cada ${c.periodoDias} días.`;
+            }
             setTxt('huaroVolBoc', a.volumenTotalM3.toFixed(2) + ' m³');
             setTxt('huaroTiempoBoc', a.tiempoTotalH.toFixed(1) + ' h');
             setTxt('huaroUsuBoc', a.nUsuarios + ' programados' + (a.nPendientes ? ' · ' + a.nPendientes + ' pendientes' : ''));
@@ -4074,13 +4207,14 @@ const COMISIONES = {
                                 <input type="number" class="huaro-caudal" id="huaroCaudalBoc" min="0" step="0.001"
                                     value="${caudalIni}" placeholder="l/s" oninput="huaroRecalcularBoc()" style="margin-top:4px;">
                             </div>
+                            ${window._huaroPerfilKey === 'PATACANCHA' ? _huaroPatCajaCicloHtml(boc, semanaISO) : `
                             <div class="huaro-box">
                                 <div class="k">Días y horas de riego de la semana</div>
                                 <div style="margin-top:5px;">
                                     <button class="huaro-btn sec" style="padding:6px 12px;font-size:12px;" onclick="huaroHorasDeRiego('${boc.replace(/'/g, "\\'")}')">⏱️ Configurar días/horas</button>
                                 </div>
                                 <div class="huaro-mini" id="huaroHorarioResumenBoc" style="margin-top:5px;">${escapeHtml(HuaroCore.huaroResumenDiasRiego(_huaroHorarioTemp[boc], semanaISO))}</div>
-                            </div>
+                            </div>`}
                             <div class="huaro-box huaro-vol">
                                 <div class="k">Volumen que representa</div>
                                 <div class="v" id="huaroVolBoc">${volBoc}</div>
@@ -4129,7 +4263,7 @@ const COMISIONES = {
             ca.innerHTML = `
             <div id="panelHuaro">
                 <h2>${window._huaroPerfilKey === 'PATACANCHA' ? '🏔️ PDA — Sub Sector Hidráulico Quebrada Patacancha · Yuracmayu · Ollantaytambo' : '🌾 PDA — Comisión de Regantes de Huaro'}</h2>
-                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · se programa una bocatoma a la vez.</p>
+                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · se programa una bocatoma a la vez.${window._huaroPerfilKey === 'PATACANCHA' ? ' Riego de ' + HuaroCore.huaroPerfilActual().minInicio / 60 + ':00 a ' + HuaroCore.huaroPerfilActual().minFin / 60 + ':00, varios usuarios a la vez por bocatoma, repitiendo cada N días; la campaña (jun–nov) se programa de una vez desde su inicio hasta la fecha.' : ''}</p>
 
                 <div class="huaro-card">
                     <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
@@ -4173,6 +4307,11 @@ const COMISIONES = {
             </div>`;
 
             if (hayAnexos) _huaroPintarResumen();
+            // Patacancha: mostrar de entrada el aviso del ciclo (cada cuántos días riega cada usuario)
+            if (window._huaroPerfilKey === 'PATACANCHA' && _huaroBocSel) {
+                const inpQ = document.getElementById('huaroCaudalBoc');
+                if (inpQ && parseFloat(inpQ.value) > 0) huaroRecalcularBoc();
+            }
         }
 
         function _huaroPintarResumen() {
@@ -4340,6 +4479,23 @@ const COMISIONES = {
             const inp = document.getElementById('huaroCaudalBoc');
             const caudalLs = parseFloat(inp && inp.value) || 0;
             if (caudalLs <= 0) { alert('Ingresa el caudal (l/s) a programar para ' + boc + '.'); return; }
+
+            // PATACANCHA: se programa TODA la campaña (inicio → hoy) con ciclos
+            // continuos, no una sola semana.
+            if (window._huaroPerfilKey === 'PATACANCHA') {
+                const r = _huaroProgramarCampanaPat(boc, caudalLs);
+                delete _huaroCaudalTemp[boc];
+                _huaroBocFlash = boc; _huaroBocFlashSemanas = null;
+                if (!r.crono || !r.semanas) {
+                    alert('No hay semanas de campaña para programar: el rango (' + r.rango.desdeISO + ' → ' + r.rango.hastaISO + ') está fuera de la campaña.');
+                } else if (r.crono.excedeFrecuencia) {
+                    alert('✅ Campaña de "' + boc + '" programada (' + r.semanas + ' semanas, ' + r.rango.desdeISO.split('-').reverse().join('/') + ' → ' + r.rango.hastaISO.split('-').reverse().join('/') + ').\n\n' +
+                        '⚠️ Con ' + r.crono.simultaneos + ' usuarios a la vez, recorrer a todo el padrón toma ' + r.crono.pasadaDias + ' días: cada usuario riega cada ' + r.crono.periodoDias + ' días, no cada ' + r.crono.frecuenciaDias + '. ' +
+                        'Para cumplir ' + r.crono.frecuenciaDias + ' días harían falta ' + (r.crono.simultaneosNecesarios || 'muchos más') + ' usuarios a la vez. Ajusta "Riegan a la vez" si en esta bocatoma riegan más.');
+                }
+                renderPanelHuaro();
+                return;
+            }
 
             const diasRiego = HuaroCore.huaroNormalizarDiasRiego(
                 _huaroHorarioTemp[boc] || HuaroCore.huaroDiasRiegoDefault());
@@ -5077,9 +5233,10 @@ const COMISIONES = {
                 prog.forEach((p, i) => {
                     tA += (p.areaHa || 0); tV += (p.volumenM3 || 0); tH += (p.tiempoH || 0);
                     const _fd = (p.fechaISO || '').split('-').reverse().join('/');
+                    const _ft = (p.fechaTerminoISO || p.fechaISO || '').split('-').reverse().join('/');
                     const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
-                        +(p.tiempoH || 0).toFixed(2), +((bl.caudalLs || 0)).toFixed(2),
-                        _fd, p.inicioTexto, _fd, p.terminoTexto, ''];
+                        +(p.tiempoH || 0).toFixed(2), +((p.caudalLs != null ? p.caudalLs : (bl.caudalLs || 0))).toFixed(2),
+                        _fd, p.inicioTexto, _ft, p.terminoTexto, ''];
                     vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; _huaroBorde(c); alinear(c, j); });
                     r++;
                 });
@@ -5134,9 +5291,10 @@ const COMISIONES = {
             fila++;
             r.programados.forEach(p => {
                 const _fd = (p.fechaISO || '').split('-').reverse().join('/');
+                const _ft = (p.fechaTerminoISO || p.fechaISO || '').split('-').reverse().join('/');
                 const vals = [p.ordenSuministro != null ? p.ordenSuministro : '', p.nombre, HuaroCore.huaroCanalBocatoma(boc),
-                    +(r.agregado.caudalLs || 0).toFixed(2),
-                    _fd, p.inicioTexto, _fd, p.terminoTexto,
+                    +((p.caudalLs != null ? p.caudalLs : (r.agregado.caudalLs || 0))).toFixed(2),
+                    _fd, p.inicioTexto, _ft, p.terminoTexto,
                     +(p.tiempoH || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2), fechaTexto,
                     '', '', ''];
                 vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
