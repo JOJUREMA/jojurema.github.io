@@ -173,7 +173,7 @@ const HUARO_CAUDAL_ESQUEMA_PATACANCHA = {
     'MEDIALUNA': 15,
     'CHACCHAPATAJUANDELAYOC': 15,
     'MURIS01': 15,
-    'CHOQUEBAMBAPUMAMARCA': 25, // el esquema indica 15 l/s; el sectorista asigna 25 l/s a esta bocatoma
+    'CHOQUEBAMBAPUMAMARCA': 30, // el esquema indica 15 l/s; el sectorista asigna 30 l/s a esta bocatoma
     'MUSCAPUGIO': 15,
     'MUNAYPATA': 15,
     'CAPULIYOCMARGENIZQUIERDA': 30,
