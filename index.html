@@ -4729,7 +4729,7 @@ const COMISIONES = {
 
             // ── Tarjeta de bocatomas ya programadas en la semana ──
             const hayAnexos = _huaroBocsConDatos().length > 0;
-            const resumenHtml = `
+            const resumenHtmlBase = `
                 <div class="huaro-card" id="huaroResumenResultados" ${hayAnexos ? '' : 'style="display:none;"'}>
                     <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
                     <div id="huaroResumenTexto"></div>
@@ -4746,6 +4746,8 @@ const COMISIONES = {
                     </div>
                     <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-1</b> y el <b>Anexo G-2</b> reúnen <b>todas</b> las bocatomas programadas esta semana (en esta comisión cada bocatoma es su propio canal de derivación, así que ambos anexos muestran las mismas filas con columnas distintas). El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
                 </div>`;
+
+            const resumenHtml = window._huaroPerfilKey === 'PATACANCHA' ? _huaroResumenMesPatHtml(_anio, _mes0) : resumenHtmlBase;
 
             ca.innerHTML = `
             <div id="panelHuaro">
@@ -4823,7 +4825,7 @@ const COMISIONES = {
                 ${resumenHtml}
             </div>`;
 
-            if (hayAnexos) _huaroPintarResumen();
+            if (hayAnexos && window._huaroPerfilKey !== 'PATACANCHA') _huaroPintarResumen();
             // Patacancha: mostrar de entrada el aviso del ciclo (cada cuántos días riega cada usuario)
             if (window._huaroPerfilKey === 'PATACANCHA' && _huaroBocSel) {
                 const inpQ = document.getElementById('huaroCaudalBoc');
@@ -5283,6 +5285,173 @@ const COMISIONES = {
         }
 
         // ── Salidas: Anexos ──
+        // ═══════════ PATACANCHA — ANEXOS POR MES (una hoja/anexo por SEMANA) ═══════════
+        // El mes mostrado es el de los selectores Mes/Año de arriba. G-1 y G-2 salen UNO POR SEMANA del mes
+        // (G-1: los comités programados esa semana; G-2: las bocatomas del comité elegido); G-3 y G-4 igual
+        // (G-3 por bocatoma dentro de cada semana, G-4 con las órdenes de la bocatoma elegida de cada semana).
+        // Las semanas son las mismas del selector de semana (Lun–Dom que tocan el mes); solo se muestran las que
+        // tienen programación.
+        function _huaroMesAnioMostrado() {
+            if (_huaroMesSel != null && _huaroAnioSel != null) return { mes0: _huaroMesSel, anio: _huaroAnioSel };
+            const d = new Date(_huaroSemanaSeleccionada() + 'T00:00:00');
+            return { mes0: d.getMonth(), anio: d.getFullYear() };
+        }
+        // Ejecuta fn con el estado (resultados / semana) de OTRA semana y luego lo restaura.
+        function _huaroEnSemana(lunesISO, fn) {
+            const gR = _huaroResultados, gS = _huaroSemanaActualISO;
+            try {
+                _huaroSemanaActualISO = lunesISO;
+                const pda = _huaroLeerPda(lunesISO);
+                _huaroResultados = (pda && pda.resultados && Object.keys(pda.resultados).length) ? pda.resultados : null;
+                return fn();
+            } finally { _huaroResultados = gR; _huaroSemanaActualISO = gS; }
+        }
+        async function _huaroEnSemanaAsync(lunesISO, fn) {
+            const gR = _huaroResultados, gS = _huaroSemanaActualISO;
+            try {
+                _huaroSemanaActualISO = lunesISO;
+                const pda = _huaroLeerPda(lunesISO);
+                _huaroResultados = (pda && pda.resultados && Object.keys(pda.resultados).length) ? pda.resultados : null;
+                return await fn();
+            } finally { _huaroResultados = gR; _huaroSemanaActualISO = gS; }
+        }
+        // Semanas del mes con programación. soloComite: solo las bocatomas del comité elegido.
+        function _huaroSemanasMes(anio, mes0, soloComite) {
+            const m = window._huaroComitePorBoc || {};
+            const com = soloComite ? _huaroComiteActivo() : null;
+            return _huaroSemanasDelMes(anio, mes0).map(w => {
+                const pda = _huaroLeerPda(w.lunesISO);
+                const r = (pda && pda.resultados) || {};
+                let bocs = Object.keys(r).filter(b => r[b] && r[b].programados && r[b].programados.length);
+                if (com) bocs = bocs.filter(b => m[b] === com);
+                const ags = bocs.map(b => r[b].agregado);
+                const sum = k => ags.reduce((s, a) => s + (a[k] || 0), 0);
+                return Object.assign({}, w, { bocs, nUsuarios: sum('nUsuarios'), areaHa: sum('areaProgramadaHa'), volumen: sum('volumenTotalM3') });
+            }).filter(w => w.bocs.length);
+        }
+        function _huaroBannerSemana(w, nombreMes) {
+            const fc = s => s.split('-').reverse().join('/');
+            return `<div style="font-family:Arial,sans-serif;font-weight:700;font-size:12px;background:#e3f1ee;border:1px solid #9cc7be;color:#12453b;padding:6px 10px;margin:22px 0 10px;">Semana ${w.n} de ${nombreMes} · del ${fc(w.lunesISO)} al ${fc(w.domISO)}</div>`;
+        }
+        function _huaroTituloMes(tipo) {
+            const { anio, mes0 } = _huaroMesAnioMostrado();
+            return 'Anexo ' + tipo.replace('G', 'G-') + ' — ' + HuaroCore.huaroPerfilActual().titulo + ' — ' + _HUARO_MESES[mes0] + ' ' + anio;
+        }
+        // Muestra el anexo `tipo` ('G1'..'G4') de TODAS las semanas programadas del mes (o solo de `soloLunes`).
+        function huaroMostrarAnexoMes(tipo, soloLunes) {
+            const { anio, mes0 } = _huaroMesAnioMostrado();
+            const nombreMes = _HUARO_MESES[mes0] + ' ' + anio;
+            const esG1 = tipo === 'G1';
+            let semanas = _huaroSemanasMes(anio, mes0, !esG1);
+            if (soloLunes) semanas = semanas.filter(w => w.lunesISO === soloLunes);
+            if (!semanas.length) {
+                alert(esG1 ? 'No hay bocatomas programadas en ' + nombreMes + '.\n\nUsa "Programar ' + nombreMes + '" o activa la programación automática.'
+                    : 'El comité "' + _huaroComiteActivo() + '" no tiene bocatomas programadas en ' + nombreMes + '.\n\nUsa "Programar ' + nombreMes + '" o elige otro comité/mes.');
+                return;
+            }
+            if (!esG1) _huaroBocsParaAnexo(); // fija el comité en los encabezados
+            else HuaroCore.huaroSetComiteActivo('');
+            const titulo = _huaroTituloMes(tipo) + (esG1 ? '' : _huaroSufijoComite()) + (soloLunes ? ' (1 semana)' : '');
+            if (tipo === 'G4') { _huaroAnexoMesG4(semanas, nombreMes, titulo); return; }
+            const construir = () => {
+                if (tipo === 'G1') return HuaroCore.huaroConstruirG1Html(_huaroDatosG1());
+                if (tipo === 'G2') return HuaroCore.huaroConstruirG2Html(_huaroDatosG2());
+                return HuaroCore.huaroConstruirG3Html(_huaroDatosG3());
+            };
+            const html = semanas.map(w => `<div style="page-break-after:always;">${_huaroBannerSemana(w, nombreMes)}${_huaroEnSemana(w.lunesISO, construir)}</div>`).join('');
+            _huaroPanelAnexo(titulo + ' — ' + semanas.length + ' semana(s)', html,
+                () => _huaroImprimir(titulo, html, 'landscape'),
+                () => _huaroExcelMes(tipo, semanas, nombreMes, null));
+        }
+        function _huaroAnexoMesG4(semanas, nombreMes, titulo) {
+            const bocs = [];
+            semanas.forEach(w => w.bocs.forEach(b => { if (bocs.indexOf(b) < 0) bocs.push(b); }));
+            const ordenados = _huaroOrden.filter(b => bocs.indexOf(b) >= 0);
+            const htmlBoc = (boc) => semanas.map(w => _huaroEnSemana(w.lunesISO, () => {
+                const r = _huaroResultados && _huaroResultados[boc];
+                if (!r || !r.programados.length) return '';
+                return `<div>${_huaroBannerSemana(w, nombreMes)}${r.programados.map(p => HuaroCore.huaroConstruirG4Html(p, _huaroCtxG4(boc))).join('')}</div>`;
+            })).join('');
+            const cab = `<label style="font-size:13px;font-weight:600;">Bocatoma:
+                <select id="huaroSelG4Mes" style="margin-left:8px;padding:5px 8px;min-width:260px;">${ordenados.map(b => `<option value="${escapeHtml(b)}">${escapeHtml(b)}</option>`).join('')}</select></label>
+                <span class="huaro-mini" style="margin-left:10px;">Órdenes de suministro de ${semanas.length} semana(s) de ${nombreMes}.</span>
+                <div id="huaroG4MesCont" style="margin-top:12px;"></div>`;
+            _huaroPanelAnexo(titulo + ' — ' + semanas.length + ' semana(s)', cab,
+                () => { const b = document.getElementById('huaroSelG4Mes').value; _huaroImprimir(titulo + ' ' + b, htmlBoc(b), 'portrait'); },
+                () => _huaroExcelMes('G4', semanas, nombreMes, document.getElementById('huaroSelG4Mes').value));
+            const sel = document.getElementById('huaroSelG4Mes');
+            const pintar = () => { document.getElementById('huaroG4MesCont').innerHTML = htmlBoc(sel.value); };
+            sel.onchange = pintar; pintar();
+        }
+        // Un solo Excel con UNA HOJA POR SEMANA del mes (reutiliza los Excel de cada anexo).
+        async function _huaroExcelMes(tipo, semanas, nombreMes, boc) {
+            if (!window.ExcelJS) { alert('Librería Excel no disponible'); return; }
+            const wb = new ExcelJS.Workbook();
+            for (const w of semanas) {
+                const dd = iso => iso.slice(8) + '.' + iso.slice(5, 7);
+                const hoja = ('S' + w.n + ' ' + dd(w.lunesISO) + '-' + dd(w.domISO)).slice(0, 31);
+                await _huaroEnSemanaAsync(w.lunesISO, async () => {
+                    const ctx = { wb, hoja };
+                    if (tipo === 'G1') await _huaroExcelG1Oficial(_huaroDatosG1(), ctx);
+                    else if (tipo === 'G2') { _huaroBocsParaAnexo(); await _huaroExcelGOficial(_huaroDatosG2(), 'G-2', ctx); }
+                    else if (tipo === 'G3') { _huaroBocsParaAnexo(); await _huaroExcelG3PorUsuario(_huaroDatosG3(), ctx); }
+                    else if (tipo === 'G4') { _huaroBocsParaAnexo(); if (_huaroResultados && _huaroResultados[boc]) await _huaroExcelG4(boc, ctx); }
+                });
+            }
+            const sufijo = (tipo === 'G1' ? '' : _huaroSufijoComite()) + (tipo === 'G4' && boc ? ' - ' + boc : '');
+            await _descargarWorkbook(wb, 'Anexo ' + tipo + ' - ' + nombreMes + sufijo + '.xlsx');
+        }
+        // Tarjeta de Patacancha: resumen del MES por semana + botones de los 4 anexos del mes.
+        function _huaroResumenMesPatHtml(anio, mes0) {
+            const fc = s => s.split('-').reverse().join('/');
+            const nombreMes = _HUARO_MESES[mes0] + ' ' + anio;
+            const comite = _huaroComiteActivo();
+            const semC = _huaroSemanasMes(anio, mes0, true);
+            const semT = _huaroSemanasMes(anio, mes0, false);
+            const filas = semC.map(w => `<tr>
+                    <td style="text-align:center;">Semana ${w.n}</td>
+                    <td style="text-align:center;">${fc(w.lunesISO)} – ${fc(w.domISO)}</td>
+                    <td style="text-align:center;">${w.bocs.length}</td>
+                    <td style="text-align:center;">${w.nUsuarios}</td>
+                    <td style="text-align:right;">${w.areaHa.toFixed(2)}</td>
+                    <td style="text-align:right;">${w.volumen.toFixed(2)}</td>
+                    <td style="text-align:center;white-space:nowrap;">
+                        ${['G1', 'G2', 'G3', 'G4'].map(t => `<button class="huaro-btn sec" style="padding:2px 7px;font-size:11px;" title="Anexo ${t.replace('G', 'G-')} solo de esta semana" onclick="huaroMostrarAnexoMes('${t}','${w.lunesISO}')">${t.replace('G', 'G-')}</button>`).join(' ')}
+                    </td></tr>`).join('');
+            const tot = semC.reduce((a, w) => ({ u: a.u + w.nUsuarios, ha: a.ha + w.areaHa, v: a.v + w.volumen }), { u: 0, ha: 0, v: 0 });
+            const tabla = semC.length ? `
+                    <table class="huaro-tabla" style="margin-top:6px;">
+                        <thead><tr><th>Semana</th><th>Fechas</th><th>Bocatomas</th><th>Usuarios</th><th>Área (ha)</th><th>Volumen (m³)</th><th>Anexos de la semana</th></tr></thead>
+                        <tbody>${filas}
+                            <tr style="font-weight:700;background:#f3ede6;"><td colspan="3" style="text-align:center;">TOTAL ${nombreMes}</td><td style="text-align:center;">${tot.u}</td><td style="text-align:right;">${tot.ha.toFixed(2)}</td><td style="text-align:right;">${tot.v.toFixed(2)}</td><td></td></tr>
+                        </tbody>
+                    </table>` : `<div class="huaro-mini" style="margin-top:6px;">Este comité aún no tiene programación en ${nombreMes}. Pulsa <b>Programar ${nombreMes}</b> (o cambia el mes arriba).</div>`;
+            return `
+                <div class="huaro-card" id="huaroResumenResultados">
+                    <h3 style="margin:0 0 4px;font-size:15px;">📋 Programación de ${nombreMes} — por semana</h3>
+                    <div class="huaro-mini">Comité: <b>${escapeHtml(comite)}</b>. El mes es el de los selectores Mes/Año de arriba.</div>
+                    ${tabla}
+                    <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                        <button class="huaro-btn ok" onclick="huaroPatProgramarMesMostrado()" title="Programa solo este mes para el comité elegido, semana por semana">⚙️ Programar ${nombreMes}</button>
+                        <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G1')" ${semT.length ? '' : 'disabled'}>📄 Anexo G-1 del mes (los comités, por semana)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G2')" ${semC.length ? '' : 'disabled'}>📄 Anexo G-2 del mes (por semana)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G3')" ${semC.length ? '' : 'disabled'}>📄 Anexo G-3 del mes (por semana y bocatoma)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarAnexoMes('G4')" ${semC.length ? '' : 'disabled'}>📄 Anexo G-4 del mes (por semana y usuario)</button>
+                    </div>
+                    <div class="huaro-mini" style="margin-top:8px;">Cada anexo sale <b>una vez por semana</b> del mes. Los Anexos G-2, G-3 y G-4 son del comité elegido; el G-1 reúne los comités programados esa semana. Imprimir y Excel (una hoja por semana) incluyen todas las semanas.</div>
+                </div>`;
+        }
+        // "Programar <mes>": deja marcado SOLO el mes mostrado y programa el comité elegido (aunque el modo automático esté desactivado).
+        function huaroPatProgramarMesMostrado() {
+            const { mes0 } = _huaroMesAnioMostrado();
+            const cfg = _huaroPatCfg();
+            cfg.meses = [mes0 + 1];
+            _huaroPatGuardarCfg(cfg);
+            window._huaroAutoMsg = '';
+            _huaroPatAutoProgramarComite(_huaroComiteActivo(), true);
+            renderPanelHuaro();
+        }
+
         function _huaroPanelAnexo(titulo, fragmentoHtml, onImprimir, onExcel) {
             const ca = document.getElementById('contentArea');
             const wrap = document.createElement('div');
@@ -5601,7 +5770,7 @@ const COMISIONES = {
             }
         }
 
-        async function _huaroExcelG1Oficial(datos) {
+        async function _huaroExcelG1Oficial(datos, ctx) {
             const per = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const diasHeads = [0, 1, 2, 3, 4, 5, 6].map((i) => HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i));
             const NCOLS = 19; // 7 (Sub Sector..Tiempo) + 4 (Período) + 7 (días) + 1 (Observaciones)
@@ -5609,8 +5778,8 @@ const COMISIONES = {
             // llevan hasta 2 decimales y separador de miles por coma — todas las
             // numéricas EXCEPTO "N° DE USUARIOS" (índice 3), que es un conteo entero.
             const COLS_NUM_2DEC = new Set([4, 5, 6, 11, 12, 13, 14, 15, 16, 17]);
-            const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet('Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-1', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = Array.from({ length: NCOLS }, (_, i) => (i === 0 || i === 1 || i === 2 || i === NCOLS - 1) ? { width: 24 } : { width: 12 });
 
             const poner = (fila, et, val) => {
@@ -5694,10 +5863,10 @@ const COMISIONES = {
                 if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00';
                 _huaroBorde(c); alinear(c, i);
             });
-            await _descargarWorkbook(wb, 'Anexo G1.xlsx');
+            if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, 'Anexo G1.xlsx');
         }
 
-        async function _huaroExcelGOficial(datos, formato) {
+        async function _huaroExcelGOficial(datos, formato, ctx) {
             const semTxt = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const _abv = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'];
             const _diaHeads = _abv.map((a, i) => a + ' ' + HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i) + ' (l/s)');
@@ -5709,8 +5878,8 @@ const COMISIONES = {
                 ..._diaHeads,
                 'OBSERVACIONES',
             ];
-            const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet('Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: (i === 0 || i === 1 || i === 2 || i === 18) ? 22 : 12 }));
 
             const poner = (fila, et, val) => {
@@ -5758,11 +5927,11 @@ const COMISIONES = {
             const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(1), '', '', '', '',
                 ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
             tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; _huaroBorde(c); alinear(c, i); });
-            await _descargarWorkbook(wb, 'Anexo G2' + _huaroSufijoComite() + '.xlsx');
+            if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, 'Anexo G2' + _huaroSufijoComite() + '.xlsx');
         }
 
         // Excel del G-3 (detalle por usuario, por bocatoma).
-        async function _huaroExcelG3PorUsuario(datos) {
+        async function _huaroExcelG3PorUsuario(datos, ctx) {
             const per = (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' al ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
             const heads = ['N° Orden de suministro', 'Usuario (nombres y apellidos)', 'Área (has)',
                 'Volumen de Agua Programado (m³)', 'Tiempo de Uso del Agua (hr)', 'Caudal a Entregar (l/s)',
@@ -5772,8 +5941,8 @@ const COMISIONES = {
             const canalG3 = bl0 ? HuaroCore.huaroCanalBocatoma(bl0.bocatoma) : '';
             const caudalG3 = bl0 ? (bl0.caudalLs || 0).toFixed(2) + ' (l/s)' : '';
             const multi = (datos.bloques || []).length > 1;
-            const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet('Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-3', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: i === 1 ? 34 : 14 }));
             const poner = (fila, et, val) => {
                 ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
@@ -5826,14 +5995,14 @@ const COMISIONES = {
                 r++;
             });
             const _bocG3 = (datos.bloques && datos.bloques[0]) ? datos.bloques[0].bocatoma : '';
-            await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + _huaroSufijoComite() + '.xlsx');
+            if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + _huaroSufijoComite() + '.xlsx');
         }
 
         // Excel del G-4 — una fila por usuario (todos los programados de la
         // bocatoma elegida, igual alcance que "Imprimir todas (bocatoma)"), con
         // los mismos campos del formato individual (orden, canal, caudal,
         // período, volumen) más columnas en blanco para firmas/observaciones.
-        async function _huaroExcelG4(boc) {
+        async function _huaroExcelG4(boc, ctx) {
             const r = _huaroResultados[boc];
             if (!r || !r.programados.length) { alert('No hay usuarios programados en esta bocatoma.'); return; }
             const semanaInicioISO = r.agregado.semanaInicioISO;
@@ -5843,8 +6012,8 @@ const COMISIONES = {
                 'Horas total del uso del agua', 'Volumen de agua a entregar (m³)', 'Fecha',
                 'Entregué conforme — Tomero (firma)', 'Recibí conforme — Usuario (firma)', 'Observaciones'];
             const alinear = (c, i) => { c.alignment = { horizontal: i === 1 ? 'left' : 'center', vertical: 'middle' }; };
-            const wb = new ExcelJS.Workbook();
-            const ws = wb.addWorksheet('Anexo G-4', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
+            const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-4', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
             ws.columns = heads.map((h, i) => ({ width: i === 1 ? 32 : (i === 11 || i === 12 ? 26 : (i === 13 ? 24 : 14)) }));
             const poner = (fila, et, val) => {
                 ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
@@ -5875,7 +6044,7 @@ const COMISIONES = {
                 vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; _huaroBorde(c); alinear(c, i); });
                 fila++;
             });
-            await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + _huaroSufijoComite() + '.xlsx');
+            if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + _huaroSufijoComite() + '.xlsx');
         }
 
         // Procesar datos del workbook
