@@ -3994,15 +3994,30 @@ const COMISIONES = {
             const inicioDef = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
             const caudalEditado = o.caudal != null && o.caudal !== '' && isFinite(parseFloat(o.caudal));
             const hIni = _huaroMinDeHHMM(o.horaIni), hFin = _huaroMinDeHHMM(o.horaFin);
+            const caudal = caudalEditado ? parseFloat(o.caudal) : ((masa && masa.caudalLs != null) ? masa.caudalLs : 0);
+            const simultaneos = Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || 2);
+            // TIEMPO DE RIEGO PROPORCIONAL AL CAUDAL (regla de tres sobre Huaro): en Huaro
+            // 1 topo (0.33 ha) se riega en 1.5 h (= 4.55 h/ha) con un caudal de referencia
+            // (el promedio de las bocatomas de Huaro, ~7.4 l/s, que va entero a UN usuario a
+            // la vez). Para mantener el mismo volumen por hectárea, el tiempo es inverso al
+            // caudal que recibe cada usuario: horas/topo = 1.5 × Qref ÷ Qusuario, con
+            // Qusuario = caudal de la bocatoma ÷ usuarios que riegan a la vez.
+            // Si se escribe a mano "Horas por topo", esa cifra manda.
+            const refQ = cfg.refCaudal > 0 ? cfg.refCaudal : HuaroCore.huaroCaudalReferenciaHuaro();
+            const refH = perfil.refHorasPorTopo || 1.5;
+            const qUsuario = caudal > 0 ? caudal / simultaneos : 0;
+            const horasAuto = qUsuario > 0 ? refH * refQ / qUsuario : perfil.horasPorTopo;
+            const horasManual = parseFloat(o.horasTopo) > 0;
             return {
-                caudal: caudalEditado ? parseFloat(o.caudal) : ((masa && masa.caudalLs != null) ? masa.caudalLs : 0),
+                caudal,
                 caudalEditado,
                 inicio: o.inicio || inicioDef,
                 horaIniMin: hIni != null ? hIni : perfil.minInicio,
                 horaFinMin: hFin != null ? hFin : perfil.minFin,
-                simultaneos: Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || 2),
-                horasPorTopo: (parseFloat(o.horasTopo) > 0) ? parseFloat(o.horasTopo) : perfil.horasPorTopo,
-                horasPorTopoEditado: parseFloat(o.horasTopo) > 0,
+                simultaneos,
+                horasPorTopo: horasManual ? parseFloat(o.horasTopo) : horasAuto,
+                horasPorTopoEditado: horasManual,
+                horasAuto, qUsuario, refQ, refH,
             };
         }
         function _huaroPatSimultaneos(boc) { return _huaroPatBoc(boc).simultaneos; }
@@ -4059,7 +4074,7 @@ const COMISIONES = {
                                     <span>Hora de inicio</span>
                                     <input type="time" id="huaroPatHIni" value="${hh(p.horaIniMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
                                     <span>Horas por topo</span>
-                                    <span><input type="number" id="huaroPatHTopo" value="${p.horasPorTopo}" min="0.25" max="24" step="0.25" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> h</span>
+                                    <span><input type="number" id="huaroPatHTopo" value="${+p.horasPorTopo.toFixed(2)}" min="0.05" max="24" step="0.01" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> h</span>
                                     <span>Hora de término</span>
                                     <input type="time" id="huaroPatHFin" value="${hh(p.horaFinMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
                                     <span>Repite cada</span>
@@ -4127,6 +4142,15 @@ const COMISIONES = {
             _huaroPatAutoProgramar(_huaroBocSel);
             renderPanelHuaro();
         }
+        // Caudal de referencia de Huaro (l/s por usuario) para la regla de tres de las horas por topo.
+        function huaroPatRefQ(valor) {
+            const cfg = _huaroPatCfg();
+            const v = parseFloat(valor);
+            if (v > 0) cfg.refCaudal = v; else delete cfg.refCaudal;
+            _huaroPatGuardarCfg(cfg);
+            _huaroBocsConDatos().forEach(b => _huaroPatAutoProgramar(b));
+            renderPanelHuaro();
+        }
         // Edición desde la tabla "Parámetros por bocatoma del comité".
         function huaroPatBocCfg(boc, campo, valor) {
             const cfg = _huaroPatCfg();
@@ -4169,8 +4193,11 @@ const COMISIONES = {
                     ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
                     excluidos: _huaroLeerCampana(b).excluidos,
                 });
+                // Para cumplir la frecuencia con el MISMO volumen por ha, hace falta más caudal
+                // (el tiempo es inverso al caudal): ≈ caudal × (días que toma recorrer ÷ frecuencia).
+                const qNecesario = Math.ceil(p.caudal * r.pasadaDias / r.frecuenciaDias);
                 const ciclo = r.excedeFrecuencia
-                    ? `<span style="color:#b26a00;font-weight:700;" title="Con ${p.simultaneos} a la vez, recorrer a todos toma ${r.pasadaDias} días. Para cumplir ${r.frecuenciaDias} días harían falta ${r.simultaneosNecesarios || 'muchos más'} a la vez.">⚠ cada ${r.periodoDias} d</span> <a href="javascript:void(0)" onclick="huaroPatBocCfg('${q(b)}','simultaneos',${r.simultaneosNecesarios || p.simultaneos})" title="Poner los usuarios a la vez necesarios para cumplir ${r.frecuenciaDias} días">(usar ${r.simultaneosNecesarios || '—'})</a>`
+                    ? `<span style="color:#b26a00;font-weight:700;" title="Con ${p.caudal} l/s recorrer a todos toma ${r.pasadaDias} días. Para cumplir ${r.frecuenciaDias} días harían falta ~${qNecesario} l/s (o más horas de riego al día).">⚠ cada ${r.periodoDias} d</span> <span style="font-size:10px;color:#6b7280;">(~${qNecesario} l/s)</span>`
                     : `<span style="color:#1f6b3a;">✔ cada ${r.periodoDias} d</span>`;
                 return `<tr>
                     <td style="text-align:left;">${escapeHtml(b)}</td>
@@ -4179,7 +4206,7 @@ const COMISIONES = {
                     <td style="text-align:center;"><input type="date" value="${p.inicio}" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','inicio',this.value)"></td>
                     <td style="text-align:center;"><input type="time" value="${hh(p.horaIniMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaIni',this.value)"></td>
                     <td style="text-align:center;"><input type="time" value="${hh(p.horaFinMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaFin',this.value)"></td>
-                    <td style="text-align:center;"><input type="number" min="0.25" max="24" step="0.25" value="${p.horasPorTopo}" style="${inp}width:60px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','horasTopo',this.value)"></td>
+                    <td style="text-align:center;"><input type="number" min="0.05" max="24" step="0.01" value="${+p.horasPorTopo.toFixed(2)}" style="${inp}width:64px;text-align:right;" title="${(p.horasPorTopo / 0.33).toFixed(2)} h por hectárea" onchange="huaroPatBocCfg('${q(b)}','horasTopo',this.value)"> ${p.horasPorTopoEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al tiempo automático (proporcional al caudal)" onclick="huaroPatBocCfg('${q(b)}','horasTopo','')">↺ auto</a>` : '<span style="font-size:10px;color:#1f6b3a;" title="Calculado: proporcional al caudal por usuario">auto</span>'}<div style="font-size:10px;color:#6b7280;">${(p.horasPorTopo / 0.33).toFixed(2)} h/ha</div></td>
                     <td style="text-align:center;"><input type="number" min="1" max="60" step="1" value="${p.simultaneos}" style="${inp}width:56px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','simultaneos',this.value)"></td>
                     <td style="text-align:center;font-size:11px;white-space:nowrap;">${ciclo}</td>
                 </tr>`;
@@ -4187,10 +4214,11 @@ const COMISIONES = {
             return `
                 <div class="huaro-card">
                     <label style="font-weight:700;font-size:13px;">⚙️ Parámetros por bocatoma del comité (editables)</label>
-                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>Cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); se guarda en este navegador. El caudal precargado es el del esquema hidráulico.</div>
+                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>Cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); se guarda en este navegador. El caudal precargado es el del esquema hidráulico.<br>
+                        <b>Tiempo de riego proporcional al caudal:</b> tomando Huaro como base (1.5 h por topo = 4.55 h/ha con <input type="number" min="0.1" step="0.1" value="${+_huaroPatBoc(bocs[0], semanaISO).refQ.toFixed(2)}" style="${inp}width:64px;" onchange="huaroPatRefQ(this.value)" title="Caudal por usuario de referencia en Huaro (promedio de sus bocatomas)"> l/s por usuario), en cada bocatoma las horas por topo = 1.5 × referencia ÷ (caudal ÷ usuarios a la vez). A más caudal por usuario, menos horas; mismo volumen por hectárea. Si escribes "Horas/topo" a mano, esa cifra manda (↺ auto la deja otra vez automática).</div>
                     <div style="overflow-x:auto;">
                     <table class="huaro-tabla">
-                        <thead><tr><th style="text-align:left;">Bocatoma</th><th>Usuarios</th><th>Caudal (l/s)</th><th>Día de inicio</th><th>Hora inicio</th><th>Hora término</th><th>Horas/topo</th><th>A la vez</th><th>Ciclo</th></tr></thead>
+                        <thead><tr><th style="text-align:left;">Bocatoma</th><th>Usuarios</th><th>Caudal (l/s)</th><th>Día de inicio</th><th>Hora inicio</th><th>Hora término</th><th>Horas/topo<br><span style="font-weight:400;font-size:10px;">(≈ h/ha)</span></th><th>A la vez</th><th>Ciclo</th></tr></thead>
                         <tbody>${filas}</tbody>
                     </table>
                     </div>
@@ -4319,10 +4347,13 @@ const COMISIONES = {
                 const c = prev.ciclo;
                 // Cuántos usuarios simultáneos harían falta para cumplir la frecuencia.
                 const necesarios = c.necesarios || '—';
+                const qNec = Math.ceil((parseFloat(q) || 0) * c.pasadaDias / c.frecuencia);
+                const pb = _huaroPatBoc(_huaroBocSel);
+                const ref = `Tiempo por hectárea: <b>${(pb.horasPorTopo / 0.33).toFixed(2)} h/ha</b> (${pb.horasPorTopo.toFixed(2)} h por topo${pb.horasPorTopoEditado ? ', editado a mano' : ', proporcional al caudal por usuario: ' + pb.qUsuario.toFixed(2) + ' l/s; referencia Huaro 1.5 h/topo con ' + pb.refQ.toFixed(2) + ' l/s'}).`;
                 const info = document.getElementById('huaroCicloInfoBoc');
-                if (info) info.innerHTML = c.excede
-                    ? `⚠️ Con ${c.simultaneos} a la vez, recorrer a todos toma <b>${c.pasadaDias} días</b>: cada usuario riega cada <b>${c.periodoDias}</b> (no cada ${c.frecuencia}). Para cumplir ${c.frecuencia} días harían falta ~<b>${necesarios}</b> a la vez. ${c.necesarios ? `<a href="javascript:void(0)" onclick="huaroPatUsarNecesarios(${c.necesarios})">Usar ${c.necesarios} a la vez</a>` : ''}`
-                    : `✔ Recorrer a todos toma ${c.pasadaDias} días; cada usuario riega cada ${c.periodoDias} días.`;
+                if (info) info.innerHTML = ref + '<br>' + (c.excede
+                    ? `⚠️ Con este caudal recorrer a todos toma <b>${c.pasadaDias} días</b>: cada usuario riega cada <b>${c.periodoDias}</b> (no cada ${c.frecuencia}). Para cumplir ${c.frecuencia} días harían falta ~<b>${qNec} l/s</b> (o más horas de riego al día).`
+                    : `✔ Recorrer a todos toma ${c.pasadaDias} días; cada usuario riega cada ${c.periodoDias} días.`);
             }
             setTxt('huaroVolBoc', a.volumenTotalM3.toFixed(2) + ' m³');
             setTxt('huaroTiempoBoc', a.tiempoTotalH.toFixed(1) + ' h');
@@ -4503,7 +4534,7 @@ const COMISIONES = {
             ca.innerHTML = `
             <div id="panelHuaro">
                 <h2>${window._huaroPerfilKey === 'PATACANCHA' ? '🏔️ PDA — Sub Sector Hidráulico Quebrada Patacancha · Yuracmayu · Ollantaytambo' : '🌾 PDA — Comisión de Regantes de Huaro'}</h2>
-                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · se programa una bocatoma a la vez.${window._huaroPerfilKey === 'PATACANCHA' ? ' Riego de ' + HuaroCore.huaroPerfilActual().minInicio / 60 + ':00 a ' + HuaroCore.huaroPerfilActual().minFin / 60 + ':00, varios usuarios a la vez por bocatoma, repitiendo cada N días; la campaña (jun–nov) se programa de una vez desde su inicio hasta la fecha.' : ''}</p>
+                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${window._huaroPerfilKey === 'PATACANCHA' ? 'horas por topo (proporcional al caudal por usuario)' : HuaroCore.HUARO_H_POR_TOPO + ' h'} · se programa una bocatoma a la vez.${window._huaroPerfilKey === 'PATACANCHA' ? ' Riego de ' + HuaroCore.huaroPerfilActual().minInicio / 60 + ':00 a ' + HuaroCore.huaroPerfilActual().minFin / 60 + ':00, varios usuarios a la vez por bocatoma, repitiendo cada N días; la campaña (jun–nov) se programa de una vez desde su inicio hasta la fecha.' : ''}</p>
 
                 <div class="huaro-card">
                     <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">

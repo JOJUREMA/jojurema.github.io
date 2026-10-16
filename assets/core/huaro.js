@@ -70,7 +70,7 @@ const HUARO_PERFILES = {
         // 8 días (a veces 15, según el cultivo — sin dato de cultivo se asume
         // el mismo para todos); campaña de junio a noviembre, programada desde
         // su inicio hasta la fecha actual.
-        horasPorTopo: 3, minInicio: 6 * 60, minFin: 16 * 60,
+        horasPorTopo: 3, minInicio: 6 * 60, minFin: 16 * 60, refHorasPorTopo: 1.5, // 3 h/topo = valor "sin caudal"; con caudal, ver _huaroPatBoc (regla de tres sobre Huaro)
         cicloContinuo: true, simultaneos: 2, frecuenciaDias: 8,
         campanaMesIni: 6, campanaMesFin: 11,
     },
@@ -84,6 +84,13 @@ function huaroComiteActivo() { return HUARO_COMITE_ACTIVO; }
 // Texto del "Subsector hidráulico" de los anexos: el de la comisión + el comité si lo hay.
 function huaroSubsectorTexto() {
     return HUARO_COMISION_NOMBRE + (HUARO_COMITE_ACTIVO ? ' — ' + HUARO_COMITE_ACTIVO : '');
+}
+// Caudal de referencia de Huaro (l/s que recibe UN usuario a la vez): promedio del
+// caudal otorgado a sus bocatomas (HUARO_MASA_AGUA). Con él y 1.5 h por topo
+// (4.55 h/ha) se hace la regla de tres de las horas de riego en otras comisiones.
+function huaroCaudalReferenciaHuaro() {
+    const v = Object.keys(HUARO_MASA_AGUA).map(k => HUARO_MASA_AGUA[k].caudalLs).filter(x => x > 0);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 7.4;
 }
 function huaroPerfilActual() { return HUARO_PERFILES[HUARO_PERFIL_KEY] || HUARO_PERFILES.HUARO; }
 function huaroAplicarPerfil(key) {
@@ -1204,7 +1211,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1217,7 +1224,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
