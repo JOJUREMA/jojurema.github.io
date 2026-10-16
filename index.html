@@ -4221,7 +4221,7 @@ const COMISIONES = {
                     if (res) {
                         pda.caudales[boc] = caudalLs;
                         pda.horarios[boc] = res.agregado.diasRiego;
-                        pda.resultados[boc] = { programados: res.programados, pendientes: [], agregado: res.agregado, pendientesPreviosUsados: [] };
+                        pda.resultados[boc] = { programados: res.programados, pendientes: res.pendientes || [], agregado: res.agregado, pendientesPreviosUsados: [] };
                         n++;
                     } else {
                         delete pda.resultados[boc]; delete pda.caudales[boc]; delete pda.horarios[boc];

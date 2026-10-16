@@ -574,9 +574,21 @@ function huaroCronogramaCampana(opts) {
                 diasUsados = Math.max(diasUsados, idx + 1);
             }
         });
+        // PENDIENTES (igual que en Huaro): si recorrer a todo el padrón toma más días
+        // que la frecuencia (no entran todos), los usuarios que en la pasada en curso
+        // todavía no han regado al terminar esta semana quedan "pendientes" y
+        // encabezan las semanas siguientes. Con ciclo normal no hay pendientes.
+        let pendientesKeys = [], areaPendienteHa = 0;
+        if (pasadaDias > frecuencia) {
+            const finSemAbs = Math.round((new Date(_huaroSumarDias(lunes, 6) + 'T00:00:00') - new Date(desdeISO + 'T00:00:00')) / 864e5);
+            const kEnd = Math.max(0, Math.floor(finSemAbs / periodoDias));
+            plantilla.forEach(t => {
+                if (kEnd * periodoDias + t.dia0 > finSemAbs) { pendientesKeys.push(huaroClaveUsuario(t.u)); areaPendienteHa += (t.u.areaHa || 0); }
+            });
+        }
         const pIni = prog[0], pFin = prog.reduce((m, p) => (p.fechaTerminoISO > m.fechaTerminoISO || (p.fechaTerminoISO === m.fechaTerminoISO && p.terminoMin > m.terminoMin)) ? p : m, prog[0]);
         semanas[lunes] = {
-            programados: prog, pendientes: [],
+            programados: prog, pendientes: pendientesKeys,
             agregado: {
                 bocatoma: opts.bocatoma || '', caudalLs, semanaInicioISO: lunes,
                 semanaFinISO: _huaroSumarDias(lunes, HUARO_DIAS_SEMANA - 1),
@@ -589,7 +601,7 @@ function huaroCronogramaCampana(opts) {
                 tiempoTotalH: minOperacion / 60, // horas que el canal estuvo operando (no la suma de turnos simultáneos)
                 horasUsuarios: prog.reduce((s, p) => s + (p.tiempoH || 0), 0),
                 volumenTotalM3: prog.reduce((s, p) => s + (p.volumenM3 || 0), 0),
-                diasUsados, caudalPorDia, nPendientes: 0, areaPendienteHa: 0,
+                diasUsados, caudalPorDia, nPendientes: pendientesKeys.length, areaPendienteHa,
                 simultaneos: lanes, cicloContinuo: true, sinUsuarios: false,
                 usuariosPadron: usuarios.length, cicloDias: periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > frecuencia,
             },
