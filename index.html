@@ -5478,7 +5478,7 @@ const COMISIONES = {
                     <button class="huaro-btn" id="huaroBtnExcel">⬇️ Excel</button>
                     <strong style="margin-left:6px;">${escapeHtml(titulo)}</strong>
                 </div>
-                <div id="huaroAnexoBody" style="background:#fff;padding:16px;border:1px solid #d9dee5;border-radius:8px;overflow-x:auto;">${fragmentoHtml}</div>
+                <div id="huaroAnexoBody" style="text-transform:uppercase;background:#fff;padding:16px;border:1px solid #d9dee5;border-radius:8px;overflow-x:auto;">${fragmentoHtml}</div>
             </div>`;
             ca.innerHTML = '';
             ca.appendChild(wrap);
@@ -12010,7 +12010,17 @@ const COMISIONES = {
             ws.getRow(r).height = 16;
         }
 
+        // Los Anexos G-1…G-4 salen con toda la redacción en MAYÚSCULAS (solo textos; fórmulas y números quedan igual).
+        function _huaroMayusculasWb(wb) {
+            wb.eachSheet(ws => ws.eachRow({ includeEmpty: false }, row => row.eachCell({ includeEmpty: false }, c => {
+                const v = c.value;
+                if (typeof v === 'string') c.value = v.toUpperCase();
+                else if (v && Array.isArray(v.richText)) c.value = { richText: v.richText.map(t => Object.assign({}, t, { text: String(t.text).toUpperCase() })) };
+            })));
+        }
+
         function _descargarWorkbook(wb, nombreArchivo) {
+            if (/^Anexo /.test(nombreArchivo || '')) _huaroMayusculasWb(wb);
             return wb.xlsx.writeBuffer().then((buffer) => {
                 const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
                 const url = URL.createObjectURL(blob);

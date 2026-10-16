@@ -442,7 +442,7 @@ function huaroParsearPadronPatacancha(filas2D, sheetName) {
         const mBoc = texto.match(/^BOCATOMA\b\s*[-–:]?\s*(.*)$/i);
         if (mBoc && !isFinite(area)) {
             const nombre = limpiar(mBoc[1]).toUpperCase() || ('BOCATOMA ' + (bocatomas.length + 1));
-            actual = { bocatoma: nombre, comite: comite || limpiar(sheetName), usuarios: [] };
+            actual = { bocatoma: nombre, comite: (comite || limpiar(sheetName)).toUpperCase(), usuarios: [] };
             bocatomas.push(actual);
             continue;
         }
@@ -459,7 +459,7 @@ function huaroParsearPadronPatacancha(filas2D, sheetName) {
             areaHa: area, topos: huaroToposDesdeArea(area), toposTexto: '',
         });
     }
-    bocatomas.forEach(b => { if (!b.comite) b.comite = limpiar(sheetName); });
+    bocatomas.forEach(b => { if (!b.comite) b.comite = limpiar(sheetName); b.comite = b.comite.toUpperCase(); });
     return bocatomas.filter(b => b.usuarios.length);
 }
 
@@ -1204,7 +1204,7 @@ function huaroDocumentoImprimible(titulo, fragmentoHtml, orientacion) {
     <title>${_huaroEsc(titulo)}</title>
     <style>
         @page { size: A4 ${orientacion || 'landscape'}; margin: 10mm; }
-        body { font-family: Arial, sans-serif; color:#000; margin:0; padding:14px; }
+        body { font-family: Arial, sans-serif; color:#000; margin:0; padding:14px; text-transform:uppercase; }
         table { border-collapse: collapse; }
         .barra-print { position:sticky; top:0; background:#003876; padding:8px 12px; margin:-14px -14px 14px; text-align:right; }
         .btn-print { background:#c8a84b; color:#1a1a1a; border:none; padding:8px 18px; border-radius:4px; font-weight:700; cursor:pointer; font-size:13px; }
