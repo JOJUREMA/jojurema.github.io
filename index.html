@@ -3712,6 +3712,7 @@ const COMISIONES = {
             btnLimpiar.disabled = false;
             window._huaroAutoMsg = '';
             if (esPatacancha) _huaroPatMigrar();
+            if (esPatacancha) _huaroPatMostrarMesMarcado();
             if (esPatacancha) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
             renderPanelHuaro();
         }
@@ -4071,6 +4072,17 @@ const COMISIONES = {
                         </div>
                     </div>`;
         }
+        // Pone como mes MOSTRADO (selectores Mes/Año y semana elegida) el primer mes marcado, para que
+        // el resumen y los anexos enseñen lo que se acaba de programar y no la semana en curso.
+        function _huaroPatMostrarMesMarcado() {
+            const meses = _huaroPatCfg().meses;
+            if (!meses || !meses.length) return;
+            const m = Math.min.apply(null, meses);
+            const anio = _huaroMesAnioMostrado().anio;
+            _huaroMesSel = m - 1; _huaroAnioSel = anio;
+            const sems = _huaroSemanasDelMes(anio, m - 1);
+            if (sems.length) _huaroSemanaActualISO = sems[0].lunesISO;
+        }
         // Cambia la selección de meses; en modo automático re-programa el comité elegido con los meses nuevos.
         function huaroPatMeses(accion, mes) {
             const cfg = _huaroPatCfg();
@@ -4087,6 +4099,7 @@ const COMISIONES = {
             }
             _huaroPatGuardarCfg(cfg);
             window._huaroAutoMsg = '';
+            _huaroPatMostrarMesMarcado();
             if (_huaroPatAuto()) _huaroPatAutoProgramarComite(_huaroComiteActivo(), true);
             renderPanelHuaro();
         }
