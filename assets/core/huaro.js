@@ -83,7 +83,7 @@ function huaroSetComiteActivo(nombre) { HUARO_COMITE_ACTIVO = nombre ? String(no
 function huaroComiteActivo() { return HUARO_COMITE_ACTIVO; }
 // Texto del "Subsector hidráulico" de los anexos: el de la comisión + el comité si lo hay.
 function huaroSubsectorTexto() {
-    return HUARO_COMISION_NOMBRE + (HUARO_COMITE_ACTIVO ? ' — ' + HUARO_COMITE_ACTIVO : '');
+    return HUARO_COMISION_NOMBRE; // el comité va en su propia línea ("Comité:") debajo del subsector
 }
 // Caudal de referencia de Huaro (l/s que recibe UN usuario a la vez): promedio del
 // caudal otorgado a sus bocatomas (HUARO_MASA_AGUA). Con él y 1.5 h por topo
@@ -972,6 +972,7 @@ function huaroConstruirG2Html(datos) {
             <div><strong>ALA:</strong> ${HUARO_ALA}</div>
             <div><strong>Sector Hidráulico:</strong> ${HUARO_JUNTA}</div>
             <div><strong>Subsector Hidráulico:</strong> ${_huaroEsc(huaroSubsectorTexto())}</div>
+            ${HUARO_COMITE_ACTIVO ? `<div><strong>Comité:</strong> ${_huaroEsc(HUARO_COMITE_ACTIVO)}</div>` : ''}
         </div>
         <div style="line-height:1.6;white-space:nowrap;">
             <div><strong>Mes:</strong> ${_huaroEsc(datos.mesTexto || '')}</div>
@@ -1106,6 +1107,7 @@ function huaroConstruirG3Html(datos) {
     <table style="font-family:Arial,sans-serif;color:#000;font-size:10px;border-collapse:collapse;margin:6px 0 10px;">
         <tr><td style="${_lbl}">Sector hidráulico:</td><td>${HUARO_JUNTA}</td></tr>
         <tr><td style="${_lbl}">Subsector hidráulico:</td><td>${_huaroEsc(huaroSubsectorTexto())}</td></tr>
+        ${HUARO_COMITE_ACTIVO ? `<tr><td style="${_lbl}">Comité:</td><td>${_huaroEsc(HUARO_COMITE_ACTIVO)}</td></tr>` : ''}
         <tr><td style="${_lbl}">Canal de abastecimiento de agua:</td><td>${_huaroEsc(canalCab)}</td></tr>
         <tr><td style="${_lbl}">Caudal:</td><td>${_huaroEsc(caudalCab)}</td></tr>
         <tr><td style="${_lbl}">Mes:</td><td>${_huaroEsc(datos.mesTexto || '')}</td></tr>

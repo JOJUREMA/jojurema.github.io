@@ -5494,9 +5494,11 @@ const COMISIONES = {
             poner(4, 'ALA:', HuaroCore.HUARO_ALA);
             poner(5, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
             poner(6, 'Subsector Hidráulico:', HuaroCore.huaroSubsectorTexto());
-            poner(7, 'Mes:', datos.mesTexto || '');
-            poner(8, 'Semana:', semTxt);
-            let r = 10;
+            const cmG2 = HuaroCore.huaroComiteActivo() ? 1 : 0; // con comité (Patacancha) va una fila más: "Comité:"
+            if (cmG2) poner(7, 'Comité:', HuaroCore.huaroComiteActivo());
+            poner(7 + cmG2, 'Mes:', datos.mesTexto || '');
+            poner(8 + cmG2, 'Semana:', semTxt);
+            let r = 10 + cmG2;
             // Centrado: columnas de texto (canal/toma/canal, observaciones) a la
             // izquierda; todo lo demás (números) centrado.
             const alinear = (c, i) => {
@@ -5552,11 +5554,13 @@ const COMISIONES = {
             ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
             poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
             poner(4, 'Subsector hidráulico:', HuaroCore.huaroSubsectorTexto());
-            poner(5, 'Canal de abastecimiento de agua:', canalG3);
-            poner(6, 'Caudal:', caudalG3);
-            poner(7, 'Mes:', datos.mesTexto || '');
-            poner(8, 'Periodo:', per);
-            let r = 10;
+            const cmG3 = HuaroCore.huaroComiteActivo() ? 1 : 0;
+            if (cmG3) poner(5, 'Comité:', HuaroCore.huaroComiteActivo());
+            poner(5 + cmG3, 'Canal de abastecimiento de agua:', canalG3);
+            poner(6 + cmG3, 'Caudal:', caudalG3);
+            poner(7 + cmG3, 'Mes:', datos.mesTexto || '');
+            poner(8 + cmG3, 'Periodo:', per);
+            let r = 10 + cmG3;
             (datos.bloques || []).forEach(bl => {
                 if (multi) {
                     const cB = ws.getCell(r, 1);
@@ -5621,10 +5625,12 @@ const COMISIONES = {
             ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
             poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
             poner(4, 'Subsector hidráulico:', HuaroCore.huaroSubsectorTexto());
-            poner(5, 'Canal de abastecimiento de agua:', HuaroCore.huaroCanalBocatoma(boc));
-            poner(6, 'Caudal:', (r.agregado.caudalLs || 0).toFixed(2) + ' (l/s)');
-            poner(7, 'Fecha:', fechaTexto);
-            let fila = 9;
+            const cmG4 = HuaroCore.huaroComiteActivo() ? 1 : 0;
+            if (cmG4) poner(5, 'Comité:', HuaroCore.huaroComiteActivo());
+            poner(5 + cmG4, 'Canal de abastecimiento de agua:', HuaroCore.huaroCanalBocatoma(boc));
+            poner(6 + cmG4, 'Caudal:', (r.agregado.caudalLs || 0).toFixed(2) + ' (l/s)');
+            poner(7 + cmG4, 'Fecha:', fechaTexto);
+            let fila = 9 + cmG4;
             heads.forEach((h, i) => { const c = ws.getCell(fila, i + 1); c.value = h; _huaroEstiloEnc(c); });
             fila++;
             r.programados.forEach(p => {
