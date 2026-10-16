@@ -3971,23 +3971,52 @@ const COMISIONES = {
             let c = {};
             try { c = JSON.parse(localStorage.getItem('cusshmi_patacancha_cfg')) || {}; } catch (e) { c = {}; }
             c.frecuencia = parseInt(c.frecuencia, 10) || 8;
-            c.simultaneos = c.simultaneos || {};
-            c.inicio = c.inicio || {}; // { 'AAAA': 'AAAA-MM-DD' }
+            c.simultaneos = c.simultaneos || {}; // (formato anterior) { boc: n }
+            c.inicio = c.inicio || {};           // { 'AAAA': 'AAAA-MM-DD' } inicio de campaña por año
+            c.boc = c.boc || {};                 // { boc: { caudal, inicio, horaIni, horaFin, simultaneos } } — lo editado por bocatoma
             return c;
         }
         function _huaroPatGuardarCfg(c) { try { localStorage.setItem('cusshmi_patacancha_cfg', JSON.stringify(c)); } catch (e) { /* noop */ } }
-        function _huaroPatSimultaneos(boc) { return Math.max(1, parseInt(_huaroPatCfg().simultaneos[boc], 10) || 2); }
+        function _huaroMinDeHHMM(t) {
+            const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ''));
+            return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null;
+        }
+        // Parámetros EFECTIVOS de una bocatoma de Patacancha: lo que se editó en
+        // pantalla (caudal, día y hora de inicio, hora de término diaria, usuarios
+        // a la vez) o, si no se tocó, el valor por defecto (caudal del esquema
+        // hidráulico, 1° de junio, 06:00–16:00, 2 a la vez).
+        function _huaroPatBoc(boc, referenciaISO) {
+            const cfg = _huaroPatCfg();
+            const perfil = HuaroCore.huaroPerfilActual();
+            const o = cfg.boc[boc] || {};
+            const masa = HuaroCore.huaroMasaDeAgua(boc);
+            const anio = parseInt((referenciaISO || _huaroSemanaSeleccionada()).slice(0, 4), 10);
+            const inicioDef = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
+            const caudalEditado = o.caudal != null && o.caudal !== '' && isFinite(parseFloat(o.caudal));
+            const hIni = _huaroMinDeHHMM(o.horaIni), hFin = _huaroMinDeHHMM(o.horaFin);
+            return {
+                caudal: caudalEditado ? parseFloat(o.caudal) : ((masa && masa.caudalLs != null) ? masa.caudalLs : 0),
+                caudalEditado,
+                inicio: o.inicio || inicioDef,
+                horaIniMin: hIni != null ? hIni : perfil.minInicio,
+                horaFinMin: hFin != null ? hFin : perfil.minFin,
+                simultaneos: Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || 2),
+            };
+        }
+        function _huaroPatSimultaneos(boc) { return _huaroPatBoc(boc).simultaneos; }
         function _huaroHoyISO() {
             const d = new Date();
             return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         }
-        // Rango de la campaña a programar: desde el inicio de campaña hasta lo
-        // que sea mayor entre hoy y el fin de la semana elegida (sin pasar del 30/nov).
-        function _huaroPatRango(semanaISO) {
+        // Rango de la campaña a programar: desde el inicio (el de la bocatoma, si se
+        // editó) hasta lo que sea mayor entre hoy y el fin de la semana elegida
+        // (sin pasar del 30/nov).
+        function _huaroPatRango(semanaISO, boc) {
             const perfil = HuaroCore.huaroPerfilActual();
             const anio = parseInt(semanaISO.slice(0, 4), 10);
             const cfg = _huaroPatCfg();
-            const desdeISO = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
+            const desdeISO = boc ? _huaroPatBoc(boc, semanaISO).inicio
+                : (cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01'));
             const finCampISO = anio + '-' + String(perfil.campanaMesFin).padStart(2, '0') + '-30';
             const finSemISO = _huaroSumarDiasHuaroHist(semanaISO, 6);
             const hoy = _huaroHoyISO();
@@ -3995,56 +4024,147 @@ const COMISIONES = {
             if (hastaISO > finCampISO) hastaISO = finCampISO;
             return { desdeISO, hastaISO, finCampISO };
         }
-        function _huaroPatCronograma(boc, caudalLs) {
+        function _huaroPatCronograma(boc, caudalLs, hastaForzadoISO) {
             const semanaISO = _huaroSemanaSeleccionada();
-            const rango = _huaroPatRango(semanaISO);
+            const rango = _huaroPatRango(semanaISO, boc);
+            if (hastaForzadoISO) rango.hastaISO = hastaForzadoISO;
             const camp = _huaroLeerCampana(boc);
             if (rango.hastaISO < rango.desdeISO) return { rango, crono: null };
+            const p = _huaroPatBoc(boc, semanaISO);
             const crono = HuaroCore.huaroCronogramaCampana({
                 usuarios: _huaroPadron[boc] || [], caudalLs: parseFloat(caudalLs) || 0, bocatoma: boc,
                 desdeISO: rango.desdeISO, hastaISO: rango.hastaISO,
-                frecuenciaDias: _huaroPatCfg().frecuencia, simultaneos: _huaroPatSimultaneos(boc),
+                frecuenciaDias: _huaroPatCfg().frecuencia, simultaneos: p.simultaneos,
+                ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
                 excluidos: camp.excluidos,
             });
             return { rango, crono };
         }
-        // Caja con los parámetros del ciclo (reemplaza "Días y horas de la semana").
+        // Caja con los parámetros del ciclo de la bocatoma elegida (reemplaza "Días y horas de la semana").
         function _huaroPatCajaCicloHtml(boc, semanaISO) {
             const cfg = _huaroPatCfg();
-            const rango = _huaroPatRango(semanaISO);
+            const p = _huaroPatBoc(boc, semanaISO);
+            const rango = _huaroPatRango(semanaISO, boc);
             const fc = s => s.split('-').reverse().join('/');
+            const hh = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+            const inpStyle = 'padding:4px 6px;font-size:12px;';
             return `
                             <div class="huaro-box">
-                                <div class="k">Ciclo de riego (campaña)</div>
+                                <div class="k">Ciclo de riego (campaña) — editable</div>
                                 <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;margin-top:6px;font-size:12px;">
-                                    <span>Inicio campaña</span>
-                                    <input type="date" id="huaroPatInicio" value="${rango.desdeISO}" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;">
+                                    <span>Día de inicio</span>
+                                    <input type="date" id="huaroPatInicio" value="${p.inicio}" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
+                                    <span>Hora de inicio</span>
+                                    <input type="time" id="huaroPatHIni" value="${hh(p.horaIniMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
+                                    <span>Hora de término</span>
+                                    <input type="time" id="huaroPatHFin" value="${hh(p.horaFinMin)}" step="900" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}">
                                     <span>Repite cada</span>
-                                    <span><input type="number" id="huaroPatFrec" value="${cfg.frecuencia}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;width:62px;"> días</span>
+                                    <span><input type="number" id="huaroPatFrec" value="${cfg.frecuencia}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> días</span>
                                     <span>Riegan a la vez</span>
-                                    <span><input type="number" id="huaroPatSimul" value="${_huaroPatSimultaneos(boc)}" min="1" max="40" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="padding:4px 6px;font-size:12px;width:62px;"> usuarios</span>
+                                    <span><input type="number" id="huaroPatSimul" value="${p.simultaneos}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> usuarios</span>
                                 </div>
-                                <div class="huaro-mini" style="margin-top:6px;">Se programa del <b>${fc(rango.desdeISO)}</b> al <b>${fc(rango.hastaISO)}</b> · ${HuaroCore.huaroPerfilActual().minInicio / 60}:00–${HuaroCore.huaroPerfilActual().minFin / 60}:00</div>
+                                <div class="huaro-mini" style="margin-top:6px;">Se programa del <b>${fc(rango.desdeISO)}</b> al <b>${fc(rango.hastaISO)}</b>, de ${hh(p.horaIniMin)} a ${hh(p.horaFinMin)} cada día.</div>
                                 <div class="huaro-mini" id="huaroCicloInfoBoc" style="margin-top:4px;"></div>
                             </div>`;
         }
+        // Guarda lo editado en la caja del ciclo (por bocatoma) y repinta.
         function huaroPatCfgCambio() {
             if (!_huaroBocSel) return;
             const cfg = _huaroPatCfg();
-            const f = parseInt((document.getElementById('huaroPatFrec') || {}).value, 10);
+            const val = id => (document.getElementById(id) || {}).value;
+            const f = parseInt(val('huaroPatFrec'), 10);
             if (f > 0) cfg.frecuencia = f;
-            const s = parseInt((document.getElementById('huaroPatSimul') || {}).value, 10);
-            if (s > 0) cfg.simultaneos[_huaroBocSel] = s;
-            const ini = (document.getElementById('huaroPatInicio') || {}).value;
-            const anio = parseInt(_huaroSemanaSeleccionada().slice(0, 4), 10);
-            if (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) cfg.inicio[anio] = ini;
+            const o = cfg.boc[_huaroBocSel] = cfg.boc[_huaroBocSel] || {};
+            const s = parseInt(val('huaroPatSimul'), 10);
+            if (s > 0) o.simultaneos = s;
+            const ini = val('huaroPatInicio');
+            if (ini && /^\d{4}-\d{2}-\d{2}$/.test(ini)) o.inicio = ini;
+            if (_huaroMinDeHHMM(val('huaroPatHIni')) != null) o.horaIni = val('huaroPatHIni');
+            if (_huaroMinDeHHMM(val('huaroPatHFin')) != null) o.horaFin = val('huaroPatHFin');
             _huaroPatGuardarCfg(cfg);
             renderPanelHuaro();
         }
+        // Aplica "Riegan a la vez = n" a la bocatoma elegida (botón del aviso de ciclo).
+        function huaroPatUsarNecesarios(n) {
+            if (!_huaroBocSel || !(n > 0)) return;
+            const cfg = _huaroPatCfg();
+            (cfg.boc[_huaroBocSel] = cfg.boc[_huaroBocSel] || {}).simultaneos = n;
+            _huaroPatGuardarCfg(cfg);
+            renderPanelHuaro();
+        }
+        // Edición desde la tabla "Parámetros por bocatoma del comité".
+        function huaroPatBocCfg(boc, campo, valor) {
+            const cfg = _huaroPatCfg();
+            const o = cfg.boc[boc] = cfg.boc[boc] || {};
+            if (campo === 'caudal') {
+                const q = parseFloat(valor);
+                if (valor === '' || !(q > 0)) delete o.caudal; else o.caudal = q;
+                delete _huaroCaudalTemp[boc];
+            } else if (campo === 'simultaneos') {
+                const n = parseInt(valor, 10); if (n > 0) o.simultaneos = n;
+            } else if (campo === 'inicio') {
+                if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) o.inicio = valor;
+            } else if (campo === 'horaIni' || campo === 'horaFin') {
+                if (_huaroMinDeHHMM(valor) != null) o[campo] = valor;
+            }
+            _huaroPatGuardarCfg(cfg);
+            renderPanelHuaro();
+        }
+        // Tabla de parámetros editables de TODAS las bocatomas del comité elegido
+        // (caudal, día y hora de inicio, hora de término, usuarios a la vez) con el
+        // ciclo resultante — se ajusta aquí antes de "Programar todas".
+        function _huaroPatTablaBocatomasHtml(comite) {
+            const m = window._huaroComitePorBoc || {};
+            const bocs = _huaroOrden.filter(b => m[b] === comite);
+            if (!bocs.length) return '';
+            const semanaISO = _huaroSemanaSeleccionada();
+            const hh = min => String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
+            const q = s => String(s).replace(/'/g, "\\'");
+            const inp = 'padding:3px 5px;font-size:12px;border:1px solid #b7bfca;border-radius:4px;';
+            const filas = bocs.map(b => {
+                const p = _huaroPatBoc(b, semanaISO);
+                const us = _huaroPadron[b] || [];
+                // ciclo: se calcula con un solo día de campaña (solo importa la plantilla de una pasada)
+                const r = HuaroCore.huaroCronogramaCampana({
+                    usuarios: us, caudalLs: p.caudal, desdeISO: p.inicio, hastaISO: p.inicio,
+                    frecuenciaDias: _huaroPatCfg().frecuencia, simultaneos: p.simultaneos,
+                    ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
+                    excluidos: _huaroLeerCampana(b).excluidos,
+                });
+                const ciclo = r.excedeFrecuencia
+                    ? `<span style="color:#b26a00;font-weight:700;" title="Con ${p.simultaneos} a la vez, recorrer a todos toma ${r.pasadaDias} días. Para cumplir ${r.frecuenciaDias} días harían falta ${r.simultaneosNecesarios || 'muchos más'} a la vez.">⚠ cada ${r.periodoDias} d</span> <a href="javascript:void(0)" onclick="huaroPatBocCfg('${q(b)}','simultaneos',${r.simultaneosNecesarios || p.simultaneos})" title="Poner los usuarios a la vez necesarios para cumplir ${r.frecuenciaDias} días">(usar ${r.simultaneosNecesarios || '—'})</a>`
+                    : `<span style="color:#1f6b3a;">✔ cada ${r.periodoDias} d</span>`;
+                return `<tr>
+                    <td style="text-align:left;">${escapeHtml(b)}</td>
+                    <td style="text-align:center;">${us.length}</td>
+                    <td style="text-align:center;"><input type="number" min="0" step="0.1" value="${p.caudal || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)"> ${p.caudalEditado ? '<span title="Editado (el del esquema era distinto)">✎</span>' : ''}</td>
+                    <td style="text-align:center;"><input type="date" value="${p.inicio}" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','inicio',this.value)"></td>
+                    <td style="text-align:center;"><input type="time" value="${hh(p.horaIniMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaIni',this.value)"></td>
+                    <td style="text-align:center;"><input type="time" value="${hh(p.horaFinMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaFin',this.value)"></td>
+                    <td style="text-align:center;"><input type="number" min="1" max="60" step="1" value="${p.simultaneos}" style="${inp}width:56px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','simultaneos',this.value)"></td>
+                    <td style="text-align:center;font-size:11px;white-space:nowrap;">${ciclo}</td>
+                </tr>`;
+            }).join('');
+            return `
+                <div class="huaro-card">
+                    <label style="font-weight:700;font-size:13px;">⚙️ Parámetros por bocatoma del comité (editables)</label>
+                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día y cuántos usuarios riegan a la vez. Lo que cambies aquí se usa al programar (una por una o todas) y se guarda en este navegador. El caudal precargado es el del esquema hidráulico.</div>
+                    <div style="overflow-x:auto;">
+                    <table class="huaro-tabla">
+                        <thead><tr><th style="text-align:left;">Bocatoma</th><th>Usuarios</th><th>Caudal (l/s)</th><th>Día de inicio</th><th>Hora inicio</th><th>Hora término</th><th>A la vez</th><th>Ciclo</th></tr></thead>
+                        <tbody>${filas}</tbody>
+                    </table>
+                    </div>
+                </div>`;
+        }
+
         // Programa TODA la campaña de la bocatoma (inicio → hoy) y la deja
         // repartida en el PDA de cada semana (alimenta G-1…G-4 por semana).
         function _huaroProgramarCampanaPat(boc, caudalLs) {
             const semanaSel = _huaroSemanaSeleccionada();
+            // El caudal con el que se programa queda como el de la bocatoma (editable) si difiere del del esquema.
+            { const cfg = _huaroPatCfg(); const masa = HuaroCore.huaroMasaDeAgua(boc);
+              if (!(masa && masa.caudalLs === caudalLs)) { (cfg.boc[boc] = cfg.boc[boc] || {}).caudal = caudalLs; _huaroPatGuardarCfg(cfg); } }
             const { crono, rango } = _huaroPatCronograma(boc, caudalLs);
             if (!crono) return { semanas: 0, rango, crono: null };
             // Semanas del rango: se reescribe lo de esta bocatoma en cada una
@@ -4084,8 +4204,7 @@ const COMISIONES = {
             const comiteAct = soloComite ? _huaroComiteActivo() : '';
             const mC = window._huaroComitePorBoc || {};
             (soloComite ? _huaroOrden.filter(b => mC[b] === comiteAct) : _huaroOrden).forEach(boc => {
-                const masa = HuaroCore.huaroMasaDeAgua(boc);
-                const q = parseFloat(_huaroCaudalTemp[boc]) || (masa && masa.caudalLs) || 0;
+                const q = parseFloat(_huaroCaudalTemp[boc]) || _huaroPatBoc(boc).caudal || 0;
                 if (!(q > 0)) { sinCaudal.push(boc); return; }
                 const r = _huaroProgramarCampanaPat(boc, q);
                 delete _huaroCaudalTemp[boc];
@@ -4163,7 +4282,7 @@ const COMISIONES = {
                 const necesarios = c.necesarios || '—';
                 const info = document.getElementById('huaroCicloInfoBoc');
                 if (info) info.innerHTML = c.excede
-                    ? `⚠️ Con ${c.simultaneos} a la vez, recorrer a todos toma <b>${c.pasadaDias} días</b>: cada usuario riega cada <b>${c.periodoDias}</b> (no cada ${c.frecuencia}). Para cumplir ${c.frecuencia} días harían falta ~<b>${necesarios}</b> a la vez.`
+                    ? `⚠️ Con ${c.simultaneos} a la vez, recorrer a todos toma <b>${c.pasadaDias} días</b>: cada usuario riega cada <b>${c.periodoDias}</b> (no cada ${c.frecuencia}). Para cumplir ${c.frecuencia} días harían falta ~<b>${necesarios}</b> a la vez. ${c.necesarios ? `<a href="javascript:void(0)" onclick="huaroPatUsarNecesarios(${c.necesarios})">Usar ${c.necesarios} a la vez</a>` : ''}`
                     : `✔ Recorrer a todos toma ${c.pasadaDias} días; cada usuario riega cada ${c.periodoDias} días.`;
             }
             setTxt('huaroVolBoc', a.volumenTotalM3.toFixed(2) + ' m³');
@@ -4238,6 +4357,7 @@ const COMISIONES = {
 
                 const caudalIni = (_huaroCaudalTemp[boc] != null && _huaroCaudalTemp[boc] !== '')
                     ? _huaroCaudalTemp[boc]
+                    : (window._huaroPerfilKey === 'PATACANCHA' && _huaroPatBoc(boc).caudal > 0) ? _huaroPatBoc(boc).caudal
                     : (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
                         ? pdaGuardado.caudales[boc]
                         : (masa && masa.caudalLs != null ? masa.caudalLs : '');
@@ -4377,6 +4497,7 @@ const COMISIONES = {
                     </label>
                     <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités programados.</div>
                 </div>` : ''}
+                ${_esPat ? _huaroPatTablaBocatomasHtml(_comiteAct) : ''}
                 ${window._huaroPerfilKey === 'PATACANCHA' ? `
                 <div class="huaro-card" style="border-color:#2f7d6d;background:#f1f8f6;">
                     <label style="font-weight:700;font-size:14px;">⚙️ Generar los Anexos G-1, G-2, G-3 y G-4 de toda la campaña<br>
@@ -4428,10 +4549,20 @@ const COMISIONES = {
                 const colPend = a.sinUsuarios
                     ? '<span style="color:#6b7280;">sin usuarios</span>'
                     : (a.nPendientes ? a.nPendientes + ' (' + a.areaPendienteHa.toFixed(2) + ' ha)' : '0');
-                const dfechas = [...new Set((_huaroResultados[b].programados || []).map(p => p.fechaISO))]
-                    .sort().map(iso => parseInt(String(iso).slice(8, 10), 10));
+                // Días con riego: desde el inicio de cada turno hasta su término (un turno
+                // largo cubre varios días aunque nadie "empiece" en los intermedios).
+                const _setDias = new Set();
+                (_huaroResultados[b].programados || []).forEach(p => {
+                    let d = p.fechaISO; const t = p.fechaTerminoISO || p.fechaISO;
+                    let guard = 0;
+                    while (d <= t && guard++ < 40) { _setDias.add(d); d = _huaroSumarDiasHuaroHist(d, 1); }
+                });
+                const dfechas = [..._setDias].sort().filter(iso => iso >= (a.semanaInicioISO || '') && iso <= (a.semanaFinISO || '9999'))
+                    .map(iso => parseInt(String(iso).slice(8, 10), 10));
                 const colDias = dfechas.length ? 'Días ' + dfechas.join(', ') : '—';
-                return `<tr><td>${escapeHtml(b)}</td><td style="text-align:center;">${a.nUsuarios}</td>
+                const _delPadron = (a.usuariosPadron && a.usuariosPadron > a.nUsuarios)
+                    ? ` <span style="font-size:10px;color:#b26a00;" title="Esta semana riegan ${a.nUsuarios} de los ${a.usuariosPadron} usuarios del padrón: con ${a.simultaneos} a la vez, cada usuario riega cada ${a.cicloDias} días.">de ${a.usuariosPadron} ⚠ ciclo ${a.cicloDias} d</span>` : '';
+                return `<tr><td>${escapeHtml(b)}</td><td style="text-align:center;">${a.nUsuarios}${_delPadron}</td>
                     <td style="text-align:right;">${a.areaProgramadaHa.toFixed(2)}</td>
                     <td style="text-align:right;">${a.volumenTotalM3.toFixed(2)}</td>
                     <td style="text-align:center;" title="Fecha del mes de los días en que se programó riego">${colDias}</td>

@@ -591,6 +591,7 @@ function huaroCronogramaCampana(opts) {
                 volumenTotalM3: prog.reduce((s, p) => s + (p.volumenM3 || 0), 0),
                 diasUsados, caudalPorDia, nPendientes: 0, areaPendienteHa: 0,
                 simultaneos: lanes, cicloContinuo: true, sinUsuarios: false,
+                usuariosPadron: usuarios.length, cicloDias: periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > frecuencia,
             },
         };
     });
