@@ -26,12 +26,54 @@ const HUARO_H_POR_TOPO      = 1.5;
 const HUARO_MIN_INICIO_DIA  = 4 * 60;   // 04:00
 const HUARO_MIN_FIN_DIA     = 20 * 60;  // 20:00
 const HUARO_DIAS_SEMANA     = 7;
-const HUARO_JUNTA  = 'JUNTA DE USUARIOS DEL SECTOR HIDRÁULICO MENOR MEDIO VILCANOTA MAPACHO';
-const HUARO_SUBSECTOR = 'SUB SECTOR HIDRÁULICO LAGUNA PUMACOCHA-HUARO';
-const HUARO_COMISION_NOMBRE = 'COMISIÓN DE REGANTES DE HUARO';
-const HUARO_FUENTE = 'QUEBRADA HUARO';
-const HUARO_AAA = 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA';
-const HUARO_ALA = 'ADMINISTRACIÓN LOCAL DE AGUA CUSCO';
+// Datos institucionales — dependen de la comisión activa (Huaro por defecto);
+// cambian con huaroAplicarPerfil(key). Son `let` (no `const`) por eso.
+let HUARO_JUNTA  = 'JUNTA DE USUARIOS DEL SECTOR HIDRÁULICO MENOR MEDIO VILCANOTA MAPACHO';
+let HUARO_SUBSECTOR = 'SUB SECTOR HIDRÁULICO LAGUNA PUMACOCHA-HUARO';
+let HUARO_COMISION_NOMBRE = 'COMISIÓN DE REGANTES DE HUARO';
+let HUARO_FUENTE = 'QUEBRADA HUARO';
+let HUARO_AAA = 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA';
+let HUARO_ALA = 'ADMINISTRACIÓN LOCAL DE AGUA CUSCO';
+
+// ── Perfiles de comisión que usan este mismo motor por topos ──
+// El motor (turno = topos × 1.5 h, ventana 04:00-20:00, programación por
+// bocatoma, Anexos G-1/G-2/G-3/G-4) es idéntico; solo cambian los datos
+// institucionales, el origen del padrón y cómo se obtienen los topos.
+//   toposDesdeArea: 'columna' → el padrón trae una columna TOPOS (Huaro);
+//                   'cuarto'  → se calculan del área (área/0.33 al ¼ de topo
+//                   más cercano, mínimo ¼) — padrón sin columna de topos.
+const HUARO_PERFILES = {
+    HUARO: {
+        titulo: 'Huaro', archivoPadron: 'PADRON1_3.xlsx', toposDesdeArea: 'columna',
+        junta: 'JUNTA DE USUARIOS DEL SECTOR HIDRÁULICO MENOR MEDIO VILCANOTA MAPACHO',
+        subsector: 'SUB SECTOR HIDRÁULICO LAGUNA PUMACOCHA-HUARO',
+        comisionNombre: 'COMISIÓN DE REGANTES DE HUARO',
+        fuente: 'QUEBRADA HUARO',
+        aaa: 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA',
+        ala: 'ADMINISTRACIÓN LOCAL DE AGUA CUSCO',
+        prefijoStorage: 'huaro',
+    },
+    PATACANCHA: {
+        titulo: 'Patacancha', archivoPadron: 'PADDRON - PATACANCHA.xlsx', toposDesdeArea: 'cuarto',
+        junta: 'JUNTA DE USUARIOS DEL SECTOR HIDRAULICO MENOR MEDIO VILCANOTA MAPACHO',
+        subsector: 'COMISION DE USUARIOS DEL SUB SECTOR HIDRAULICO QUEBRADA PATACANCHA- YURCAMAYU - OLLANTAYTAMBO',
+        comisionNombre: 'COMISION DE USUARIOS DEL SUB SECTOR HIDRAULICO QUEBRADA PATACANCHA- YURCAMAYU - OLLANTAYTAMBO',
+        fuente: 'RÍOS PATACANCHA Y YURACMAYO',
+        aaa: 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA',
+        ala: 'ADMINISTRACIÓN LOCAL DE AGUA ALTO URUBAMBA',
+        prefijoStorage: 'patacancha',
+    },
+};
+let HUARO_PERFIL_KEY = 'HUARO';
+function huaroPerfilActual() { return HUARO_PERFILES[HUARO_PERFIL_KEY] || HUARO_PERFILES.HUARO; }
+function huaroAplicarPerfil(key) {
+    const p = HUARO_PERFILES[key];
+    if (!p) return false;
+    HUARO_PERFIL_KEY = key;
+    HUARO_JUNTA = p.junta; HUARO_SUBSECTOR = p.subsector; HUARO_COMISION_NOMBRE = p.comisionNombre;
+    HUARO_FUENTE = p.fuente; HUARO_AAA = p.aaa; HUARO_ALA = p.ala;
+    return true;
+}
 const HUARO_DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const HUARO_DIAS_ABREV  = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'];
 
@@ -287,6 +329,70 @@ function huaroParsearPadronHoja(filas2D, sheetName) {
 
     const bocatoma = (bocatomaDetectada || String(sheetName || '').replace(/_+$/, '').replace(/\s+/g, ' ').trim() || 'SIN NOMBRE');
     return { bocatoma, usuarios };
+}
+
+// ── Topos a partir del ÁREA (padrones sin columna de topos, ej. Patacancha) ──
+// 1 topo = 0.33 ha. Se redondea al ¼ de topo más cercano (mínimo ¼): en el
+// padrón de Patacancha abundan 0.17 ha (½ topo), 0.33 (1), 0.085 (¼) y
+// 1.666 (5 topos); las áreas medidas exactas (0.4199 ha) quedan al ¼ más
+// cercano (1¼ topo). Un área ≤ 0 se trata como el mínimo (¼ topo).
+function huaroToposDesdeArea(areaHa) {
+    const a = parseFloat(areaHa) || 0;
+    return Math.max(0.25, Math.round((a / HUARO_HA_POR_TOPO) * 4) / 4);
+}
+
+// ── Parser de una hoja del padrón de PATACANCHA ──
+// Cada hoja es un comité de usuarios y puede traer VARIAS bocatomas, una tras
+// otra, cada una anunciada por una fila "BOCATOMA <nombre>" (o "BOCATOMA - <nombre>"
+// bajo un título "BLOQUE DE RIEGO …"). Columnas: A = nombre del usuario, B = área
+// (ha; a veces como texto "0.3300"). Se ignoran títulos, encabezados
+// ("NOMBRES Y APELLIDOS | AREA (HA)") y filas sin área. SheetJS no repite el valor
+// de las celdas combinadas (ExcelJS sí) — se acepta cualquiera de los dos.
+// Devuelve [{ bocatoma, comite, usuarios:[{nOrden,nombre,apellidos,nombres,areaHa,topos,toposTexto}] }].
+function huaroParsearPadronPatacancha(filas2D, sheetName) {
+    const filas = Array.isArray(filas2D) ? filas2D : [];
+    // La columna del nombre puede no ser la 0 si SheetJS descartó columnas vacías
+    // a la izquierda: se toma la primera columna con texto en la fila.
+    const bocatomas = [];
+    let actual = null;
+    let comite = '';
+    const limpiar = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+    const numero = (v) => {
+        if (typeof v === 'number') return v;
+        const t = limpiar(v).replace(',', '.');
+        return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
+    };
+    for (let i = 0; i < filas.length; i++) {
+        const fila = filas[i] || [];
+        const celdas = [];
+        for (let c = 0; c < fila.length; c++) if (limpiar(fila[c]) !== '') celdas.push({ c, v: fila[c] });
+        if (!celdas.length) continue;
+        const texto = limpiar(celdas[0].v);
+        const area = celdas.length > 1 ? numero(celdas[1].v) : NaN;
+        const norm = _huaroNormHdr(texto);
+        // Separador de bocatoma
+        const mBoc = texto.match(/^BOCATOMA\b\s*[-–:]?\s*(.*)$/i);
+        if (mBoc && !isFinite(area)) {
+            const nombre = limpiar(mBoc[1]).toUpperCase() || ('BOCATOMA ' + (bocatomas.length + 1));
+            actual = { bocatoma: nombre, comite: comite || limpiar(sheetName), usuarios: [] };
+            bocatomas.push(actual);
+            continue;
+        }
+        if (!isFinite(area)) {
+            // Primer título de la hoja = nombre del comité
+            if (!comite && !actual && /COMIT/i.test(norm)) comite = texto;
+            continue; // títulos, "BLOQUE DE RIEGO …", encabezados
+        }
+        if (!actual) continue; // área suelta antes de cualquier bocatoma
+        if (/^(NOMBRES|APELLIDOS)\b/.test(norm) || !texto) continue;
+        const n = actual.usuarios.length + 1;
+        actual.usuarios.push({
+            nOrden: n, nombre: texto, apellidos: texto, nombres: '',
+            areaHa: area, topos: huaroToposDesdeArea(area), toposTexto: '',
+        });
+    }
+    bocatomas.forEach(b => { if (!b.comite) b.comite = limpiar(sheetName); });
+    return bocatomas.filter(b => b.usuarios.length);
 }
 
 // clave estable de un usuario dentro de un padrón cargado
@@ -869,8 +975,11 @@ function huaroDocumentoImprimible(titulo, fragmentoHtml, orientacion) {
 if (typeof window !== 'undefined') {
     window.HuaroCore = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
-        HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        // Datos institucionales: getters (cambian con huaroAplicarPerfil).
+        get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
+        get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
+        get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -883,7 +992,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroParsearTopos, huaroParsearPadronHoja, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,

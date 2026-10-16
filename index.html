@@ -1241,6 +1241,9 @@
                     <button onclick="seleccionarComision('HUARO')" class="btn-comision" style="background:linear-gradient(135deg, #6b4a2e 0%, #4a3020 100%);">
                         🌾 Comisión de Regantes de Huaro
                     </button>
+                    <button onclick="seleccionarComision('PATACANCHA')" class="btn-comision" style="background:linear-gradient(135deg, #2f7d6d 0%, #1d5448 100%);">
+                        🏔️ Sub Sector Hidráulico Quebrada Patacancha - Yuracmayu (Ollantaytambo)
+                    </button>
                 </div>
             </div>
         </div>
@@ -1900,6 +1903,19 @@ const COMISIONES = {
         colorBtnHover: "#4a3020",
         colorStatCard: "linear-gradient(135deg, #a5794a 0%, #6b4a2e 100%)",
     },
+    // Comisión de Usuarios del Sub Sector Hidráulico Quebrada Patacancha - Yuracmayu
+    // - Ollantaytambo (Cusco) — mismo modelo por topos que Huaro (motor en
+    // assets/core/huaro.js, perfil 'PATACANCHA'); padrón con 4 comités / 17 bocatomas.
+    PATACANCHA: {
+        nombre: "COMISIÓN DE USUARIOS DEL SUB SECTOR HIDRÁULICO QUEBRADA PATACANCHA - YURACMAYU - OLLANTAYTAMBO",
+        unidad: "Junta de Usuarios del Sector Hidráulico Menor Medio Vilcanota Mapacho",
+        logo: null,
+        colorHeader: "linear-gradient(135deg, #2f7d6d 0%, #1d5448 100%)",
+        colorBg: "linear-gradient(135deg, #5fae9c 0%, #2f7d6d 100%)",
+        colorBtn: "#2f7d6d",
+        colorBtnHover: "#1d5448",
+        colorStatCard: "linear-gradient(135deg, #5fae9c 0%, #2f7d6d 100%)",
+    },
 };
 
 
@@ -1913,6 +1929,7 @@ const COMISIONES = {
             'MI-2025$riego':   'MARGEN_IZQUIERDA',
             'EA-2025$riego':   'EL_ARENAL',
             'HU-2025$riego':   'HUARO',
+            'PA-2025$riego':   'PATACANCHA',
             'CHIRA-admin$2025': 'ADMIN',
         };
 
@@ -2153,7 +2170,7 @@ const COMISIONES = {
             iniciarLatidoPresencia(key);
 
             // HUARO: modelo por topos, flujo propio (assets/core/huaro.js).
-            if (key === 'HUARO') activarModoHuaro();
+            if (key === 'HUARO' || key === 'PATACANCHA') activarModoHuaro(key);
             else desactivarModoHuaro();
 
             // CIENEGUILLO: barra lateral simplificada (ver _aplicarModoCieneguilloSidebar).
@@ -3550,12 +3567,30 @@ const COMISIONES = {
             document.head.appendChild(s);
         }
 
-        function activarModoHuaro() {
+        // `key`: 'HUARO' (por defecto) o 'PATACANCHA' — mismo motor por topos,
+        // distinto perfil institucional/padrón (ver HUARO_PERFILES, huaro.js).
+        function activarModoHuaro(key) {
+            key = key || 'HUARO';
             _huaroInyectarEstilo();
+            // Al pasar de una comisión por topos a la otra (Huaro ↔ Patacancha)
+            // se descarta el padrón y los resultados de la anterior.
+            if (window._modoHuaro && window._huaroPerfilKey && window._huaroPerfilKey !== key) {
+                _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null; _huaroSemanaActualISO = null;
+                _huaroMesSel = null; _huaroAnioSel = null;
+                _huaroHorarioTemp = {}; _huaroCaudalTemp = {}; _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null;
+                window._huaroOrdenBocatomas = [];
+                window._huaroComitePorBoc = {};
+                tomasData = {};
+                workbook = null;
+                if (typeof tomaSelect !== 'undefined' && tomaSelect) tomaSelect.innerHTML = '<option value="">-- Primero carga el archivo --</option>';
+            }
+            window._huaroPerfilKey = key;
+            if (window.HuaroCore) HuaroCore.huaroAplicarPerfil(key);
+            const perfil = (window.HuaroCore && HuaroCore.huaroPerfilActual()) || { titulo: 'Huaro', archivoPadron: 'PADRON1_3.xlsx' };
             window._modoHuaro = true;
 
             const lblFile = document.querySelector('label[for="fileUpload"]');
-            if (lblFile) lblFile.textContent = '📁 Cargar Padrón Huaro (PADRON1_3.xlsx)';
+            if (lblFile) lblFile.textContent = '📁 Cargar Padrón ' + perfil.titulo + ' (' + perfil.archivoPadron + ')';
             const lblToma = document.querySelector('label[for="tomaSelect"]');
             if (lblToma) lblToma.textContent = '🚰 Bocatoma';
 
@@ -3574,9 +3609,9 @@ const COMISIONES = {
             if (_huaroOrden.length) renderPanelHuaro();
             else {
                 const ca = document.getElementById('contentArea');
-                if (ca) ca.innerHTML = '<div class="welcome-screen"><div class="welcome-icon">🌾</div>'
-                    + '<h2>Comisión de Regantes de Huaro</h2>'
-                    + '<p>Carga el padrón <strong>PADRON1_3.xlsx</strong> para programar el PDA por topos<br>'
+                if (ca) ca.innerHTML = '<div class="welcome-screen"><div class="welcome-icon">' + (key === 'PATACANCHA' ? '🏔️' : '🌾') + '</div>'
+                    + '<h2>' + (key === 'PATACANCHA' ? 'Comisión de Usuarios — Quebrada Patacancha · Yuracmayu · Ollantaytambo' : 'Comisión de Regantes de Huaro') + '</h2>'
+                    + '<p>Carga el padrón <strong>' + escapeHtml(perfil.archivoPadron) + '</strong> para programar el PDA por topos<br>'
                     + 'y generar los Anexos G-2, G-3 y G-4.</p></div>';
             }
         }
@@ -3598,6 +3633,9 @@ const COMISIONES = {
             _huaroMesSel = null; _huaroAnioSel = null;
             _huaroHorarioTemp = {}; _huaroCaudalTemp = {}; _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null;
             window._huaroOrdenBocatomas = [];
+            window._huaroComitePorBoc = {};
+            window._huaroPerfilKey = null;
+            if (window.HuaroCore) HuaroCore.huaroAplicarPerfil('HUARO');
             tomasData = {};
             workbook = null;
             if (typeof tomaSelect !== 'undefined' && tomaSelect) {
@@ -3648,17 +3686,26 @@ const COMISIONES = {
             _huaroPadron = {}; _huaroOrden = []; _huaroResultados = null;
             tomaSelect.innerHTML = '<option value="">-- Selecciona una bocatoma --</option>';
 
+            window._huaroComitePorBoc = {};
+            const esPatacancha = window._huaroPerfilKey === 'PATACANCHA';
             (workbook.SheetNames || []).forEach(sn => {
                 const data = XLSX.utils.sheet_to_json(workbook.Sheets[sn], { header: 1 });
                 if (!data || data.length < 3) return;
-                const parsed = HuaroCore.huaroParsearPadronHoja(data, sn);
-                if (!parsed.usuarios.length) return;
-                let boc = parsed.bocatoma;
-                if (_huaroPadron[boc]) boc = boc + ' (' + sn + ')';
-                _huaroPadron[boc] = parsed.usuarios;
-                _huaroOrden.push(boc);
-                tomasData[boc] = parsed.usuarios;
-                tomaSelect.innerHTML += `<option value="${escapeHtml(boc)}">${escapeHtml(boc)}</option>`;
+                // Huaro: una hoja = una bocatoma. Patacancha: una hoja = un comité
+                // con VARIAS bocatomas ("BOCATOMA …" separa cada una).
+                const parsedLista = esPatacancha
+                    ? HuaroCore.huaroParsearPadronPatacancha(data, sn)
+                    : [HuaroCore.huaroParsearPadronHoja(data, sn)];
+                parsedLista.forEach(parsed => {
+                    if (!parsed.usuarios.length) return;
+                    let boc = parsed.bocatoma;
+                    if (_huaroPadron[boc]) boc = boc + ' (' + sn + ')';
+                    _huaroPadron[boc] = parsed.usuarios;
+                    _huaroOrden.push(boc);
+                    if (parsed.comite) window._huaroComitePorBoc[boc] = parsed.comite;
+                    tomasData[boc] = parsed.usuarios;
+                    tomaSelect.innerHTML += `<option value="${escapeHtml(boc)}">${escapeHtml(boc)}</option>`;
+                });
             });
             window._huaroOrdenBocatomas = _huaroOrden.slice();
 
@@ -3667,8 +3714,14 @@ const COMISIONES = {
         }
 
         // ── Persistencia ──
-        function _huaroKeyCampana(boc) { return 'cusshmi_huaro_campana__HUARO__' + boc; }
-        function _huaroKeyPda(iso) { return 'cusshmi_huaro_pda__' + iso; }
+        // Prefijo de localStorage por comisión: Huaro conserva las claves de
+        // siempre ('cusshmi_huaro_…'); Patacancha usa las suyas para no mezclar
+        // campañas ni PDA guardados entre las dos.
+        function _huaroPrefijoStorage() {
+            return (window._huaroPerfilKey === 'PATACANCHA') ? 'cusshmi_patacancha_' : 'cusshmi_huaro_';
+        }
+        function _huaroKeyCampana(boc) { return _huaroPrefijoStorage() + 'campana__' + (window._huaroPerfilKey === 'PATACANCHA' ? 'PATACANCHA' : 'HUARO') + '__' + boc; }
+        function _huaroKeyPda(iso) { return _huaroPrefijoStorage() + 'pda__' + iso; }
         function _huaroLeerCampana(boc) {
             // El PDA es semanal (se reprograman los usuarios elegibles cada
             // semana), PERO en una bocatoma que no alcanza a atender a todo su
@@ -3709,8 +3762,9 @@ const COMISIONES = {
             const semanas = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (!key || key.indexOf('cusshmi_huaro_pda__') !== 0) continue;
-                const iso = key.slice('cusshmi_huaro_pda__'.length);
+                const prefijoPda = _huaroPrefijoStorage() + 'pda__';
+                if (!key || key.indexOf(prefijoPda) !== 0) continue;
+                const iso = key.slice(prefijoPda.length);
                 const pda = _huaroLeerPda(iso);
                 if (!pda) continue;
                 const bocs = Object.entries(pda.resultados || {}).filter(([, r]) => r && (r.programados || []).length > 0);
@@ -3753,7 +3807,7 @@ const COMISIONES = {
             const modalHtml = `
             <div id="modalHuaroHistorial" class="modal-overlay active" style="z-index:99996;">
                 <div class="modal-container" style="max-width:760px;max-height:85vh;overflow-y:auto;text-align:left;">
-                    <h3 style="margin-top:0;">🕒 Historial — Semanas trabajadas (Huaro)</h3>
+                    <h3 style="margin-top:0;">🕒 Historial — Semanas trabajadas (${window._huaroPerfilKey === 'PATACANCHA' ? 'Patacancha' : 'Huaro'})</h3>
                     <p class="huaro-mini" style="margin-top:0;">Guardado en este navegador (no se sincroniza con otros dispositivos). Elige "Ver" para abrir esa semana en el PDA.</p>
                     <div style="overflow-x:auto;">
                         <table class="huaro-tabla" style="width:100%;">
@@ -4003,7 +4057,7 @@ const COMISIONES = {
                 <div class="huaro-detalle">
                     <div class="huaro-detalle-head">
                         <h3>🚰 ${escapeHtml(boc)}${yaProg ? '<span class="huaro-pill">Programada ✓</span>' : ''}</h3>
-                        <span style="font-size:12px;opacity:.9;">${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) : 'Sin licencia mapeada'}</span>
+                        <span style="font-size:12px;opacity:.9;">${masa ? 'Bloque de riego: ' + escapeHtml(masa.bloque) : ((window._huaroComitePorBoc && window._huaroComitePorBoc[boc]) ? 'Comité: ' + escapeHtml(window._huaroComitePorBoc[boc]) : 'Sin licencia mapeada')}</span>
                     </div>
                     <div class="huaro-detalle-body">
                         ${avisoOk}
@@ -4069,12 +4123,12 @@ const COMISIONES = {
                         <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
                         <button class="huaro-btn sec" onclick="huaroBorrarTodasProgramadas()" ${hayAnexos ? '' : 'disabled'} style="margin-left:auto;">🗑 Borrar todas</button>
                     </div>
-                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-1</b> y el <b>Anexo G-2</b> reúnen <b>todas</b> las bocatomas programadas esta semana (en Huaro cada bocatoma es su propio canal de derivación, así que ambos anexos muestran las mismas filas con columnas distintas). El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
+                    <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-1</b> y el <b>Anexo G-2</b> reúnen <b>todas</b> las bocatomas programadas esta semana (en esta comisión cada bocatoma es su propio canal de derivación, así que ambos anexos muestran las mismas filas con columnas distintas). El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
                 </div>`;
 
             ca.innerHTML = `
             <div id="panelHuaro">
-                <h2>🌾 PDA — Comisión de Regantes de Huaro</h2>
+                <h2>${window._huaroPerfilKey === 'PATACANCHA' ? '🏔️ PDA — Sub Sector Hidráulico Quebrada Patacancha · Yuracmayu · Ollantaytambo' : '🌾 PDA — Comisión de Regantes de Huaro'}</h2>
                 <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${HuaroCore.HUARO_H_POR_TOPO} h · se programa una bocatoma a la vez.</p>
 
                 <div class="huaro-card">
@@ -4587,7 +4641,7 @@ const COMISIONES = {
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const datos = _huaroDatosG2();
             const html = HuaroCore.huaroConstruirG1Html(datos);
-            _huaroPanelAnexo('Anexo G-1 — Huaro', html,
+            _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
                 () => _huaroImprimir('Anexo G1', html, 'landscape'),
                 () => _huaroExcelG1Oficial(datos));
         }
@@ -4596,7 +4650,7 @@ const COMISIONES = {
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const datos = _huaroDatosG2();
             const html = HuaroCore.huaroConstruirG2Html(datos);
-            _huaroPanelAnexo('Anexo G-2 — Huaro', html,
+            _huaroPanelAnexo('Anexo G-2 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
                 () => _huaroImprimir('Anexo G2', html, 'landscape'),
                 () => _huaroExcelGOficial(datos, 'G-2'));
         }
@@ -4639,7 +4693,7 @@ const COMISIONES = {
                 <select id="huaroSelG3" style="margin-left:8px;padding:5px 8px;min-width:220px;">
                     ${bocs.map(b => `<option value="${escapeHtml(b)}"${b === bocInicial ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}
                 </select></label><div id="huaroG3Cont" style="margin-top:12px;"></div>`;
-            _huaroPanelAnexo('Anexo G-3 — Huaro', sel,
+            _huaroPanelAnexo('Anexo G-3 — ' + HuaroCore.huaroPerfilActual().titulo + '', sel,
                 () => {
                     const b = document.getElementById('huaroSelG3').value;
                     _huaroImprimir('Anexo G3 ' + b, HuaroCore.huaroConstruirG3Html(_huaroDatosG3De(b)), 'landscape');
@@ -4665,7 +4719,7 @@ const COMISIONES = {
                     <select id="huaroSelG4Usr" style="margin-left:8px;padding:5px 8px;min-width:260px;"></select></label>
                 <button class="huaro-btn sec" id="huaroG4Todos" style="margin-left:14px;">🖨️ Imprimir todas (bocatoma)</button>
                 <div id="huaroG4Cont" style="margin-top:12px;"></div>`;
-            _huaroPanelAnexo('Anexo G-4 — Huaro', html,
+            _huaroPanelAnexo('Anexo G-4 — ' + HuaroCore.huaroPerfilActual().titulo + '', html,
                 () => {
                     const b = document.getElementById('huaroSelG4Boc').value;
                     const idx = +document.getElementById('huaroSelG4Usr').value;
@@ -4812,7 +4866,7 @@ const COMISIONES = {
                 const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
                 const datos = _huaroParsearG2ExcelParaG1(wb);
                 const html = HuaroCore.huaroConstruirG1Html(datos);
-                _huaroPanelAnexo('Anexo G-1 — Huaro (desde Excel importado)', html,
+                _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo + ' (desde Excel importado)', html,
                     () => _huaroImprimir('Anexo G1', html, 'landscape'),
                     () => _huaroExcelG1Oficial(datos));
             } catch (e) {
@@ -5098,7 +5152,7 @@ const COMISIONES = {
             // HUARO: modelo por topos — padrón sin cultivo/deuda, 13 bocatomas.
             // Va por su propio parser y panel (assets/core/huaro.js); no toca
             // consolidadoDemandas ni el motor de cultivo.
-            if ((localStorage.getItem('cusshmi_comision') || '') === 'HUARO') {
+            if (['HUARO', 'PATACANCHA'].includes(localStorage.getItem('cusshmi_comision') || '')) {
                 huaroProcesarWorkbook();
                 return;
             }
