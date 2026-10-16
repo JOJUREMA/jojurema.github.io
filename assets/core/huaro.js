@@ -549,6 +549,9 @@ function huaroCronogramaCampana(opts) {
             const absIni = k * periodoDias + t.dia0;
             if (absIni > diasTotales) return;
             const fechaISO = _huaroSumarDias(desdeISO, absIni);
+            // Solo los meses pedidos (opts.mesesIncluidos, 1-12); el ciclo sigue contando desde 'desdeISO'.
+            if (Array.isArray(opts.mesesIncluidos) && opts.mesesIncluidos.length &&
+                opts.mesesIncluidos.indexOf(parseInt(fechaISO.slice(5, 7), 10)) < 0) return;
             const fechaTerminoISO = _huaroSumarDias(desdeISO, k * periodoDias + t.diaFin);
             const tiempoH = t.u.topos * hxt;
             const caudalTurno = (opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) : caudalLs / lanes;

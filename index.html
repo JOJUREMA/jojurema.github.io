@@ -3980,6 +3980,7 @@ const COMISIONES = {
             c.frecuencia = parseInt(c.frecuencia, 10) || 8;
             c.simultaneos = c.simultaneos || {}; // (formato anterior) { boc: n }
             c.inicio = c.inicio || {};           // { 'AAAA': 'AAAA-MM-DD' } inicio de campaña por año
+            c.meses = (Array.isArray(c.meses) && c.meses.length) ? c.meses.map(Number) : null; // null = del inicio de campaña hasta hoy; [6,7] = solo esos meses
             c.boc = c.boc || {};                 // { boc: { caudal, inicio, horaIni, horaFin, simultaneos } } — lo editado por bocatoma
             return c;
         }
@@ -4033,6 +4034,62 @@ const COMISIONES = {
             };
         }
         function _huaroPatSimultaneos(boc) { return _huaroPatBoc(boc).simultaneos; }
+        // ══ Programación por MESES ══ Por defecto la campaña se programa del 1° de junio hasta hoy.
+        // Con "Solo los meses marcados" se programan únicamente los meses elegidos (completos, aunque
+        // sean futuros); el ciclo (cada 8/15 días) sigue contando desde el inicio de campaña, así que
+        // los turnos de un mes encajan con los de los meses vecinos. Las semanas de meses no marcados
+        // no se tocan (lo que ya estuviera programado ahí se conserva).
+        const _HUARO_MESES_CORTO = ['', 'ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+        function _huaroSemanaTocaMeses(lunesISO, meses) {
+            for (let d = 0; d < 7; d++) {
+                const m = parseInt(_huaroSumarDiasHuaroHist(lunesISO, d).slice(5, 7), 10);
+                if (meses.indexOf(m) >= 0) return true;
+            }
+            return false;
+        }
+        function _huaroPatRangoTexto(rango) {
+            const fc = s => s.split('-').reverse().join('/');
+            if (rango.meses) return rango.meses.slice().sort((a, b) => a - b).map(m => _HUARO_MESES_CORTO[m]).join(', ') + ' ' + rango.desdeISO.slice(0, 4);
+            return fc(rango.desdeISO) + ' → ' + fc(rango.hastaISO);
+        }
+        function _huaroPatMesesHtml() {
+            const perfil = HuaroCore.huaroPerfilActual();
+            const meses = _huaroPatCfg().meses;
+            const chips = [];
+            for (let m = perfil.campanaMesIni; m <= perfil.campanaMesFin; m++) {
+                chips.push(`<label style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:12px;${meses ? '' : 'opacity:.45;'}"><input type="checkbox" ${meses && meses.indexOf(m) >= 0 ? 'checked' : ''} ${meses ? '' : 'disabled'} onchange="huaroPatMeses('toggle', ${m})"> ${_HUARO_MESES_CORTO[m]}</label>`);
+            }
+            return `
+                    <div style="margin-top:10px;padding:8px 10px;background:#fff;border:1px solid #cfe3de;border-radius:6px;">
+                        <div style="font-weight:700;font-size:12px;margin-bottom:6px;">📅 ¿Qué meses se programan?</div>
+                        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;">
+                            <label style="font-size:12px;"><input type="radio" name="huaroPatModoMeses" ${meses ? '' : 'checked'} onchange="huaroPatMeses('hoy')"> Del inicio de campaña hasta hoy</label>
+                            <label style="font-size:12px;"><input type="radio" name="huaroPatModoMeses" ${meses ? 'checked' : ''} onchange="huaroPatMeses('meses')"> Solo los meses marcados:</label>
+                            <span>${chips.join('')}</span>
+                            <button class="huaro-btn sec" style="padding:3px 8px;font-size:11px;" onclick="huaroPatMeses('todos')">Todos</button>
+                        </div>
+                    </div>`;
+        }
+        // Cambia la selección de meses; en modo automático re-programa el comité elegido con los meses nuevos.
+        function huaroPatMeses(accion, mes) {
+            const cfg = _huaroPatCfg();
+            const perfil = HuaroCore.huaroPerfilActual();
+            const todos = []; for (let m = perfil.campanaMesIni; m <= perfil.campanaMesFin; m++) todos.push(m);
+            if (accion === 'hoy') cfg.meses = null;
+            else if (accion === 'todos') cfg.meses = todos;
+            else if (accion === 'meses') { const mh = new Date().getMonth() + 1; cfg.meses = [todos.indexOf(mh) >= 0 ? mh : todos[0]]; }
+            else if (accion === 'toggle') {
+                const sel = (cfg.meses || []).slice();
+                const i = sel.indexOf(mes);
+                if (i >= 0) sel.splice(i, 1); else sel.push(mes);
+                cfg.meses = sel.length ? sel.sort((a, b) => a - b) : [mes]; // siempre al menos un mes
+            }
+            _huaroPatGuardarCfg(cfg);
+            window._huaroAutoMsg = '';
+            if (_huaroPatAuto()) _huaroPatAutoProgramarComite(_huaroComiteActivo(), true);
+            renderPanelHuaro();
+        }
+
         function _huaroHoyISO() {
             const d = new Date();
             return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -4051,12 +4108,20 @@ const COMISIONES = {
             const hoy = _huaroHoyISO();
             let hastaISO = hoy > finSemISO ? hoy : finSemISO;
             if (hastaISO > finCampISO) hastaISO = finCampISO;
+            // Modo "solo estos meses": hasta el último día del último mes marcado (completo).
+            if (cfg.meses) {
+                const ult = Math.max.apply(null, cfg.meses);
+                const diaFin = new Date(anio, ult, 0).getDate();
+                hastaISO = anio + '-' + String(ult).padStart(2, '0') + '-' + String(diaFin).padStart(2, '0');
+                if (hastaISO > finCampISO) hastaISO = finCampISO;
+                return { desdeISO, hastaISO, finCampISO, meses: cfg.meses.slice() };
+            }
             return { desdeISO, hastaISO, finCampISO };
         }
         function _huaroPatCronograma(boc, caudalLs, hastaForzadoISO) {
             const semanaISO = _huaroSemanaSeleccionada();
             const rango = _huaroPatRango(semanaISO, boc);
-            if (hastaForzadoISO) rango.hastaISO = hastaForzadoISO;
+            if (hastaForzadoISO && !rango.meses) rango.hastaISO = hastaForzadoISO;
             const camp = _huaroLeerCampana(boc);
             if (rango.hastaISO < rango.desdeISO) return { rango, crono: null };
             const p = _huaroPatBoc(boc, semanaISO);
@@ -4066,6 +4131,7 @@ const COMISIONES = {
                 caudalPorTurnoLs: p.qUsuario, simultaneos: p.simultaneos, horasPorTopo: p.horasPorTopo,
                 ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
                 excluidos: camp.excluidos,
+                mesesIncluidos: rango.meses || null,
             });
             return { rango, crono };
         }
@@ -4094,7 +4160,7 @@ const COMISIONES = {
                                     <span>Riegan a la vez</span>
                                     <span><input type="number" id="huaroPatSimul" value="${p.simultaneos}" min="1" max="60" step="1" onchange="huaroPatCfgCambio()" class="huaro-sel" style="${inpStyle}width:62px;"> usuarios</span>
                                 </div>
-                                <div class="huaro-mini" style="margin-top:6px;">Se programa del <b>${fc(rango.desdeISO)}</b> al <b>${fc(rango.hastaISO)}</b>, de ${hh(p.horaIniMin)} a ${hh(p.horaFinMin)} cada día.</div>
+                                <div class="huaro-mini" style="margin-top:6px;">Se programa <b>${_huaroPatRangoTexto(rango)}</b>, de ${hh(p.horaIniMin)} a ${hh(p.horaFinMin)} cada día.</div>
                                 <div class="huaro-mini" id="huaroCicloInfoBoc" style="margin-top:4px;"></div>
                             </div>`;
         }
@@ -4147,7 +4213,7 @@ const COMISIONES = {
                 hechas.forEach(b => { cfg.auto[b] = true; });
                 _huaroPatGuardarCfg(cfg);
                 const fc = s => s.split('-').reverse().join('/');
-                window._huaroAutoMsg = '✅ Programado automáticamente: ' + hechas.length + ' bocatoma(s) del comité, del ' + fc(rango.desdeISO) + ' al ' + fc(rango.hastaISO) + ' (' + semanas + ' semanas).';
+                window._huaroAutoMsg = '✅ Programado automáticamente: ' + hechas.length + ' bocatoma(s) del comité — ' + _huaroPatRangoTexto(rango) + ' (' + semanas + ' semanas).';
             }
         }
 
@@ -4294,6 +4360,7 @@ const COMISIONES = {
             const lunesFin = HuaroCore.huaroLunesDeLaSemana(rango.hastaISO);
             let n = 0;
             while (lunes <= lunesFin) {
+                if (rango.meses && !_huaroSemanaTocaMeses(lunes, rango.meses)) { lunes = _huaroSumarDiasHuaroHist(lunes, 7); continue; }
                 const res = crono.semanas[lunes];
                 const pdaPrevio = _huaroLeerPda(lunes);
                 if (res || (pdaPrevio && pdaPrevio.resultados && pdaPrevio.resultados[boc])) {
@@ -4338,7 +4405,7 @@ const COMISIONES = {
             const nl = '\n';
             let msg;
             if (ok) {
-                msg = '✅ ' + ok + ' bocatoma(s) programadas — campaña ' + fc(rango.desdeISO) + ' → ' + fc(rango.hastaISO) + ' (' + semanas + ' semanas).' + nl + nl +
+                msg = '✅ ' + ok + ' bocatoma(s) programadas — campaña ' + _huaroPatRangoTexto(rango) + ' (' + semanas + ' semanas).' + nl + nl +
                     'Ya puedes ver los Anexos G-1, G-2, G-3 y G-4 de cada semana (elige la semana arriba).';
                 if (excede.length) msg += nl + nl + '⚠️ El recorrido de todos sus usuarios pasa de 16 días con los usuarios a la vez configurados:' + nl + '· ' + excede.join(nl + '· ');
                 if (sinCaudal.length) msg += nl + nl + 'Sin caudal (no se programaron): ' + sinCaudal.join(', ');
@@ -4623,6 +4690,7 @@ const COMISIONES = {
                             ? 'La campaña (1° de junio → hoy) se programa sola al elegir el comité y con cada cambio de caudal, horas, inicio o usuarios a la vez. Pulsa el botón para pasar a manual.'
                             : 'Manual: nada se programa solo; usa "Programar esta bocatoma" o "Programar todas las bocatomas del comité". Pulsa el botón para volver al modo automático.'}</span>
                     </div>
+                    ${_huaroPatMesesHtml()}
                     ${window._huaroAutoMsg ? `<div class="huaro-aviso-ok" style="margin:8px 0 0;">${escapeHtml(window._huaroAutoMsg)}</div>` : ''}
                     <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités programados.</div>
                 </div>` : ''}
