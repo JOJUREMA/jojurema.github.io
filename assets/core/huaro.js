@@ -71,7 +71,7 @@ const HUARO_PERFILES = {
         // el mismo para todos); campaña de junio a noviembre, programada desde
         // su inicio hasta la fecha actual.
         horasPorTopo: 3, minInicio: 6 * 60, minFin: 16 * 60, refHorasPorTopo: 1.5, // 3 h/topo = valor "sin caudal"; con caudal, ver _huaroPatBoc (regla de tres sobre Huaro)
-        cicloContinuo: true, simultaneos: 2, frecuenciaDias: 8,
+        cicloContinuo: true, simultaneos: 2, frecuenciaDias: 8, simultaneosReferencia: 2,
         campanaMesIni: 6, campanaMesFin: 11,
     },
 };
@@ -147,6 +147,10 @@ function huaroMasaDeAgua(bocatoma) {
     }
     return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
 }
+// Usuarios que riegan a la vez por defecto (2 en general, según los tomeros). Choquebamba
+// Pumamarca (164 usuarios) lleva los necesarios para que el recorrido de todo el padrón dure
+// como máximo 16 días con su caudal de 25 l/s (calculado con el motor; ver tests).
+const HUARO_SIMULTANEOS_PATACANCHA = { 'CHOQUEBAMBAPUMAMARCA': 5 };
 // ── Caudal por bocatoma — PATACANCHA (Esquema Hidráulico "Sub Sector Hidráulico
 // Quebrada Patacancha Yuracmayo", asignado por bocatoma por el sectorista) ──
 // Es el caudal derivado (l/s) que se precarga en cada bocatoma; se puede editar
@@ -160,7 +164,7 @@ const HUARO_CAUDAL_ESQUEMA_PATACANCHA = {
     'MEDIALUNA': 15,
     'CHACCHAPATAJUANDELAYOC': 15,
     'MURIS01': 15,
-    'CHOQUEBAMBAPUMAMARCA': 15,
+    'CHOQUEBAMBAPUMAMARCA': 25, // el esquema indica 15 l/s; el sectorista asigna 25 l/s a esta bocatoma
     'MUSCAPUGIO': 15,
     'MUNAYPATA': 15,
     'CAPULIYOCMARGENIZQUIERDA': 30,
@@ -475,7 +479,14 @@ function huaroCronogramaCampana(opts) {
     const caudalLs = parseFloat(opts.caudalLs) || 0;
     const desdeISO = opts.desdeISO;
     const hastaISO = opts.hastaISO;
-    const frecuencia = Math.max(1, parseInt(opts.frecuenciaDias, 10) || 8);
+    // Regla de los tomeros: si recorrer a TODOS los usuarios dura hasta 'limiteCortoDias' (7)
+    // días, se espera hasta completar 'frecCorta' (8) días para volver a regar; si dura más,
+    // se espera 'frecLarga' (15) días (o lo que dure el recorrido, si es mayor). 'maxDias'
+    // (16) es lo máximo aceptable para el recorrido completo.
+    const frecCorta = Math.max(1, parseInt(opts.frecuenciaCortaDias != null ? opts.frecuenciaCortaDias : opts.frecuenciaDias, 10) || 8);
+    const frecLarga = Math.max(frecCorta, parseInt(opts.frecuenciaLargaDias, 10) || 15);
+    const limiteCorto = Math.max(1, parseInt(opts.limiteCortoDias, 10) || 7);
+    const maxDias = Math.max(limiteCorto, parseInt(opts.maxDias, 10) || 16);
     const lanes = Math.max(1, parseInt(opts.simultaneos, 10) || 2);
     const ini = (opts.ventanaIniMin != null) ? opts.ventanaIniMin : HUARO_MIN_INICIO_DIA;
     const fin = (opts.ventanaFinMin != null) ? opts.ventanaFinMin : HUARO_MIN_FIN_DIA;
@@ -508,16 +519,17 @@ function huaroCronogramaCampana(opts) {
     const diasDePlantilla = (pl) => pl.reduce((mx, t) => Math.max(mx, t.diaFin + 1), 0);
     const plantilla = plantillaPara(lanes);
     const pasadaDias = diasDePlantilla(plantilla);
-    // Usuarios simultáneos que harían falta para cumplir la frecuencia (con el
-    // mismo reparto real de turnos, no solo horas ÷ capacidad).
+    // Usuarios simultáneos que harían falta para que el recorrido completo no pase de
+    // 'maxDias' (con el mismo reparto real de turnos, no solo horas ÷ capacidad).
     let simultaneosNecesarios = lanes;
-    if (pasadaDias > frecuencia) {
+    if (pasadaDias > maxDias) {
         simultaneosNecesarios = null;
         for (let n = lanes + 1; n <= Math.max(usuarios.length, lanes + 1); n++) {
-            if (diasDePlantilla(plantillaPara(n)) <= frecuencia) { simultaneosNecesarios = n; break; }
+            if (diasDePlantilla(plantillaPara(n)) <= maxDias) { simultaneosNecesarios = n; break; }
         }
     }
-    const periodoDias = Math.max(frecuencia, pasadaDias);
+    const periodoDias = pasadaDias <= limiteCorto ? frecCorta : Math.max(frecLarga, pasadaDias);
+    const frecuencia = periodoDias; // (compatibilidad con usos internos)
     const horasPasada = plantilla.reduce((s, t) => s + t.u.topos * hxt, 0);
 
     // ── 2) Repetir la pasada cada 'periodoDias' hasta la fecha ──
@@ -530,7 +542,7 @@ function huaroCronogramaCampana(opts) {
             const fechaISO = _huaroSumarDias(desdeISO, absIni);
             const fechaTerminoISO = _huaroSumarDias(desdeISO, k * periodoDias + t.diaFin);
             const tiempoH = t.u.topos * hxt;
-            const caudalTurno = caudalLs / lanes;
+            const caudalTurno = (opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) : caudalLs / lanes;
             turnos.push({
                 nOrden: t.u.nOrden, nombre: t.u.nombre, apellidos: t.u.apellidos, nombres: t.u.nombres,
                 areaHa: t.u.areaHa, topos: t.u.topos, toposTexto: t.u.toposTexto,
@@ -577,7 +589,7 @@ function huaroCronogramaCampana(opts) {
             const idx = dow(iso);
             if (idx >= 0 && idx < HUARO_DIAS_SEMANA) {
                 minOperacion += suma;
-                caudalPorDia[idx] = caudalLs;
+                caudalPorDia[idx] = (opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) * lanes : caudalLs;
                 diasUsados = Math.max(diasUsados, idx + 1);
             }
         });
@@ -586,7 +598,7 @@ function huaroCronogramaCampana(opts) {
         // todavía no han regado al terminar esta semana quedan "pendientes" y
         // encabezan las semanas siguientes. Con ciclo normal no hay pendientes.
         let pendientesKeys = [], areaPendienteHa = 0;
-        if (pasadaDias > frecuencia) {
+        if (pasadaDias > maxDias) {
             const finSemAbs = Math.round((new Date(_huaroSumarDias(lunes, 6) + 'T00:00:00') - new Date(desdeISO + 'T00:00:00')) / 864e5);
             const kEnd = Math.max(0, Math.floor(finSemAbs / periodoDias));
             plantilla.forEach(t => {
@@ -610,14 +622,14 @@ function huaroCronogramaCampana(opts) {
                 volumenTotalM3: prog.reduce((s, p) => s + (p.volumenM3 || 0), 0),
                 diasUsados, caudalPorDia, nPendientes: pendientesKeys.length, areaPendienteHa,
                 simultaneos: lanes, cicloContinuo: true, sinUsuarios: false,
-                usuariosPadron: usuarios.length, cicloDias: periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > frecuencia,
+                usuariosPadron: usuarios.length, cicloDias: periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > maxDias,
             },
         };
     });
 
     return {
-        semanas, periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > frecuencia,
-        frecuenciaDias: frecuencia, simultaneos: lanes, simultaneosNecesarios,
+        semanas, periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > maxDias,
+        frecuenciaDias: periodoDias, maxDias, limiteCortoDias: limiteCorto, simultaneos: lanes, simultaneosNecesarios,
         nTurnosPasada: plantilla.length, horasPasada,
     };
 }
@@ -1213,7 +1225,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1226,7 +1238,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
