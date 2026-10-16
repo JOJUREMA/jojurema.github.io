@@ -605,12 +605,12 @@ function huaroCronogramaCampana(opts) {
                 diasUsados = Math.max(diasUsados, idx + 1);
             }
         });
-        // PENDIENTES (igual que en Huaro): si recorrer a todo el padrón toma más días
-        // que la frecuencia (no entran todos), los usuarios que en la pasada en curso
-        // todavía no han regado al terminar esta semana quedan "pendientes" y
-        // encabezan las semanas siguientes. Con ciclo normal no hay pendientes.
+        // PENDIENTES (igual que en Huaro): los usuarios del padrón de la bocatoma que, en la
+        // pasada en curso, todavía no han regado al terminar esta semana quedan "pendientes"
+        // (siguen en las semanas siguientes). Se indican en Observaciones del G-2. Si la pasada
+        // ya terminó (espera de 8 o 15 días) no hay pendientes.
         let pendientesKeys = [], areaPendienteHa = 0;
-        if (pasadaDias > maxDias) {
+        {
             const finSemAbs = Math.round((new Date(_huaroSumarDias(lunes, 6) + 'T00:00:00') - new Date(desdeISO + 'T00:00:00')) / 864e5);
             const kEnd = Math.max(0, Math.floor(finSemAbs / periodoDias));
             plantilla.forEach(t => {
