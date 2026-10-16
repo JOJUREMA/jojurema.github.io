@@ -147,10 +147,10 @@ function huaroMasaDeAgua(bocatoma) {
     }
     return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
 }
-// Usuarios que riegan a la vez por defecto (2 en general, según los tomeros). Choquebamba
-// Pumamarca (164 usuarios) lleva los necesarios para que el recorrido de todo el padrón dure
-// como máximo 16 días con su caudal de 25 l/s (calculado con el motor; ver tests).
-const HUARO_SIMULTANEOS_PATACANCHA = { 'CHOQUEBAMBAPUMAMARCA': 5 };
+// Usuarios que riegan a la vez por defecto: 2 en todas (según los tomeros). Aquí se podrían
+// fijar excepciones por bocatoma; con el caudal total fijo, subir los usuarios a la vez no
+// acorta el recorrido (cada uno recibe menos caudal y tarda más).
+const HUARO_SIMULTANEOS_PATACANCHA = {};
 // ── Caudal por bocatoma — PATACANCHA (Esquema Hidráulico "Sub Sector Hidráulico
 // Quebrada Patacancha Yuracmayo", asignado por bocatoma por el sectorista) ──
 // Es el caudal derivado (l/s) que se precarga en cada bocatoma; se puede editar

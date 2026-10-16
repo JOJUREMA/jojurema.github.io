@@ -4013,9 +4013,9 @@ const COMISIONES = {
             // Si se escribe a mano "Horas por topo", esa cifra manda.
             const refQ = cfg.refCaudal > 0 ? cfg.refCaudal : HuaroCore.huaroCaudalReferenciaHuaro();
             const refH = perfil.refHorasPorTopo || 1.5;
-            // Caudal por usuario = caudal de la bocatoma ÷ 2 (los 2 usuarios de referencia de los
-            // tomeros): NO se ajusta al subir los que riegan a la vez ("el caudal no se ajusta").
-            const qUsuario = caudal > 0 ? caudal / (perfil.simultaneosReferencia || 2) : 0;
+            // Caudal por usuario = caudal de la bocatoma ÷ usuarios que riegan a la vez: entre
+            // todos NUNCA se pasa del caudal de la bocatoma (p. ej. 25 l/s → 2 usuarios: 12.5 c/u).
+            const qUsuario = caudal > 0 ? caudal / simultaneos : 0;
             const horasAuto = qUsuario > 0 ? refH * refQ / qUsuario : perfil.horasPorTopo;
             const horasManual = parseFloat(o.horasTopo) > 0;
             return {
@@ -4100,8 +4100,21 @@ const COMISIONES = {
         // día, horas por topo), día de inicio o usuarios a la vez RE-PROGRAMA al
         // instante la campaña de esa bocatoma: se recalculan los días de riego y
         // cuántos usuarios entran cada semana, sin pulsar "Programar".
+        // Modo de programación: AUTOMÁTICO (por defecto) o MANUAL. En automático se programa
+        // sola la campaña al cargar el padrón, al elegir un comité y con cada cambio de caudal,
+        // horas, inicio o usuarios a la vez; en manual solo se programa con los botones.
+        function _huaroPatAuto() { return _huaroPatCfg().modoAuto !== false; }
+        function huaroPatToggleAuto() {
+            const cfg = _huaroPatCfg();
+            cfg.modoAuto = !_huaroPatAuto();
+            _huaroPatGuardarCfg(cfg);
+            window._huaroAutoMsg = '';
+            if (cfg.modoAuto) _huaroPatAutoProgramarComite(_huaroComiteActivo(), true); // al activarlo, re-programa el comité elegido
+            renderPanelHuaro();
+        }
         function _huaroPatAutoProgramar(boc) {
             if (!boc || window._huaroPerfilKey !== 'PATACANCHA') return null;
+            if (!_huaroPatAuto()) return null; // modo manual: no se programa solo
             const q = _huaroPatBoc(boc).caudal;
             if (!(q > 0)) return null; // sin caudal no hay qué programar
             const r = _huaroProgramarCampanaPat(boc, q);
@@ -4113,13 +4126,14 @@ const COMISIONES = {
         // (desde el 1° de junio hasta HOY) con el caudal, horas y usuarios a la vez vigentes.
         // Cada bocatoma se auto-programa una sola vez (marca cfg.auto): si luego se "Quita" o
         // se edita, no se vuelve a pisar sola; para rehacerla se usan los botones de programar.
-        function _huaroPatAutoProgramarComite(comite) {
+        function _huaroPatAutoProgramarComite(comite, forzar) {
             if (window._huaroPerfilKey !== 'PATACANCHA' || !comite) return;
+            if (!forzar && !_huaroPatAuto()) return; // modo manual
             const m = window._huaroComitePorBoc || {};
             const cfg0 = _huaroPatCfg();
             const hechas = [];
             let semanas = 0, rango = null;
-            _huaroOrden.filter(b => m[b] === comite && !(cfg0.auto && cfg0.auto[b])).forEach(b => {
+            _huaroOrden.filter(b => m[b] === comite && (forzar || !(cfg0.auto && cfg0.auto[b]))).forEach(b => {
                 const q = _huaroPatBoc(b).caudal;
                 if (!(q > 0)) return;
                 const r = _huaroProgramarCampanaPat(b, q, _huaroHoyISO());
@@ -4227,7 +4241,15 @@ const COMISIONES = {
                     excluidos: _huaroLeerCampana(b).excluidos,
                 });
                 const ciclo = r.excedeFrecuencia
-                    ? `<span style="color:#b26a00;font-weight:700;" title="Recorrer a todos los usuarios toma ${r.pasadaDias} días (máximo ${r.maxDias}). Con ${r.simultaneosNecesarios || 'muchos más'} usuarios a la vez no pasaría de ${r.maxDias} días.">⚠ recorrido ${r.pasadaDias} d</span> <a href="javascript:void(0)" onclick="huaroPatBocCfg('${q(b)}','simultaneos',${r.simultaneosNecesarios || p.simultaneos})" title="Poner los usuarios a la vez necesarios para que el recorrido no pase de ${r.maxDias} días">(usar ${r.simultaneosNecesarios || '—'})</a>`
+                    ? (() => {
+                        // Sin horas a mano, el tiempo es inverso al caudal por usuario → más usuarios a la vez NO acortan
+                        // el recorrido (el caudal total es el mismo): hace falta más caudal.
+                        const qNec = Math.ceil(p.caudal * r.pasadaDias / r.maxDias);
+                        const aviso = p.horasPorTopoEditado && r.simultaneosNecesarios
+                            ? `<a href="javascript:void(0)" onclick="huaroPatBocCfg('${q(b)}','simultaneos',${r.simultaneosNecesarios})" title="Poner los usuarios a la vez necesarios para que el recorrido no pase de ${r.maxDias} días">(usar ${r.simultaneosNecesarios})</a>`
+                            : `<span style="font-size:10px;color:#6b7280;" title="Con ${p.caudal} l/s el recorrido toma ${r.pasadaDias} días; para ${r.maxDias} días harían falta ~${qNec} l/s.">(~${qNec} l/s)</span>`;
+                        return `<span style="color:#b26a00;font-weight:700;" title="Recorrer a todos los usuarios toma ${r.pasadaDias} días (máximo ${r.maxDias}). El caudal total (${p.caudal} l/s) no alcanza para menos: quedan usuarios pendientes cada semana.">⚠ recorrido ${r.pasadaDias} d</span> ${aviso}`;
+                    })()
                     : `<span style="color:#1f6b3a;" title="El recorrido completo toma ${r.pasadaDias} días; cada usuario vuelve a regar cada ${r.periodoDias} días.">✔ ${r.pasadaDias} d → cada ${r.periodoDias} d</span>`;
                 return `<tr>
                     <td style="text-align:left;">${escapeHtml(b)}</td>
@@ -4244,7 +4266,7 @@ const COMISIONES = {
             return `
                 <div class="huaro-card">
                     <label style="font-weight:700;font-size:13px;">⚙️ Parámetros por bocatoma del comité (editables)</label>
-                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>Cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); se guarda en este navegador. El caudal precargado es el del esquema hidráulico.<br>
+                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>En modo automático cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); en manual, pulsa "Programar". Se guarda en este navegador. El caudal precargado es el del esquema hidráulico.<br>
                         <b>Tiempo de riego proporcional al caudal:</b> tomando Huaro como base (1.5 h por topo = 4.55 h/ha con <input type="number" min="0.1" step="0.1" value="${+_huaroPatBoc(bocs[0], semanaISO).refQ.toFixed(2)}" style="${inp}width:64px;" onchange="huaroPatRefQ(this.value)" title="Caudal por usuario de referencia en Huaro (promedio de sus bocatomas)"> l/s por usuario), en cada bocatoma las horas por topo = 1.5 × referencia ÷ (caudal ÷ usuarios a la vez). A más caudal por usuario, menos horas; mismo volumen por hectárea. Si escribes "Horas/topo" a mano, esa cifra manda (↺ auto la deja otra vez automática).</div>
                     <div style="overflow-x:auto;">
                     <table class="huaro-tabla">
@@ -4376,10 +4398,11 @@ const COMISIONES = {
             if (prev.ciclo) {
                 const c = prev.ciclo;
                 const pb = _huaroPatBoc(_huaroBocSel);
-                const ref = `Tiempo por hectárea: <b>${(pb.horasPorTopo / 0.33).toFixed(2)} h/ha</b> (${pb.horasPorTopo.toFixed(2)} h por topo${pb.horasPorTopoEditado ? ', editado a mano' : ', proporcional al caudal por usuario: ' + pb.qUsuario.toFixed(2) + ' l/s; referencia Huaro 1.5 h/topo con ' + pb.refQ.toFixed(2) + ' l/s'}).`;
+                const ref = `Tiempo por hectárea: <b>${(pb.horasPorTopo / 0.33).toFixed(2)} h/ha</b> (${pb.horasPorTopo.toFixed(2)} h por topo${pb.horasPorTopoEditado ? ', editado a mano' : ', proporcional al caudal por usuario: ' + pb.qUsuario.toFixed(2) + ' l/s = ' + pb.caudal + ' l/s ÷ ' + pb.simultaneos + ' a la vez; referencia Huaro 1.5 h/topo con ' + pb.refQ.toFixed(2) + ' l/s'}). El caudal total no pasa de ${pb.caudal} l/s.`;
+                const qNec = Math.ceil(pb.caudal * c.pasadaDias / c.maxDias);
                 const info = document.getElementById('huaroCicloInfoBoc');
                 if (info) info.innerHTML = ref + '<br>' + (c.excede
-                    ? `⚠️ El recorrido de todos los usuarios toma <b>${c.pasadaDias} días</b> (máximo ${c.maxDias}). Para no pasar de ${c.maxDias} días harían falta <b>${c.necesarios || 'muchos más'}</b> usuarios regando a la vez. ${c.necesarios ? `<a href="javascript:void(0)" onclick="huaroPatUsarNecesarios(${c.necesarios})">Usar ${c.necesarios} a la vez</a>` : ''}`
+                    ? `⚠️ El recorrido de todos los usuarios toma <b>${c.pasadaDias} días</b> (máximo ${c.maxDias}) con ${pb.caudal} l/s: no alcanza el caudal y quedan usuarios <b>pendientes</b> cada semana. Para ${c.maxDias} días harían falta ~<b>${qNec} l/s</b>${pb.horasPorTopoEditado && c.necesarios ? ` (o ${c.necesarios} usuarios a la vez con las horas que escribiste) <a href="javascript:void(0)" onclick="huaroPatUsarNecesarios(${c.necesarios})">Usar ${c.necesarios} a la vez</a>` : ''}.`
                     : `✔ El recorrido toma ${c.pasadaDias} días → cada usuario vuelve a regar cada <b>${c.periodoDias} días</b> (${c.pasadaDias <= c.limiteCorto ? 'hasta ' + c.limiteCorto + ' días: se espera a completar ' + c.periodoDias : 'más de ' + c.limiteCorto + ' días: se repite cada ' + c.periodoDias}).`);
             }
             setTxt('huaroVolBoc', a.volumenTotalM3.toFixed(2) + ' m³');
@@ -4592,6 +4615,12 @@ const COMISIONES = {
                             return `<option value="${escapeHtml(c)}"${c === _comiteAct ? ' selected' : ''}>${escapeHtml(c)} — ${nProg}/${nTot} bocatomas programadas</option>`;
                         }).join('')}</select>
                     </label>
+                    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <button class="huaro-btn ${_huaroPatAuto() ? 'ok' : 'sec'}" onclick="huaroPatToggleAuto()" title="Alterna entre programar de forma automática o manual">⚙️ Programar automáticamente: ${_huaroPatAuto() ? 'ACTIVADO' : 'DESACTIVADO (manual)'}</button>
+                        <span class="huaro-mini">${_huaroPatAuto()
+                            ? 'La campaña (1° de junio → hoy) se programa sola al elegir el comité y con cada cambio de caudal, horas, inicio o usuarios a la vez. Pulsa el botón para pasar a manual.'
+                            : 'Manual: nada se programa solo; usa "Programar esta bocatoma" o "Programar todas las bocatomas del comité". Pulsa el botón para volver al modo automático.'}</span>
+                    </div>
                     ${window._huaroAutoMsg ? `<div class="huaro-aviso-ok" style="margin:8px 0 0;">${escapeHtml(window._huaroAutoMsg)}</div>` : ''}
                     <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités programados.</div>
                 </div>` : ''}
