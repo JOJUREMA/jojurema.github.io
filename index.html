@@ -3906,7 +3906,7 @@ const COMISIONES = {
             const prog = _huaroBocsConDatos().map(b => m[b]);
             return lista.find(c => prog.indexOf(c) >= 0) || lista[0] || '';
         }
-        function huaroCambiarComite(nombre) { _huaroComiteSel = nombre; renderPanelHuaro(); }
+        function huaroCambiarComite(nombre) { _huaroComiteSel = nombre; _huaroBocSel = null; _huaroBocFlash = null; _huaroBocFlashSemanas = null; renderPanelHuaro(); }
         // Bocatomas programadas esta semana QUE PERTENECEN al comité activo (Patacancha);
         // en Huaro, todas. También fija el comité en los encabezados de los anexos.
         function _huaroBocsParaAnexo() {
@@ -4077,11 +4077,13 @@ const COMISIONES = {
         // Programa la campaña de TODAS las bocatomas de una vez (caudal escrito
         // en pantalla si lo hay; si no, el del esquema hidráulico) → deja listos
         // los Anexos G-1…G-4 de cada semana sin tener que ir bocatoma por bocatoma.
-        function huaroProgramarTodasPat() {
+        function huaroProgramarTodasPat(soloComite) {
             if (!window.HuaroCore || !_huaroOrden.length) { alert('Primero carga el padrón de Patacancha.'); return; }
             const sinCaudal = [], excede = [];
             let ok = 0, semanas = 0, rango = null;
-            _huaroOrden.forEach(boc => {
+            const comiteAct = soloComite ? _huaroComiteActivo() : '';
+            const mC = window._huaroComitePorBoc || {};
+            (soloComite ? _huaroOrden.filter(b => mC[b] === comiteAct) : _huaroOrden).forEach(boc => {
                 const masa = HuaroCore.huaroMasaDeAgua(boc);
                 const q = parseFloat(_huaroCaudalTemp[boc]) || (masa && masa.caudalLs) || 0;
                 if (!(q > 0)) { sinCaudal.push(boc); return; }
@@ -4209,8 +4211,12 @@ const COMISIONES = {
             // Selector de bocatoma — marca ✓ las ya programadas esta semana.
             const progSet = new Set(_huaroBocsConDatos());
             if (_huaroBocSel && _huaroOrden.indexOf(_huaroBocSel) < 0) _huaroBocSel = null;
+            const _esPat = window._huaroPerfilKey === 'PATACANCHA';
+            const _comiteAct = _esPat ? _huaroComiteActivo() : '';
+            const _bocsDelComite = _esPat ? _huaroOrden.filter(b => (window._huaroComitePorBoc || {})[b] === _comiteAct) : _huaroOrden;
+            if (_huaroBocSel && _bocsDelComite.indexOf(_huaroBocSel) < 0) _huaroBocSel = null; // la bocatoma elegida es de otro comité
             const _optBoc = ['<option value="">— Selecciona una bocatoma —</option>']
-                .concat(_huaroOrden.map(b =>
+                .concat(_bocsDelComite.map(b =>
                     `<option value="${escapeHtml(b)}"${b === _huaroBocSel ? ' selected' : ''}>${progSet.has(b) ? '✓ ' : ''}${escapeHtml(b)}</option>`))
                 .join('');
 
@@ -4321,26 +4327,12 @@ const COMISIONES = {
                 <div class="huaro-card" id="huaroResumenResultados" ${hayAnexos ? '' : 'style="display:none;"'}>
                     <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
                     <div id="huaroResumenTexto"></div>
-                    ${window._huaroPerfilKey === 'PATACANCHA' ? (() => {
-                        const lista = _huaroComitesLista();
-                        const act = _huaroComiteActivo();
-                        const m = window._huaroComitePorBoc || {};
-                        const prog = _huaroBocsConDatos();
-                        const ops = lista.map(c => {
-                            const nProg = prog.filter(b => m[b] === c).length;
-                            const nTot = _huaroOrden.filter(b => m[b] === c).length;
-                            return `<option value="${escapeHtml(c)}"${c === act ? ' selected' : ''}>${escapeHtml(c)} (${nProg}/${nTot} bocatomas programadas)</option>`;
-                        }).join('');
-                        return `<div style="margin-top:12px;padding:10px 12px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:8px;">
-                            <label style="font-weight:700;font-size:13px;">🏛️ Comité de los anexos:<br>
-                                <select class="huaro-sel" onchange="huaroCambiarComite(this.value)" style="margin-top:5px;width:100%;max-width:760px;">${ops}</select>
-                            </label>
-                            <div class="huaro-mini" style="margin-top:5px;">Cada comité de usuarios tiene sus propios Anexos G-1, G-2, G-3 y G-4: los botones de abajo generan los del comité elegido (solo con sus bocatomas).</div>
-                        </div>`;
-                    })() : ''}
+                    ${window._huaroPerfilKey === 'PATACANCHA' ? `<div class="huaro-mini" style="margin-top:10px;padding:8px 10px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:6px;">
+                        Anexos <b>G-2, G-3 y G-4</b> del comité: <b>${escapeHtml(_huaroComiteActivo())}</b> (cámbialo en "1) Selecciona el comité"). El <b>G-1</b> reúne los ${_huaroComitesLista().length} comités.
+                    </div>` : ''}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
-                        <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 (canales de derivación)</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 ${window._huaroPerfilKey === 'PATACANCHA' ? '(los comités)' : '(canales de derivación)'}</button>
                         <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2 (toda la semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
@@ -4374,13 +4366,25 @@ const COMISIONES = {
                     <div class="huaro-mini" style="margin-top:8px;"><b>${_semLbl}</b></div>
                 </div>
 
+                ${_esPat ? `
+                <div class="huaro-card" style="border-color:#2f7d6d;">
+                    <label style="font-weight:700;font-size:13px;">1) Selecciona el comité de usuarios<br>
+                        <select id="huaroComiteSel" class="huaro-sel" onchange="huaroCambiarComite(this.value)" style="margin-top:5px;width:100%;max-width:760px;">${_huaroComitesLista().map(c => {
+                            const nTot = _huaroOrden.filter(b => (window._huaroComitePorBoc || {})[b] === c).length;
+                            const nProg = _huaroBocsConDatos().filter(b => (window._huaroComitePorBoc || {})[b] === c).length;
+                            return `<option value="${escapeHtml(c)}"${c === _comiteAct ? ' selected' : ''}>${escapeHtml(c)} — ${nProg}/${nTot} bocatomas programadas</option>`;
+                        }).join('')}</select>
+                    </label>
+                    <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités.</div>
+                </div>` : ''}
                 ${window._huaroPerfilKey === 'PATACANCHA' ? `
                 <div class="huaro-card" style="border-color:#2f7d6d;background:#f1f8f6;">
                     <label style="font-weight:700;font-size:14px;">⚙️ Generar los Anexos G-1, G-2, G-3 y G-4 de toda la campaña<br>
                         <span style="font-weight:400;font-size:12px;color:#355;">No necesitas ningún anexo previo: el sistema los crea a partir del padrón. Con un clic programa las ${_huaroOrden.length} bocatomas (campaña completa, con el caudal del esquema hidráulico) y deja listos los 4 anexos de cada semana. También puedes programar una bocatoma a la vez, más abajo.</span>
                     </label>
                     <div style="margin-top:10px;">
-                        <button class="huaro-btn ok" onclick="huaroProgramarTodasPat()" ${_huaroOrden.length ? '' : 'disabled'}>⚙️ Programar TODAS las bocatomas y crear los anexos</button>
+                        <button class="huaro-btn ok" onclick="huaroProgramarTodasPat(true)" ${_huaroOrden.length ? '' : 'disabled'}>⚙️ Programar todas las bocatomas del comité elegido</button>
+                        <button class="huaro-btn sec" onclick="huaroProgramarTodasPat(false)" ${_huaroOrden.length ? '' : 'disabled'} style="margin-left:8px;">⚙️ Programar los ${_huaroComitesLista().length} comités</button>
                     </div>
                 </div>` : `
                 <div class="huaro-card">
@@ -4394,7 +4398,7 @@ const COMISIONES = {
                 </div>`}
 
                 <div class="huaro-card">
-                    <label style="font-weight:600;font-size:13px;">1) Selecciona la bocatoma a programar<br>
+                    <label style="font-weight:600;font-size:13px;">${_esPat ? '2' : '1'}) Selecciona la bocatoma a programar${_esPat ? ' del comité' : ''}<br>
                         <select id="huaroBocSel" class="huaro-sel" onchange="huaroSeleccionarBoc(this.value)" style="margin-top:5px;min-width:320px;max-width:100%;">${_optBoc}</select>
                     </label>
                     ${_huaroBocSel ? '' : '<div class="huaro-mini" style="margin-top:8px;">Elegida la bocatoma verás su caudal y volumen según la resolución; el caudal se completa solo y podrás editarlo.</div>'}
@@ -4887,16 +4891,50 @@ const COMISIONES = {
             };
         }
 
+        // G-1 de PATACANCHA = a NIVEL DE COMITÉ: una sola tabla con una fila por
+        // cada comité de usuarios (los 4), que suma sus bocatomas programadas
+        // (usuarios, volumen, área; tiempo = el mayor de sus bocatomas, que riegan
+        // en paralelo; caudal por día = suma). Los comités sin nada programado
+        // aparecen igual, en blanco. En otras comisiones, igual que el G-2.
+        function _huaroDatosG1() {
+            if (window._huaroPerfilKey !== 'PATACANCHA') return _huaroDatosG2();
+            HuaroCore.huaroSetComiteActivo(''); // el G-1 es de toda la comisión, no de un comité
+            const bocs = _huaroBocsConDatos();
+            const m = window._huaroComitePorBoc || {};
+            const iso = bocs.length ? _huaroResultados[bocs[0]].agregado.semanaInicioISO : _huaroSemanaSeleccionada();
+            const fin = _huaroSumarDiasHuaroHist(iso, 6);
+            const filas = _huaroComitesLista().map(c => {
+                const todas = _huaroOrden.filter(b => m[b] === c);
+                const bs = bocs.filter(b => m[b] === c);
+                const ags = bs.map(b => _huaroResultados[b].agregado);
+                const suma = k => ags.reduce((s, a) => s + (a[k] || 0), 0);
+                const dias = new Array(7).fill(0);
+                ags.forEach(a => (a.caudalPorDia || []).forEach((q, i) => { dias[i] += (q || 0); }));
+                const ini = ags.map(a => ({ d: a.periodoInicioISO, h: a.periodoInicioHora })).sort((x, y) => (x.d + x.h).localeCompare(y.d + y.h))[0];
+                const ter = ags.map(a => ({ d: a.periodoFinISO, h: a.periodoFinHora })).sort((x, y) => (y.d + y.h).localeCompare(x.d + x.h))[0];
+                return {
+                    bocatoma: c,
+                    canalTexto: todas.join(' · ') + (bs.length < todas.length ? '  (programadas: ' + bs.length + ' de ' + todas.length + ')' : ''),
+                    nUsuarios: suma('nUsuarios'), volumenTotalM3: suma('volumenTotalM3'), areaProgramadaHa: suma('areaProgramadaHa'),
+                    tiempoTotalH: ags.reduce((mx, a) => Math.max(mx, a.tiempoTotalH || 0), 0),
+                    periodoInicioISO: ini ? ini.d : iso, periodoInicioHora: ini ? ini.h : '',
+                    periodoFinISO: ter ? ter.d : fin, periodoFinHora: ter ? ter.h : '',
+                    caudalPorDia: dias, nPendientes: 0, areaPendienteHa: 0, semanaInicioISO: iso, semanaFinISO: fin,
+                };
+            });
+            return { semanaInicioISO: iso, semanaFinISO: fin, mesTexto: _huaroMesTexto(iso), filas, nivelComite: true };
+        }
+
         // G-1 = mismo nivel de agregación que el G-2 (en Huaro cada bocatoma
         // capta directo de la Quebrada Huaro por su propio canal de
         // derivación, así que "por canal de derivación" y "por bocatoma"
         // son lo mismo) — se reusa _huaroDatosG2() tal cual, solo cambia
         // cómo se renderiza (huaroConstruirG1Html).
         function huaroMostrarG1() {
-            if (!_huaroBocsParaAnexo().length) { alert(_huaroMsgSinBocsComite()); return; }
-            const datos = _huaroDatosG2();
+            if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
+            const datos = _huaroDatosG1();
             const html = HuaroCore.huaroConstruirG1Html(datos);
-            _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo + _huaroSufijoComite(), html,
+            _huaroPanelAnexo('Anexo G-1 — ' + HuaroCore.huaroPerfilActual().titulo, html,
                 () => _huaroImprimir('Anexo G1', html, 'landscape'),
                 () => _huaroExcelG1Oficial(datos));
         }
@@ -5169,8 +5207,8 @@ const COMISIONES = {
             const filaH1 = 9, filaH2 = 10;
             const colsRowspan = [
                 [1, 'SUB SECTOR\nHIDRÁULICO'],
-                [2, 'NOMBRE DE LA BOCATOMA O TOMA\nDIRECTA EN LA FUENTE NATURAL O\nINFRAESTRUCTURA HIDRÁULICA MAYOR'],
-                [3, 'NOMBRE DEL CANAL\nDE DERIVACIÓN'],
+                [2, datos.nivelComite ? 'NOMBRE DEL COMITÉ\nDE USUARIOS' : 'NOMBRE DE LA BOCATOMA O TOMA\nDIRECTA EN LA FUENTE NATURAL O\nINFRAESTRUCTURA HIDRÁULICA MAYOR'],
+                [3, datos.nivelComite ? 'BOCATOMAS Y CANALES DE DERIVACIÓN\nQUE LO CONFORMAN' : 'NOMBRE DEL CANAL\nDE DERIVACIÓN'],
                 [4, 'N° DE\nUSUARIOS'],
                 [5, 'VOLUMEN DE AGUA\nPROGRAMADO (m³)'],
                 [6, 'ÁREA BAJO RIEGO\nATENDER (Ha)'],
@@ -5202,7 +5240,7 @@ const COMISIONES = {
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
                 const vals = [
-                    HuaroCore.huaroSubsectorTexto(), f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
+                    HuaroCore.huaroSubsectorTexto(), f.bocatoma, (f.canalTexto != null ? f.canalTexto : HuaroCore.huaroCanalBocatoma(f.bocatoma)),
                     f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(1),
                     (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
                     (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
@@ -5224,7 +5262,7 @@ const COMISIONES = {
                 if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00';
                 _huaroBorde(c); alinear(c, i);
             });
-            await _descargarWorkbook(wb, 'Anexo G1' + _huaroSufijoComite() + '.xlsx');
+            await _descargarWorkbook(wb, 'Anexo G1.xlsx');
         }
 
         async function _huaroExcelGOficial(datos, formato) {

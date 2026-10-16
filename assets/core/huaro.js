@@ -831,7 +831,7 @@ function huaroConstruirG1Html(datos) {
         <tr>
             <td style="${tdL}">${_huaroEsc(huaroSubsectorTexto())}</td>
             <td style="${tdL}font-weight:600;">${_huaroEsc(f.bocatoma)}</td>
-            <td style="${tdL}">${_huaroEsc(huaroCanalBocatoma(f.bocatoma))}</td>
+            <td style="${tdL}${f.canalTexto != null ? 'font-size:9px;' : ''}">${_huaroEsc(f.canalTexto != null ? f.canalTexto : huaroCanalBocatoma(f.bocatoma))}</td>
             <td style="${td}">${f.nUsuarios > 0 ? f.nUsuarios : '-'}</td>
             <td style="${td}">${_huaroFmtNum(f.volumenTotalM3)}</td>
             <td style="${td}">${_huaroFmtNum(f.areaProgramadaHa)}</td>
@@ -864,8 +864,11 @@ function huaroConstruirG1Html(datos) {
         <thead>
             <tr style="background:#E6E6E6;color:#000;">
                 <th rowspan="2" style="${th}">SUB SECTOR<br>HIDRÁULICO</th>
-                <th rowspan="2" style="${th}">NOMBRE DE LA BOCATOMA<br>O TOMA DIRECTA EN LA<br>FUENTE NATURAL O<br>INFRAESTRUCTURA<br>HIDRÁULICA MAYOR</th>
-                <th rowspan="2" style="${th}">NOMBRE DEL CANAL<br>DE DERIVACIÓN</th>
+                ${datos.nivelComite
+                    ? `<th rowspan="2" style="${th}">NOMBRE DEL COMITÉ<br>DE USUARIOS</th>
+                <th rowspan="2" style="${th}">BOCATOMAS Y CANALES<br>DE DERIVACIÓN<br>QUE LO CONFORMAN</th>`
+                    : `<th rowspan="2" style="${th}">NOMBRE DE LA BOCATOMA<br>O TOMA DIRECTA EN LA<br>FUENTE NATURAL O<br>INFRAESTRUCTURA<br>HIDRÁULICA MAYOR</th>
+                <th rowspan="2" style="${th}">NOMBRE DEL CANAL<br>DE DERIVACIÓN</th>`}
                 <th rowspan="2" style="${th}">N° DE<br>USUARIOS</th>
                 <th rowspan="2" style="${th}">VOLUMEN DE<br>AGUA<br>PROGRAMADO<br>(m³)</th>
                 <th rowspan="2" style="${th}">ÁREA BAJO<br>RIEGO ATENDER<br>(Ha)</th>
