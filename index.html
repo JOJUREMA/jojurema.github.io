@@ -4522,6 +4522,7 @@ const COMISIONES = {
             } else {
                 msg = 'No se programó ninguna bocatoma' + (sinCaudal.length ? ' — falta el caudal en: ' + sinCaudal.join(', ') : ' (el rango de campaña no tiene semanas).');
             }
+            if (ok) _huaroPatMostrarMesMarcado();
             alert(msg);
             renderPanelHuaro();
         }
@@ -5035,6 +5036,7 @@ const COMISIONES = {
                 const r = _huaroProgramarCampanaPat(boc, caudalLs);
                 delete _huaroCaudalTemp[boc];
                 _huaroBocFlash = boc; _huaroBocFlashSemanas = null;
+                if (r.crono && r.semanas) _huaroPatMostrarMesMarcado();
                 if (!r.crono || !r.semanas) {
                     alert('No hay semanas de campaña para programar: el rango (' + r.rango.desdeISO + ' → ' + r.rango.hastaISO + ') está fuera de la campaña.');
                 } else if (r.crono.excedeFrecuencia) {
