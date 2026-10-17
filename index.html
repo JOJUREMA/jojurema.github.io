@@ -4242,6 +4242,15 @@ const COMISIONES = {
             }
         }
 
+        // El G-1 resume TODA la comisión (los 4 comités por semana), no solo el comité elegido: en modo automático,
+        // antes de armarlo se programan los comités que aún no lo estén (lo que se eliminó a mano no se vuelve a crear).
+        function _huaroPatProgramarTodosComitesAuto() {
+            if (window._huaroPerfilKey !== 'PATACANCHA' || !_huaroPatAuto()) return;
+            const msg = window._huaroAutoMsg;
+            _huaroComitesLista().forEach(c => _huaroPatAutoProgramarComite(c));
+            window._huaroAutoMsg = msg;
+        }
+
         // Caudal escrito en el detalle de la bocatoma: al confirmarlo (Enter / salir del campo)
         // se guarda y re-programa solo; mientras se teclea solo se actualiza la vista previa.
         function huaroPatCaudalDetalle(valor) {
@@ -5395,6 +5404,7 @@ const COMISIONES = {
             const P = _huaroPeriodoMostrado();
             const nombreMes = P.nombre;
             const esG1 = tipo === 'G1';
+            if (esG1) _huaroPatProgramarTodosComitesAuto();
             let semanas = _huaroSemanasMes(P.anio, P.mes0, !esG1, P.base);
             if (soloLunes) semanas = semanas.filter(w => w.lunesISO === soloLunes);
             if (!semanas.length) {
@@ -5598,6 +5608,8 @@ const COMISIONES = {
         // son lo mismo) — se reusa _huaroDatosG2() tal cual, solo cambia
         // cómo se renderiza (huaroConstruirG1Html).
         function huaroMostrarG1() {
+            _huaroPatProgramarTodosComitesAuto();
+            if (window._huaroPerfilKey === 'PATACANCHA') { const pda = _huaroLeerPda(_huaroSemanaSeleccionada()); if (pda && pda.resultados && Object.keys(pda.resultados).length) _huaroResultados = pda.resultados; }
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const datos = _huaroDatosG1();
             const html = HuaroCore.huaroConstruirG1Html(datos);
