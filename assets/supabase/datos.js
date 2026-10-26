@@ -2303,6 +2303,24 @@
         return { ok: true, resultados };
     }
 
+    // Lista oficial (de los PDF de la Junta) de predios del Anexo A-1 (con licencia) y A-2 (sin licencia) de la
+    // comisión — tabla `padron_oficial_pdf_referencia` (sql/029). Solo sirve para LIMITAR lo que se muestra y
+    // exporta del padrón A-1; si la tabla no existe o está vacía devuelve ok:false y la app no limita nada.
+    async function cargarPadronOficialPdfReferencia(comisionKey) {
+        if (!comisionKey) return { ok: false, vacio: true };
+        const comisionId = await resolverComisionId(comisionKey);
+        if (!comisionId) return { ok: false, error: 'La comisión "' + comisionKey + '" no existe en Supabase.' };
+        const { data, error } = await window.CusshmiSupabase.ejecutarConsulta(
+            (client) => client.from('padron_oficial_pdf_referencia').select('grupo, fecha, resumen, filas').eq('comision_id', comisionId),
+            'cargar padrón oficial de referencia (PDF)'
+        );
+        if (error || !data) return { ok: false, error: error ? error.mensaje : 'No se pudo cargar la referencia del padrón oficial.' };
+        if (!data.length) return { ok: false, vacio: true };
+        const out = { ok: true, fecha: '', oficial: {}, a1: [], a2: [] };
+        data.forEach((r) => { out[r.grupo] = r.filas || []; out.oficial[r.grupo] = r.resumen || {}; if (r.fecha) out.fecha = r.fecha; });
+        return out;
+    }
+
     // Mueve un usuario de un Canal Lateral a otro dentro de la misma toma
     // (ficha del Mapa de Inventario) — un simple `update` de la columna
     // nueva `canal_nombre`, sin RPC especial: la fila ya pertenece a esa
@@ -3028,6 +3046,7 @@
         guardarPadronOficialA1,
         cargarPadronOficialA1,
         cargarPadronOficialA1CompletoParaExportar,
+        cargarPadronOficialPdfReferencia,
         reasignarUsuarioCanal,
         incorporarUsuarioNuevoAPadronOficialA1,
         actualizarPadronOficialA1DesdeRegistro,

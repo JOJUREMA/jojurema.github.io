@@ -1148,6 +1148,7 @@
 <script src="assets/core/inventarioInfraestructura.js"></script>
 <script src="assets/core/anexoE41.js"></script>
 <script src="assets/core/planoPrediosA2.js"></script>
+<script src="assets/core/padronOficialPdf.js"></script>
 <script src="assets/core/huaro.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <!-- jsPDF standalone — el Plano de Predios (Formato A-2) dibuja su propio
@@ -12284,11 +12285,13 @@ const COMISIONES = {
                 const [resultadoPadronA1, resultadoRegistros] = await Promise.all([
                     CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
                     CusshmiDatos.cargarRegistrosIdentificacionParaExportar(comisionKey),
+                    _cargarPadronOficialPdf(comisionKey),
                 ]);
                 if (!resultadoPadronA1.ok) { alert('No se pudo cargar el padrón oficial: ' + resultadoPadronA1.error); return; }
                 if (!resultadoRegistros.ok) { alert('No se pudo cargar los registros de identificación: ' + resultadoRegistros.error); return; }
 
-                const filasA1 = resultadoPadronA1.resultados.filter((f) => f.origen === 'ana_a1');
+                let filasA1 = resultadoPadronA1.resultados.filter((f) => f.origen === 'ana_a1');
+                { const lim = _padronLimitadoPorPdf(comisionKey, filasA1, 'a1'); if (lim.res) filasA1 = lim.filas; } // Margen Izquierda: solo lo del PDF oficial
                 const filasA2 = resultadoPadronA1.resultados.filter((f) => f.origen === 'campo');
                 const registrosAdicionales = resultadoRegistros.registros;
                 if (filasA1.length === 0 && filasA2.length === 0) {
@@ -12416,15 +12419,20 @@ const COMISIONES = {
             document.body.appendChild(div.firstElementChild);
 
             const contenedor = document.getElementById('contenidoFormatoA1Esc');
-            const resultado = await CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey);
+            const [resultado] = await Promise.all([
+                CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
+                _cargarPadronOficialPdf(comisionKey),
+            ]);
             if (!resultado.ok) {
                 contenedor.innerHTML = `<div style="text-align:center;color:#c0392b;padding:20px;">No se pudo cargar el padrón: ${resultado.error || 'error desconocido'}</div>`;
                 return;
             }
             const filasA1Completas = (resultado.resultados || []).filter((f) => f.origen === 'ana_a1');
-            const filasA1 = esFiltroSinLicencia
+            let filasA1 = esFiltroSinLicencia
                 ? filasA1Completas.filter(_esFormatoA1ConPermisoOSinLicencia)
                 : filasA1Completas;
+            // Margen Izquierda: solo los predios que figuran en el PDF oficial (A-1 con licencia / A-2 sin licencia).
+            { const lim = _padronLimitadoPorPdf(comisionKey, filasA1Completas, esFiltroSinLicencia ? 'a2' : 'a1'); if (lim.res) filasA1 = lim.filas; }
             _formatoA1EstadoEsc = {
                 filasTodas: filasA1,
                 comisionKey,
@@ -12583,6 +12591,47 @@ const COMISIONES = {
         // usuario. La rama "sin Licencia/derecho" además da acceso, TAL
         // CUAL sin tocarlo, al flujo existente de los 93 Usuarios
         // Observados del Levantamiento en campo (modalFormatoA2Menu).
+        // ── Margen Izquierda: el Padrón A-1 de la base se LIMITA a lo que figura en los PDF oficiales
+        // (Anexo A-1 con licencia: 2,792 predios / Anexo A-2 sin derecho + con permiso: 703 predios).
+        // Los datos de referencia salen de assets/data/padron_oficial_margen_izquierda.json y el emparejamiento
+        // de assets/core/padronOficialPdf.js. No se borra nada de la base: solo se muestra/exporta lo que está en el PDF.
+        let _padronOficialPdfCache = null;
+        let _padronLimitarPdf = true;
+        async function _cargarPadronOficialPdf(comisionKey) {
+            if (comisionKey !== 'MARGEN_IZQUIERDA' || !window.PadronOficialPdf || !window.CusshmiDatos) return null;
+            if (_padronOficialPdfCache) return _padronOficialPdfCache;
+            try {
+                // La lista oficial vive en Supabase (tabla privada padron_oficial_pdf_referencia, sql/029): lleva
+                // nombres y documentos de usuarios, por eso no se publica con la aplicación.
+                const r = await CusshmiDatos.cargarPadronOficialPdfReferencia(comisionKey);
+                if (r && r.ok) _padronOficialPdfCache = r;
+                else console.warn('Padrón oficial (PDF) no disponible en Supabase:', (r && (r.error || (r.vacio && 'tabla vacía'))) || '');
+            } catch (e) { console.warn('No se pudo cargar el padrón oficial (PDF):', e); }
+            return _padronOficialPdfCache;
+        }
+        // grupo: 'a1' (con licencia) o 'a2' (sin licencia = permiso + sin derecho). Devuelve las filas de la base que
+        // están en el PDF (o todas si el límite está apagado / no aplica) y el resumen para mostrar.
+        function _padronLimitadoPorPdf(comisionKey, filasBase, grupo) {
+            if (comisionKey !== 'MARGEN_IZQUIERDA' || !_padronOficialPdfCache || !window.PadronOficialPdf) return { filas: filasBase, res: null };
+            const res = PadronOficialPdf.limitar(filasBase, _padronOficialPdfCache[grupo]);
+            return { filas: _padronLimitarPdf ? res.filas : filasBase, res };
+        }
+        function _padronBannerPdfHtml(grupo, res, onToggle) {
+            const o = _padronOficialPdfCache;
+            if (!o || !res) return '';
+            const of = o.oficial[grupo];
+            const nombre = grupo === 'a1' ? 'A-1 con licencia' : 'A-2 sin licencia (permiso + sin derecho)';
+            const fmt = (n) => Number(n).toLocaleString('en-US');
+            const falt = res.stats.sinCoincidencia;
+            return `<div style="background:#fff8e6;border:1px solid #e6cf8a;border-radius:6px;padding:10px 12px;margin-bottom:12px;text-align:left;font-size:12px;color:#4a3d10;">
+                <label style="font-weight:700;cursor:pointer;"><input type="checkbox" ${_padronLimitarPdf ? 'checked' : ''} onchange="${onToggle}(this.checked)"> Limitar al padrón oficial (PDF del ${o.fecha})</label><br>
+                ${nombre}: <b>${fmt(of.predios)} predios</b> · ${fmt(of.usuarios)} usuarios · ${of.areaTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })} ha.
+                En la base se encontraron <b>${fmt(res.stats.coincidencias)}</b> de esos predios (la base tiene ${fmt(res.stats.baseTotal)} filas).
+                ${falt ? `<span style="color:#a33;"> ${fmt(falt)} predios del PDF no se encontraron en la base.</span>` : ''}
+            </div>`;
+        }
+        function _padronCambiarLimitePdf(activo) { _padronLimitarPdf = !!activo; _padronCusshmiEditandoIdx = null; _renderVistaPadronCusshmi(); }
+
         let _padronCusshmiEstado = { filasTodas: [], comisionKey: null, comisionNombre: '' };
         let _padronCusshmiFilasBase = []; // tras el filtro de vista (con/sin Licencia), antes de Bloque/Toma/Buscar
         let _padronCusshmiFilasVista = []; // tras aplicar TAMBIÉN Bloque/Toma/Buscar — el que ve el usuario
@@ -12624,7 +12673,10 @@ const COMISIONES = {
             document.body.appendChild(div.firstElementChild);
 
             const contenedor = document.getElementById('contenidoPadronCusshmi');
-            const resultado = await CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey);
+            const [resultado] = await Promise.all([
+                CusshmiDatos.cargarPadronOficialA1CompletoParaExportar(comisionKey),
+                _cargarPadronOficialPdf(comisionKey),
+            ]);
             if (!resultado.ok) {
                 contenedor.innerHTML = `<div style="text-align:center;color:#c0392b;padding:20px;">No se pudo cargar el padrón: ${resultado.error || 'error desconocido'}</div>`;
                 return;
@@ -12664,6 +12716,14 @@ const COMISIONES = {
             _padronCusshmiFilasBase = vista === 'CON_LICENCIA'
                 ? filasTodas.filter((f) => (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA')
                 : filasTodas.filter(_esFormatoA1ConPermisoOSinLicencia);
+            // Margen Izquierda: solo lo que figura en el PDF oficial (se empareja contra TODO el padrón A-1,
+            // sin depender de cómo esté marcada la clase de derecho en la base).
+            const grupoPdf = vista === 'CON_LICENCIA' ? 'a1' : 'a2';
+            const limitado = _padronLimitadoPorPdf(_padronCusshmiEstado.comisionKey, filasTodas, grupoPdf);
+            if (limitado.res) _padronCusshmiFilasBase = limitado.filas;
+            const bannerPdf = (_padronCusshmiEstado.comisionKey === 'MARGEN_IZQUIERDA' && !limitado.res)
+                ? '<div style="background:#fdecea;border:1px solid #e5a8a1;border-radius:6px;padding:8px 12px;margin-bottom:12px;text-align:left;font-size:12px;color:#7a1f16;">El padrón oficial de los PDF aún no está cargado en Supabase (tabla padron_oficial_pdf_referencia): se muestra todo el padrón de la base, sin limitar.</div>'
+                : _padronBannerPdfHtml(grupoPdf, limitado.res, '_padronCambiarLimitePdf');
 
             const cajaObservados = vista === 'SIN_LICENCIA' ? `
                 <div style="background:#f0f4fa;border:1px solid #c8d6ea;border-radius:6px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;text-align:left;">
@@ -12676,6 +12736,7 @@ const COMISIONES = {
                 <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;"><strong>📋 Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)</strong></p>` : '';
 
             contenedor.innerHTML = `
+                ${bannerPdf}
                 ${cajaObservados}
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
                     <div style="min-width:180px;">
