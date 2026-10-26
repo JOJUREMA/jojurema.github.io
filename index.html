@@ -12540,7 +12540,7 @@ const COMISIONES = {
             }).join('');
 
             contenedor.innerHTML = `
-                <p style="font-size:12px;color:#666;margin:0 0 6px;">Mostrando ${filas.length} de ${filasTodas.length} usuarios.</p>
+                <p style="font-size:12px;color:#666;margin:0 0 6px;">Mostrando ${_textoPrediosUsuarios(filas)} (de ${filasTodas.length.toLocaleString('en-US')} filas en la base).</p>
                 <div style="overflow-x:auto;">
                     <table style="width:100%;border-collapse:collapse;font-size:13px;">
                         <thead>
@@ -12629,6 +12629,15 @@ const COMISIONES = {
                 En la base se encontraron <b>${fmt(res.stats.coincidencias)}</b> de esos predios (la base tiene ${fmt(res.stats.baseTotal)} filas).
                 ${falt ? `<span style="color:#a33;"> ${fmt(falt)} predios del PDF no se encontraron en la base.</span>` : ''}
             </div>`;
+        }
+        // "N predios de U usuarios": cada fila del padrón es un PREDIO; un usuario puede tener varios (se cuenta por documento, o por nombre si no tiene).
+        let _padronUsuariosOficial = null; // usuarios que declara el PDF, cuando se muestra el grupo completo
+        function _textoPrediosUsuarios(filas, completo) {
+            const norm = (window.PadronOficialPdf && PadronOficialPdf.normNombre) || ((x) => String(x || ''));
+            const normDoc = (window.PadronOficialPdf && PadronOficialPdf.normDoc) || ((x) => String(x || ''));
+            const us = new Set(filas.map((f) => normDoc(f.numero_documento) || norm(f.apellidos_nombres)));
+            const nUs = (completo && _padronUsuariosOficial) ? _padronUsuariosOficial : us.size;
+            return filas.length.toLocaleString('en-US') + ' predio(s) de ' + nUs.toLocaleString('en-US') + ' usuario(s)';
         }
         function _padronCambiarLimitePdf(activo) { _padronLimitarPdf = !!activo; _padronCusshmiEditandoIdx = null; _renderVistaPadronCusshmi(); }
 
@@ -12721,6 +12730,7 @@ const COMISIONES = {
             const grupoPdf = vista === 'CON_LICENCIA' ? 'a1' : 'a2';
             const limitado = _padronLimitadoPorPdf(_padronCusshmiEstado.comisionKey, filasTodas, grupoPdf);
             if (limitado.res) _padronCusshmiFilasBase = limitado.filas;
+            _padronUsuariosOficial = (limitado.res && _padronLimitarPdf && !limitado.res.stats.sinCoincidencia) ? ((_padronOficialPdfCache.oficial[grupoPdf] || {}).usuarios || null) : null;
             const bannerPdf = (_padronCusshmiEstado.comisionKey === 'MARGEN_IZQUIERDA' && !limitado.res)
                 ? '<div style="background:#fdecea;border:1px solid #e5a8a1;border-radius:6px;padding:8px 12px;margin-bottom:12px;text-align:left;font-size:12px;color:#7a1f16;">El padrón oficial de los PDF aún no está cargado en Supabase (tabla padron_oficial_pdf_referencia): se muestra todo el padrón de la base, sin limitar.</div>'
                 : _padronBannerPdfHtml(grupoPdf, limitado.res, '_padronCambiarLimitePdf');
@@ -12917,7 +12927,7 @@ const COMISIONES = {
             }).join('');
 
             return `
-                <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;">Mostrando ${_padronCusshmiFilasVista.length} usuario(s). Los campos resaltados en amarillo están sin completar.</p>
+                <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;">Mostrando ${_textoPrediosUsuarios(_padronCusshmiFilasVista, _padronCusshmiFilasVista.length === _padronCusshmiFilasBase.length)}. Los campos resaltados en amarillo están sin completar.</p>
                 <div style="overflow-x:auto;">
                     <table style="width:100%;border-collapse:collapse;font-size:13px;">
                         <thead>
