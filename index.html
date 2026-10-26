@@ -12639,6 +12639,38 @@ const COMISIONES = {
             const nUs = (completo && _padronUsuariosOficial) ? _padronUsuariosOficial : us.size;
             return filas.length.toLocaleString('en-US') + ' predio(s) de ' + nUs.toLocaleString('en-US') + ' usuario(s)';
         }
+        // Cuadro resumen: usuarios con licencia (A-1) vs usuarios sin licencia (A-2) — usuarios, predios y áreas.
+        // Con el padrón oficial de los PDF cargado usa sus cifras; si no, las calcula de las filas de la base.
+        function _padronCuadroResumenHtml(filasTodas) {
+            const fmt = (n, d) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
+            const norm = (window.PadronOficialPdf && PadronOficialPdf.normNombre) || ((x) => String(x || ''));
+            const normDoc = (window.PadronOficialPdf && PadronOficialPdf.normDoc) || ((x) => String(x || ''));
+            const deBase = (filas) => ({
+                usuarios: new Set(filas.map((f) => normDoc(f.numero_documento) || norm(f.apellidos_nombres))).size,
+                predios: filas.length,
+                areaTotal: filas.reduce((s, f) => s + (parseFloat(f.area_total_ha) || 0), 0),
+                areaRiego: filas.reduce((s, f) => s + (parseFloat(f.area_bajo_riego_ha) || 0), 0),
+            });
+            const oficial = _padronOficialPdfCache && _padronOficialPdfCache.oficial;
+            const a1 = oficial && oficial.a1 ? oficial.a1 : deBase(filasTodas.filter((f) => (f.clase_derecho || '').toString().trim().toUpperCase() === 'LICENCIA'));
+            const a2 = oficial && oficial.a2 ? oficial.a2 : deBase(filasTodas.filter(_esFormatoA1ConPermisoOSinLicencia));
+            const fuente = oficial && oficial.a1 ? 'Cifras de los PDF oficiales de la Junta (' + _padronOficialPdfCache.fecha + ').' : 'Calculado con las filas del padrón de la base.';
+            const th = 'padding:8px 10px;border:1px solid #c9d3e0;background:#003876;color:#fff;font-size:12px;';
+            const td = 'padding:7px 10px;border:1px solid #d5dce6;font-size:13px;';
+            const fila = (et, k, d) => `<tr><td style="${td}text-align:left;font-weight:600;">${et}</td><td style="${td}text-align:right;">${fmt(a1[k], d)}</td><td style="${td}text-align:right;">${fmt(a2[k], d)}</td></tr>`;
+            return `<div style="margin-bottom:14px;text-align:left;">
+                <table style="border-collapse:collapse;min-width:420px;">
+                    <thead><tr><th style="${th}text-align:left;"></th><th style="${th}">Usuarios con licencia<br><span style="font-weight:400;">(Formato A-1)</span></th><th style="${th}">Usuarios sin licencia<br><span style="font-weight:400;">(Formato A-2: permiso + sin derecho)</span></th></tr></thead>
+                    <tbody>
+                        ${fila('N° de usuarios', 'usuarios', 0)}
+                        ${fila('N° de predios', 'predios', 0)}
+                        ${fila('Área total (ha)', 'areaTotal', 2)}
+                        ${fila('Área bajo riego (ha)', 'areaRiego', 2)}
+                    </tbody>
+                </table>
+                <div style="font-size:11px;color:#667;margin-top:4px;">${fuente}</div>
+            </div>`;
+        }
         function _padronCambiarLimitePdf(activo) { _padronLimitarPdf = !!activo; _padronCusshmiEditandoIdx = null; _renderVistaPadronCusshmi(); }
 
         let _padronCusshmiEstado = { filasTodas: [], comisionKey: null, comisionNombre: '' };
@@ -12746,6 +12778,7 @@ const COMISIONES = {
                 <p style="font-size:12px;color:#666;margin:0 0 6px;text-align:left;"><strong>📋 Usuarios con Permiso o sin Licencia (filtro del Padrón A-1)</strong></p>` : '';
 
             contenedor.innerHTML = `
+                ${_padronCuadroResumenHtml(filasTodas)}
                 ${bannerPdf}
                 ${cajaObservados}
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end;">
