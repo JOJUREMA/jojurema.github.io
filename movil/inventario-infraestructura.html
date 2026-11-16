@@ -1,0 +1,2230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Actualización del Inventario — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+    <!-- Leaflet vendorizado (movil/vendor/), mismo patrón que Sinceramiento
+         de Áreas — evita depender de un CDN cross-origin desde el celular. -->
+    <link rel="stylesheet" href="vendor/leaflet.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+    <script src="../assets/core/mapa.js"></script>
+    <script src="../assets/core/coordenadasUtm.js"></script>
+    <script src="../assets/core/capturaOffline.js"></script>
+    <script src="../assets/core/inventarioInfraestructura.js"></script>
+    <script src="../assets/core/dibujoEstructura.js"></script>
+    <script src="vendor/leaflet.js"></script>
+
+    <style>
+        #mapaInventario, #mapaFichaUbicacion {
+            width: 100%;
+            max-width: 420px;
+            height: 60vh;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+        #mapaFichaUbicacion { height: 34vh; }
+        /* Editor de ubicación a pantalla completa — mismo patrón que
+           .editor-poligono en movil/sinceramiento-areas.html. */
+        .editor-poligono {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: #001830;
+            flex-direction: column;
+        }
+        .editor-poligono-header, .editor-poligono-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            flex-shrink: 0;
+        }
+        .editor-poligono-header { color: #ffffff; font-weight: 700; font-size: 13px; }
+        .editor-poligono-footer { flex-direction: column; gap: 6px; }
+        .editor-poligono-footer .estado-busqueda { color: #ffffff; opacity: 0.85; }
+        .editor-poligono-mapa { flex: 1; min-height: 0; }
+        .marcador-vertice-editor {
+            background: #003876;
+            color: #ffffff;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .foto-miniatura { display: inline-block; position: relative; margin: 6px; }
+        .foto-miniatura img {
+            width: 90px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .badge-foto { position: absolute; bottom: 2px; left: 2px; font-size: 9px; padding: 1px 4px; border-radius: 4px; }
+        .btn-quitar-foto {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: #c0392b;
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .campo textarea {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.95);
+            color: #002555;
+            font-size: 14px;
+            font-family: inherit;
+            min-height: 60px;
+            resize: vertical;
+        }
+        .campo select {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.95);
+            color: #002555;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .campo input:disabled, .campo select:disabled, .campo textarea:disabled { opacity: 0.7; }
+        .seccion-titulo {
+            width: 100%;
+            max-width: 420px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.75;
+            margin: 18px 0 10px;
+        }
+        .seccion-titulo:first-of-type { margin-top: 4px; }
+        .fila-doble {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 420px;
+        }
+        .fila-doble .campo { flex: 1; }
+        .fila-toma {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            padding: 12px 14px;
+            text-align: left;
+            color: #ffffff;
+            cursor: pointer;
+            width: 100%;
+        }
+        .fila-toma .nombre-toma { font-size: 14px; font-weight: 600; }
+        .fila-toma .detalle-toma { font-size: 11.5px; opacity: 0.75; margin-top: 2px; }
+        .badge-registrado {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 9.5px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            margin-left: 8px;
+            vertical-align: middle;
+            background: #1e7e34;
+            color: #ffffff;
+        }
+        .badge-estado {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 9.5px;
+            letter-spacing: 0.3px;
+            margin-left: 8px;
+            vertical-align: middle;
+            background: rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+        }
+        .aviso-bloqueado {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(200, 168, 75, 0.15);
+            border: 1px solid rgba(200, 168, 75, 0.5);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 13px;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+        .resumen-fila {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .resumen-fila:last-child { border-bottom: none; }
+        .resumen-fila .etiqueta-resumen { opacity: 0.7; }
+        .resumen-fila .valor-resumen { font-weight: 600; text-align: right; }
+
+        .select-tipo {
+            width: 100%;
+            max-width: 420px;
+            padding: 11px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.95);
+            color: #002555;
+            font-size: 14px;
+            font-family: inherit;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>📦 Actualización del Inventario</h2>
+        </div>
+
+        <!-- ── Pantalla 2: selección de toma ── -->
+        <div id="vistaTomas" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <button class="boton" id="btnVerSolicitudes" style="max-width:420px; display:none; margin-bottom:14px; background:#c0392b;">🔔 Solicitudes de edición pendientes</button>
+            <div class="estado-busqueda" id="estadoTomas">Cargando tomas…</div>
+            <div class="resultados" id="listaTomas"></div>
+        </div>
+
+        <!-- ── Pantalla 3: estructuras de la toma (Tomas / Compuertas) ── -->
+        <div id="vistaLista" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverATomas" style="max-width:420px;">← Volver a las tomas</button>
+            <h1 id="tituloTomaLista" style="margin-top:14px; font-size:16px;"></h1>
+
+            <select class="select-tipo" id="selectTipoEstructura" style="margin-top:10px;"></select>
+
+            <div class="buscador campo" style="width:100%; max-width:420px;">
+                <label for="inputBusquedaCanal">Buscar por canal</label>
+                <input type="text" id="inputBusquedaCanal" placeholder="ej. Principal SD3" autocomplete="off">
+            </div>
+
+            <button class="boton-secundario" id="btnVerMapaInventario" style="max-width:420px; margin-bottom:10px;">🗺️ Ver en mapa</button>
+            <button class="boton" id="btnAgregarNuevo" style="max-width:420px; margin-bottom:14px;">+ Agregar estructura nueva</button>
+
+            <div class="estado-busqueda" id="estadoLista"></div>
+            <div class="resultados" id="listaEstructuras"></div>
+        </div>
+
+        <!-- ── Pantalla: mapa satelital de la infraestructura (geometría
+             real del levantamiento GIS — no ya la aproximación por
+             conversión UTM) ── -->
+        <div id="vistaMapaInventario" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverAListaDesdeMapa" style="max-width:420px;">← Volver a la lista</button>
+            <h1 id="tituloMapaInventario" style="margin-top:14px; font-size:16px;"></h1>
+            <div class="estado-busqueda" id="estadoMapaInventario"></div>
+            <div id="mapaInventario"></div>
+        </div>
+
+        <!-- ── Pantalla: usuarios de la toma de la estructura abierta ── -->
+        <div id="vistaUsuariosToma" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverDesdeUsuariosToma" style="max-width:420px;">← Volver</button>
+            <h1 id="tituloUsuariosToma" style="margin-top:14px; font-size:16px;"></h1>
+            <div class="estado-busqueda" id="estadoUsuariosToma"></div>
+            <div class="resultados" id="listaUsuariosToma"></div>
+        </div>
+
+        <!-- ── Editor de ubicación a pantalla completa (punto o línea según
+             el tipo) — mismo patrón que el editor de polígono de
+             Sinceramiento de Áreas (movil/sinceramiento-areas.html), pero
+             para 1 punto o 2 extremos en vez de un polígono cerrado, con
+             ubicación GPS en vivo en vez de un solo tiro. ── -->
+        <div id="vistaEditorEstructura" class="editor-poligono" style="display:none;">
+            <div class="editor-poligono-header">
+                <button class="boton-secundario" id="btnCerrarEditorEstructura" type="button" style="max-width:none; padding:8px 14px; font-size:12.5px;">✕ Cerrar</button>
+                <span id="tituloEditorEstructura">Editar ubicación</span>
+                <button class="boton" id="btnFinalizarEditorEstructura" type="button" style="max-width:none; padding:8px 14px; font-size:12.5px;">✔ Finalizar</button>
+            </div>
+            <div id="mapaEditorEstructura" class="editor-poligono-mapa"></div>
+            <div class="editor-poligono-footer">
+                <div class="estado-busqueda" id="estadoEditorEstructura" style="max-width:none;"></div>
+                <div class="fila-doble" id="filaFijarPuntualEditor" style="max-width:420px; display:none;">
+                    <button type="button" class="boton" id="btnFijarPuntualEditor" style="flex:1;" disabled>📍 Fijar con mi ubicación</button>
+                </div>
+                <div class="fila-doble" id="filaFijarLinealEditor" style="max-width:420px; display:none;">
+                    <button type="button" class="boton" id="btnFijarInicioEditor" style="flex:1;" disabled>📍 Fijar Inicio aquí</button>
+                    <button type="button" class="boton" id="btnFijarFinEditor" style="flex:1;" disabled>📍 Fijar Fin aquí</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Pantalla 4: formulario ── -->
+        <div id="vistaFormulario" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverALista" style="max-width:420px;">← Volver a la lista</button>
+
+            <div class="aviso-bloqueado" id="avisoBloqueadoFormulario" style="display:none; margin-top:14px;">
+                🔒 Registro confirmado. Para editar solicite habilitación al administrador.
+            </div>
+
+            <div class="aviso-bloqueado" id="bannerCompletitudFicha" style="display:none; margin-top:14px; background:rgba(192,57,43,0.15); border-color:rgba(192,57,43,0.5);"></div>
+
+            <div class="seccion-titulo" style="margin-top:14px;" id="tituloSeccionIdentidad">Datos de la estructura</div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="inputCanalFuente">Canal Fuente</label>
+                <input type="text" id="inputCanalFuente" autocomplete="off">
+            </div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="inputNombreCanal">Nombre del Canal</label>
+                <input type="text" id="inputNombreCanal" autocomplete="off">
+            </div>
+            <div class="fila-doble">
+                <div class="campo">
+                    <label for="inputProgresivaKm">Progresiva (km)</label>
+                    <input type="text" id="inputProgresivaKm" placeholder="ej. 0+035.00" autocomplete="off">
+                </div>
+                <div class="campo" id="campoOrdenCompuerta" style="display:none;">
+                    <label for="inputOrdenCompuerta">Orden</label>
+                    <input type="text" id="inputOrdenCompuerta" autocomplete="off">
+                </div>
+            </div>
+            <div class="estado-busqueda" id="textoTomaAsignada" style="max-width:420px;"></div>
+            <button type="button" class="boton-secundario" id="btnVerUsuariosToma" style="max-width:420px; margin-bottom:10px;">👥 Usuarios de esta toma — ver quiénes son</button>
+
+            <!-- Toma/Compuerta (formulario propio, sin cambios de esta
+                 vuelta) muestran Zona/Margen/Este/Norte acá; los 12 tipos
+                 genéricos los muestran dentro de la lista única tocar-para-
+                 editar de más abajo (Margen si el tipo lo trae, Este/Norte
+                 o las 4 coordenadas de inicio/final). -->
+            <div id="seccionUbicacionComun" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+                <div class="seccion-titulo">Ubicación (UTM WGS84)</div>
+                <div class="fila-doble">
+                    <div class="campo">
+                        <label for="inputZonaUtm">Zona</label>
+                        <input type="text" id="inputZonaUtm" autocomplete="off">
+                    </div>
+                    <div class="campo">
+                        <label for="selectMargen">Margen</label>
+                        <select id="selectMargen"></select>
+                    </div>
+                </div>
+                <div class="fila-doble" id="filaEsteNorteUnico">
+                    <div class="campo">
+                        <label for="inputEste">Este</label>
+                        <input type="number" step="0.01" id="inputEste">
+                    </div>
+                    <div class="campo">
+                        <label for="inputNorte">Norte</label>
+                        <input type="number" step="0.01" id="inputNorte">
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" class="boton-secundario" id="btnAbrirEditorEstructura" style="width:100%; max-width:420px; display:none; margin-top:8px;">⛶ Editar ubicación a pantalla completa</button>
+            <div id="mapaFichaUbicacion" style="display:none; cursor:pointer;" title="Tocar para editar a pantalla completa"></div>
+            <div class="estado-busqueda" id="estadoMapaFicha" style="max-width:420px;"></div>
+
+            <!-- Campos específicos de Tomas -->
+            <div id="camposToma" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+                <div class="seccion-titulo">Características de la Toma</div>
+                <div class="fila-doble">
+                    <div class="campo">
+                        <label for="selectMaterialToma">Material</label>
+                        <select id="selectMaterialToma"></select>
+                    </div>
+                    <div class="campo">
+                        <label for="selectTipoToma">Tipo de captación</label>
+                        <select id="selectTipoToma"></select>
+                    </div>
+                </div>
+                <div class="seccion-titulo">Dimensiones</div>
+                <div class="fila-doble">
+                    <div class="campo"><label for="inputDimensionA">A (m)</label><input type="number" step="0.01" id="inputDimensionA"></div>
+                    <div class="campo"><label for="inputDimensionH">H (m)</label><input type="number" step="0.01" id="inputDimensionH"></div>
+                    <div class="campo"><label for="inputDimensionD">D (pulg.)</label><input type="number" step="0.01" id="inputDimensionD"></div>
+                </div>
+            </div>
+
+            <!-- Campos específicos de Compuertas -->
+            <div id="camposCompuerta" style="width:100%; display:none; flex-direction:column; align-items:center;">
+                <div class="seccion-titulo">Características de la Compuerta</div>
+                <div class="estado-busqueda" style="max-width:420px; opacity:0.75;">
+                    "Tipo" no tiene una leyenda oficial en el Excel de origen (F/G/T) — se deja como texto libre para no inventar un significado.
+                </div>
+                <div class="fila-doble">
+                    <div class="campo">
+                        <label for="inputTipoCompuerta">Tipo</label>
+                        <input type="text" id="inputTipoCompuerta" autocomplete="off">
+                    </div>
+                    <div class="campo">
+                        <label for="selectMaterialCompuerta">Material</label>
+                        <select id="selectMaterialCompuerta"></select>
+                    </div>
+                </div>
+                <div class="campo" style="width:100%; max-width:420px;">
+                    <label for="selectOperacion">Operación</label>
+                    <select id="selectOperacion"></select>
+                </div>
+                <div class="seccion-titulo">Componentes</div>
+                <div class="fila-doble">
+                    <div class="campo"><label for="inputHojaA">Hoja — A (m)</label><input type="number" step="0.01" id="inputHojaA"></div>
+                    <div class="campo"><label for="inputHojaH">Hoja — H (Alto)</label><input type="number" step="0.01" id="inputHojaH"></div>
+                </div>
+                <div class="fila-doble">
+                    <div class="campo"><label for="inputMarcoA">Marco — A (m)</label><input type="number" step="0.01" id="inputMarcoA"></div>
+                    <div class="campo"><label for="inputMarcoH">Marco — H (Alto)</label><input type="number" step="0.01" id="inputMarcoH"></div>
+                </div>
+                <div class="campo" style="width:100%; max-width:420px;">
+                    <label for="inputBloqueRiego">Bloque de Riego</label>
+                    <input type="text" id="inputBloqueRiego" autocomplete="off">
+                </div>
+            </div>
+
+            <!-- Campos genéricos (Fase 2: los 12 tipos de obra restantes) —
+                 datos del levantamiento de ingeniería del Excel, mostrados
+                 tal cual; cada fila se toca para corregirla si el
+                 sectorista en campo considera que está mal (mismo criterio
+                 en todo el formulario, sin distinguir "solo lectura" de
+                 "editable" — la decisión de qué corregir es del sectorista). -->
+            <div id="camposGenericos" style="width:100%; display:none; flex-direction:column; align-items:center;">
+                <div class="seccion-titulo">Datos de la obra (toca un valor para corregirlo)</div>
+                <div class="tarjeta" style="max-width:420px; width:100%;" id="listaCamposGenericos"></div>
+            </div>
+
+            <div id="seccionDibujoEstructura" style="width:100%; display:none; flex-direction:column; align-items:center;">
+                <div class="seccion-titulo">Esquema</div>
+                <div class="tarjeta" style="max-width:420px; width:100%; text-align:center;" id="contenidoDibujoEstructura"></div>
+            </div>
+
+            <div class="seccion-titulo">Estado</div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectEstado">Estado actual</label>
+                <select id="selectEstado"></select>
+            </div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="inputObservacion">Observación</label>
+                <textarea id="inputObservacion"></textarea>
+            </div>
+
+            <div class="seccion-titulo">Fotos</div>
+            <div class="estado-busqueda" id="estadoFotosAviso" style="max-width:420px; opacity:0.75;"></div>
+            <input type="file" id="inputFotoInventario" accept="image/*" capture="environment" style="display:none;">
+            <button class="boton-secundario" id="btnTomarFotoInventario" style="max-width:420px; margin-bottom:10px;">📷 Tomar foto</button>
+            <div class="estado-busqueda" id="estadoFotoInventario" style="max-width:420px;"></div>
+            <div id="listaFotosInventario" style="width:100%; max-width:420px; text-align:center;"></div>
+
+            <div class="estado-busqueda" id="estadoGuardadoFormulario"></div>
+            <button class="boton-secundario" id="btnVolverAListaAbajo" style="max-width:420px; margin-top:6px;">← Volver a la lista</button>
+            <button class="boton" id="btnContinuarConfirmacion" style="max-width:420px; margin-top:10px;">Continuar →</button>
+        </div>
+
+        <!-- ── Pantalla 5: confirmación ── -->
+        <div id="vistaConfirmacion" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverAFormulario" style="max-width:420px;">← Volver al formulario</button>
+            <h1 style="margin-top:14px; font-size:16px;">Confirmación del registro</h1>
+
+            <div class="tarjeta" style="max-width:420px; margin-top:14px;">
+                <div id="resumenRegistro"></div>
+            </div>
+
+            <div class="aviso-bloqueado" id="avisoBloqueadoConfirmacion" style="display:none; margin-top:16px;">
+                🔒 Registro confirmado. Para editar solicite habilitación al administrador.
+            </div>
+            <div class="aviso-bloqueado" id="avisoSolicitudEnviada" style="display:none; margin-top:10px; background: rgba(200,168,75,0.2);">
+                🕓 Solicitud de edición enviada — esperando aprobación del administrador.
+            </div>
+            <div class="aviso-bloqueado" id="avisoSolicitudPendienteAdmin" style="display:none; margin-top:10px; background: rgba(200,168,75,0.2);"></div>
+
+            <div class="estado-busqueda" id="estadoConfirmacion"></div>
+            <button class="boton" id="btnConfirmarGuardar" style="max-width:420px; margin-top:10px;">✔ Confirmar y guardar</button>
+            <button class="boton-secundario" id="btnSolicitarEdicion" style="max-width:420px; display:none;">🔓 Solicitar habilitación de edición</button>
+            <button class="boton-secundario" id="btnDesbloquear" style="max-width:420px; display:none;">✅ Habilitar edición (admin)</button>
+            <button class="boton-secundario" id="btnRechazarSolicitud" style="max-width:420px; display:none; margin-top:10px;">❌ Rechazar solicitud (admin)</button>
+            <button class="boton-secundario" id="btnVolverAFormularioAbajo" style="max-width:420px; margin-top:10px;">← Volver al formulario</button>
+        </div>
+
+        <!-- ── Pantalla admin: solicitudes de edición pendientes ── -->
+        <div id="vistaSolicitudes" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverATomasDesdeSolicitudes" style="max-width:420px;">← Volver a las tomas</button>
+            <h1 style="margin-top:14px; font-size:16px;">Solicitudes de edición pendientes</h1>
+
+            <div class="seccion-titulo">Tomas</div>
+            <div class="estado-busqueda" id="estadoSolicitudesTomas"></div>
+            <div class="resultados" id="listaSolicitudesTomas"></div>
+
+            <div class="seccion-titulo">Compuertas</div>
+            <div class="estado-busqueda" id="estadoSolicitudesCompuertas"></div>
+            <div class="resultados" id="listaSolicitudesCompuertas"></div>
+
+            <div class="seccion-titulo">Otras estructuras</div>
+            <div class="estado-busqueda" id="estadoSolicitudesGenericas"></div>
+            <div class="resultados" id="listaSolicitudesGenericas"></div>
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var esAdmin = false;
+
+        var tomaSeleccionada = null;
+        var tipoActual = 'toma'; // 'toma' | 'compuerta' | uno de TIPOS_ESTRUCTURA_GENERICOS
+        var registrosPorTipo = {}; // tipo → registros de la toma abierta
+        var registroActual = null;
+        var mapaInventarioLeaflet = null;
+        var marcadoresInventario = [];
+
+        // Despacha a las funciones de datos.js correctas según el tipo — evita
+        // duplicar toda la lógica de pantallas para cada tipo. Tomas/
+        // Compuertas tienen tabla y formulario propios (Fase 1); los 12
+        // tipos de TIPOS_ESTRUCTURA_GENERICOS (Fase 2) comparten una sola
+        // tabla `inventario_estructuras` — sus entradas se agregan más abajo,
+        // curried con su propio `tipoEstructura`.
+        var FUNCIONES_POR_TIPO = {
+            toma: {
+                etiqueta: 'Toma', etiquetaPlural: 'Tomas',
+                avance: function (comisionKey) { return CusshmiDatos.obtenerAvanceInventarioTomasPorToma(comisionKey); },
+                listar: CusshmiDatos.listarRegistrosInventarioTomasDeToma,
+                cargar: CusshmiDatos.cargarRegistroInventarioToma,
+                guardar: CusshmiDatos.guardarRegistroInventarioToma,
+                confirmar: CusshmiDatos.confirmarRegistroInventarioToma,
+                desbloquear: CusshmiDatos.desbloquearRegistroInventarioToma,
+                solicitarEdicion: CusshmiDatos.solicitarEdicionInventarioToma,
+                rechazarSolicitud: CusshmiDatos.rechazarSolicitudEdicionInventarioToma,
+            },
+            compuerta: {
+                etiqueta: 'Compuerta', etiquetaPlural: 'Compuertas',
+                avance: function (comisionKey) { return CusshmiDatos.obtenerAvanceInventarioCompuertasPorToma(comisionKey); },
+                listar: CusshmiDatos.listarRegistrosInventarioCompuertasDeToma,
+                cargar: CusshmiDatos.cargarRegistroInventarioCompuerta,
+                guardar: CusshmiDatos.guardarRegistroInventarioCompuerta,
+                confirmar: CusshmiDatos.confirmarRegistroInventarioCompuerta,
+                desbloquear: CusshmiDatos.desbloquearRegistroInventarioCompuerta,
+                solicitarEdicion: CusshmiDatos.solicitarEdicionInventarioCompuerta,
+                rechazarSolicitud: CusshmiDatos.rechazarSolicitudEdicionInventarioCompuerta,
+            },
+        };
+
+        // Fase 2 — una entrada por tipo genérico, todas apuntando a las
+        // mismas funciones de `inventario_estructuras`, curried con su
+        // propio `tipoEstructura` donde hace falta.
+        function construirFuncionesTipoGenerico(tipoEstructura, definicion) {
+            return {
+                etiqueta: definicion.etiqueta, etiquetaPlural: definicion.etiquetaPlural,
+                generico: true, definicion: definicion,
+                avance: function (comisionKey) { return CusshmiDatos.obtenerAvanceInventarioEstructurasPorToma(comisionKey, tipoEstructura); },
+                listar: function (comisionKey, tomaNombre) { return CusshmiDatos.listarRegistrosInventarioEstructurasDeToma(comisionKey, tomaNombre, tipoEstructura); },
+                listarPorTipo: function (comisionKey) { return CusshmiDatos.listarRegistrosInventarioEstructurasPorTipo(comisionKey, tipoEstructura); },
+                cargar: CusshmiDatos.cargarRegistroInventarioEstructura,
+                guardar: CusshmiDatos.guardarRegistroInventarioEstructura,
+                confirmar: CusshmiDatos.confirmarRegistroInventarioEstructura,
+                desbloquear: CusshmiDatos.desbloquearRegistroInventarioEstructura,
+                solicitarEdicion: CusshmiDatos.solicitarEdicionInventarioEstructura,
+                rechazarSolicitud: CusshmiDatos.rechazarSolicitudEdicionInventarioEstructura,
+            };
+        }
+        Object.keys(TIPOS_ESTRUCTURA_GENERICOS).forEach(function (clave) {
+            FUNCIONES_POR_TIPO[clave] = construirFuncionesTipoGenerico(clave, TIPOS_ESTRUCTURA_GENERICOS[clave]);
+        });
+
+        var TODOS_LOS_TIPOS = ['toma', 'compuerta'].concat(Object.keys(TIPOS_ESTRUCTURA_GENERICOS));
+
+        function construirSelectTipo() {
+            var sel = document.getElementById('selectTipoEstructura');
+            sel.innerHTML = '';
+            TODOS_LOS_TIPOS.forEach(function (tipo) {
+                var opt = document.createElement('option');
+                opt.value = tipo;
+                opt.textContent = FUNCIONES_POR_TIPO[tipo].etiquetaPlural;
+                sel.appendChild(opt);
+            });
+            sel.addEventListener('change', function () { seleccionarTipo(sel.value); });
+        }
+        construirSelectTipo();
+
+        function poblarSelect(elId, diccionario, incluirVacio) {
+            var el = document.getElementById(elId);
+            el.innerHTML = '';
+            if (incluirVacio) {
+                var optVacio = document.createElement('option');
+                optVacio.value = '';
+                optVacio.textContent = '—';
+                el.appendChild(optVacio);
+            }
+            Object.keys(diccionario).forEach(function (codigo) {
+                var opt = document.createElement('option');
+                opt.value = codigo;
+                opt.textContent = codigo + ' — ' + diccionario[codigo];
+                el.appendChild(opt);
+            });
+        }
+        poblarSelect('selectMargen', MARGEN_INVENTARIO, true);
+        poblarSelect('selectMaterialToma', MATERIAL_TOMA, true);
+        poblarSelect('selectTipoToma', TIPO_CAPTACION_TOMA, true);
+        poblarSelect('selectMaterialCompuerta', MATERIAL_COMPUERTA, true);
+        poblarSelect('selectOperacion', OPERACION_COMPUERTA, true);
+        poblarSelect('selectEstado', ESTADO_INVENTARIO, true);
+
+        var elEstadoTomas = document.getElementById('estadoTomas');
+        var elListaTomas = document.getElementById('listaTomas');
+        var elEstadoLista = document.getElementById('estadoLista');
+        var elListaEstructuras = document.getElementById('listaEstructuras');
+
+        // ═══ Pantalla 2 — selección de toma ═══
+        // La lista de tomas sale de lo que YA está sincronizado en el
+        // inventario (no hay "padrón" que comparar acá, son estructuras, no
+        // personas) — unión de las tomas presentes en Tomas y en Compuertas.
+        async function mostrarVistaTomas() {
+            document.getElementById('vistaTomas').style.display = 'flex';
+            document.getElementById('vistaLista').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            document.getElementById('vistaSolicitudes').style.display = 'none';
+
+            if (esAdmin) actualizarBotonSolicitudes();
+
+            elEstadoTomas.textContent = 'Cargando inventario…';
+            elListaTomas.innerHTML = '';
+
+            var resultadosAvance = await Promise.all(TODOS_LOS_TIPOS.map(function (tipo) { return FUNCIONES_POR_TIPO[tipo].avance(comisionKeyActual); }));
+            var mapas = {};
+            TODOS_LOS_TIPOS.forEach(function (tipo, i) { mapas[tipo] = (resultadosAvance[i].ok && resultadosAvance[i].avance) ? resultadosAvance[i].avance : {}; });
+
+            var tomasSet = new Set();
+            TODOS_LOS_TIPOS.forEach(function (tipo) { Object.keys(mapas[tipo]).forEach(function (t) { tomasSet.add(t); }); });
+            tomasSet.delete('Sin toma asignada');
+            var tomas = Array.from(tomasSet).sort(function (a, b) { return compararOrdenTomas(a, b); });
+            var hayTomaSinAsignar = TODOS_LOS_TIPOS.some(function (tipo) { return mapas[tipo]['Sin toma asignada']; });
+            if (hayTomaSinAsignar) tomas.push('Sin toma asignada');
+
+            if (tomas.length === 0) {
+                elEstadoTomas.textContent = 'No hay inventario sincronizado todavía. Pide a un administrador que lo sincronice desde el sistema de escritorio.';
+                return;
+            }
+
+            elEstadoTomas.textContent = '';
+            tomas.forEach(function (toma) {
+                var totalRevisados = 0, totalGeneral = 0;
+                TODOS_LOS_TIPOS.forEach(function (tipo) {
+                    var m = mapas[tipo][toma];
+                    if (m) { totalRevisados += m.revisados; totalGeneral += m.total; }
+                });
+                var bloque = toma === 'Sin toma asignada' ? '—' : obtenerBloqueDeToma(toma);
+                var detalle = totalGeneral + ' estructuras · ' + totalRevisados + '/' + totalGeneral + ' revisadas';
+
+                var fila = document.createElement('button');
+                fila.className = 'fila-toma';
+                fila.type = 'button';
+                fila.innerHTML =
+                    '<div class="nombre-toma">' + escapeHtml(toma) + '</div>' +
+                    '<div class="detalle-toma">Bloque: ' + escapeHtml(bloque) + ' · ' + escapeHtml(detalle) + '</div>';
+                fila.addEventListener('click', function () { abrirToma(toma); });
+                elListaTomas.appendChild(fila);
+            });
+        }
+
+        // ═══ Pantalla admin — solicitudes de edición pendientes ═══
+        async function actualizarBotonSolicitudes() {
+            var btn = document.getElementById('btnVerSolicitudes');
+            var [rTomas, rCompuertas, rGenericas] = await Promise.all([
+                CusshmiDatos.listarSolicitudesEdicionInventarioToma(comisionKeyActual),
+                CusshmiDatos.listarSolicitudesEdicionInventarioCompuerta(comisionKeyActual),
+                CusshmiDatos.listarSolicitudesEdicionInventarioEstructura(comisionKeyActual),
+            ]);
+            var n = ((rTomas.ok && rTomas.solicitudes) ? rTomas.solicitudes.length : 0) +
+                ((rCompuertas.ok && rCompuertas.solicitudes) ? rCompuertas.solicitudes.length : 0) +
+                ((rGenericas.ok && rGenericas.solicitudes) ? rGenericas.solicitudes.length : 0);
+            if (n > 0) {
+                btn.textContent = '🔔 Solicitudes de edición pendientes (' + n + ')';
+                btn.style.display = 'block';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        async function mostrarVistaSolicitudes() {
+            document.getElementById('vistaTomas').style.display = 'none';
+            document.getElementById('vistaSolicitudes').style.display = 'flex';
+            await renderizarListaSolicitudes('toma', 'estadoSolicitudesTomas', 'listaSolicitudesTomas');
+            await renderizarListaSolicitudes('compuerta', 'estadoSolicitudesCompuertas', 'listaSolicitudesCompuertas');
+            await renderizarListaSolicitudesGenericas('estadoSolicitudesGenericas', 'listaSolicitudesGenericas');
+        }
+
+        // Fase 2 — una sola lista combinada para los 12 tipos genéricos (en
+        // vez de 12 secciones): cada fila trae su propio `tipo_estructura`,
+        // las acciones de habilitar/rechazar son las mismas para los 12
+        // (operan sobre `inventario_estructuras` por id, el tipo no importa).
+        async function renderizarListaSolicitudesGenericas(idEstado, idLista) {
+            var elEstado = document.getElementById(idEstado);
+            var elLista = document.getElementById(idLista);
+            elEstado.textContent = 'Cargando solicitudes…';
+            elLista.innerHTML = '';
+
+            var resultado = await CusshmiDatos.listarSolicitudesEdicionInventarioEstructura(comisionKeyActual);
+            if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar las solicitudes.'; return; }
+            var solicitudes = resultado.solicitudes || [];
+            if (solicitudes.length === 0) {
+                elEstado.textContent = 'No hay solicitudes pendientes.';
+                return;
+            }
+            elEstado.textContent = '';
+
+            solicitudes.forEach(function (s) {
+                var def = TIPOS_ESTRUCTURA_GENERICOS[s.tipo_estructura];
+                var etiquetaTipo = def ? def.etiqueta : s.tipo_estructura;
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                var fecha = s.solicitud_edicion_en ? new Date(s.solicitud_edicion_en).toLocaleString('es-PE') : '-';
+                fila.innerHTML =
+                    '<div class="nombre-resultado">' + escapeHtml(s.nombre_obra || s.nombre_canal || '-') +
+                    '<span class="badge-estado">' + escapeHtml(etiquetaTipo) + '</span></div>' +
+                    '<div class="detalle-resultado">' + escapeHtml(s.canal_fuente || '-') + ' → ' + escapeHtml(s.nombre_canal || '-') + ' · Toma ' + escapeHtml(s.toma_nombre || 'Sin toma asignada') + '</div>' +
+                    '<div class="detalle-resultado">Solicitado por ' + escapeHtml(s.solicitud_edicion_por_nombre || 'un programador') + ' — ' + escapeHtml(fecha) + '</div>';
+
+                var acciones = document.createElement('div');
+                acciones.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
+
+                var btnHabilitar = document.createElement('button');
+                btnHabilitar.className = 'boton';
+                btnHabilitar.type = 'button';
+                btnHabilitar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnHabilitar.textContent = '✅ Habilitar';
+                btnHabilitar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnHabilitar.disabled = true;
+                    var r = await CusshmiDatos.desbloquearRegistroInventarioEstructura(s.id);
+                    if (!r.ok) { alert(r.error); btnHabilitar.disabled = false; return; }
+                    renderizarListaSolicitudesGenericas(idEstado, idLista);
+                    actualizarBotonSolicitudes();
+                });
+
+                var btnRechazar = document.createElement('button');
+                btnRechazar.className = 'boton-secundario';
+                btnRechazar.type = 'button';
+                btnRechazar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnRechazar.textContent = '❌ Rechazar';
+                btnRechazar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnRechazar.disabled = true;
+                    var r = await CusshmiDatos.rechazarSolicitudEdicionInventarioEstructura(s.id);
+                    if (!r.ok) { alert(r.error); btnRechazar.disabled = false; return; }
+                    renderizarListaSolicitudesGenericas(idEstado, idLista);
+                    actualizarBotonSolicitudes();
+                });
+
+                acciones.appendChild(btnHabilitar);
+                acciones.appendChild(btnRechazar);
+                fila.appendChild(acciones);
+                elLista.appendChild(fila);
+            });
+        }
+
+        async function renderizarListaSolicitudes(tipo, idEstado, idLista) {
+            var elEstado = document.getElementById(idEstado);
+            var elLista = document.getElementById(idLista);
+            elEstado.textContent = 'Cargando solicitudes…';
+            elLista.innerHTML = '';
+
+            var listarFn = tipo === 'toma' ? CusshmiDatos.listarSolicitudesEdicionInventarioToma : CusshmiDatos.listarSolicitudesEdicionInventarioCompuerta;
+            var resultado = await listarFn(comisionKeyActual);
+            if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar las solicitudes.'; return; }
+            var solicitudes = resultado.solicitudes || [];
+            if (solicitudes.length === 0) {
+                elEstado.textContent = 'No hay solicitudes pendientes.';
+                return;
+            }
+            elEstado.textContent = '';
+
+            solicitudes.forEach(function (s) {
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                var fecha = s.solicitud_edicion_en ? new Date(s.solicitud_edicion_en).toLocaleString('es-PE') : '-';
+                fila.innerHTML =
+                    '<div class="nombre-resultado">' + escapeHtml(s.canal_fuente || '-') + ' → ' + escapeHtml(s.nombre_canal || '-') + '</div>' +
+                    '<div class="detalle-resultado">Toma ' + escapeHtml(s.toma_nombre || 'Sin toma asignada') + '</div>' +
+                    '<div class="detalle-resultado">Solicitado por ' + escapeHtml(s.solicitud_edicion_por_nombre || 'un programador') + ' — ' + escapeHtml(fecha) + '</div>';
+
+                var acciones = document.createElement('div');
+                acciones.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
+
+                var btnHabilitar = document.createElement('button');
+                btnHabilitar.className = 'boton';
+                btnHabilitar.type = 'button';
+                btnHabilitar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnHabilitar.textContent = '✅ Habilitar';
+                btnHabilitar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnHabilitar.disabled = true;
+                    var r = await FUNCIONES_POR_TIPO[tipo].desbloquear(s.id);
+                    if (!r.ok) { alert(r.error); btnHabilitar.disabled = false; return; }
+                    renderizarListaSolicitudes(tipo, idEstado, idLista);
+                    actualizarBotonSolicitudes();
+                });
+
+                var btnRechazar = document.createElement('button');
+                btnRechazar.className = 'boton-secundario';
+                btnRechazar.type = 'button';
+                btnRechazar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnRechazar.textContent = '❌ Rechazar';
+                btnRechazar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnRechazar.disabled = true;
+                    var r = await FUNCIONES_POR_TIPO[tipo].rechazarSolicitud(s.id);
+                    if (!r.ok) { alert(r.error); btnRechazar.disabled = false; return; }
+                    renderizarListaSolicitudes(tipo, idEstado, idLista);
+                    actualizarBotonSolicitudes();
+                });
+
+                acciones.appendChild(btnHabilitar);
+                acciones.appendChild(btnRechazar);
+                fila.appendChild(acciones);
+                elLista.appendChild(fila);
+            });
+        }
+
+        document.getElementById('btnVerSolicitudes').addEventListener('click', mostrarVistaSolicitudes);
+        document.getElementById('btnVolverATomasDesdeSolicitudes').addEventListener('click', mostrarVistaTomas);
+
+        // ═══ Pantalla 3 — lista de estructuras de la toma ═══
+        async function abrirToma(tomaNombre) {
+            tomaSeleccionada = tomaNombre;
+            document.getElementById('vistaTomas').style.display = 'none';
+            document.getElementById('vistaLista').style.display = 'flex';
+            document.getElementById('tituloTomaLista').textContent = tomaNombre === 'Sin toma asignada' ? tomaNombre : ('Toma ' + tomaNombre);
+            document.getElementById('inputBusquedaCanal').value = '';
+
+            elEstadoLista.textContent = 'Cargando estructuras…';
+            var resultados = await Promise.all(TODOS_LOS_TIPOS.map(function (tipo) {
+                return FUNCIONES_POR_TIPO[tipo].listar(comisionKeyActual, tomaNombre);
+            }));
+            registrosPorTipo = {};
+            TODOS_LOS_TIPOS.forEach(function (tipo, i) {
+                registrosPorTipo[tipo] = (resultados[i].ok && resultados[i].registros) ? resultados[i].registros : [];
+            });
+            elEstadoLista.textContent = '';
+
+            seleccionarTipo(TODOS_LOS_TIPOS.indexOf(tipoActual) !== -1 ? tipoActual : 'toma');
+        }
+
+        function seleccionarTipo(tipo) {
+            tipoActual = tipo;
+            document.getElementById('selectTipoEstructura').value = tipo;
+            // "+ Agregar estructura nueva" solo tiene sentido para Tomas/
+            // Compuertas — los 12 tipos genéricos son de solo lectura salvo
+            // Estado/Observación, no hay forma de cargar su identidad a mano.
+            document.getElementById('btnAgregarNuevo').style.display = (tipo === 'toma' || tipo === 'compuerta') ? 'block' : 'none';
+            renderizarListaEstructuras('');
+        }
+
+        function renderizarListaEstructuras(textoFiltro) {
+            elListaEstructuras.innerHTML = '';
+            var registros = registrosPorTipo[tipoActual] || [];
+            var filtro = (textoFiltro || '').trim().toUpperCase();
+            var filas = filtro
+                ? registros.filter(function (r) {
+                    return (r.canal_fuente || '').toUpperCase().indexOf(filtro) !== -1 ||
+                        (r.nombre_canal || '').toUpperCase().indexOf(filtro) !== -1 ||
+                        (r.nombre_obra || '').toUpperCase().indexOf(filtro) !== -1;
+                })
+                : registros;
+
+            if (registros.length === 0) {
+                elEstadoLista.textContent = 'No hay ' + FUNCIONES_POR_TIPO[tipoActual].etiquetaPlural.toLowerCase() + ' sincronizadas para esta toma todavía.';
+            } else if (filas.length === 0) {
+                elEstadoLista.textContent = 'Sin coincidencias.';
+            } else {
+                elEstadoLista.textContent = '';
+            }
+
+            filas.forEach(function (r) {
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                var estadoTexto = r.estado ? (ESTADO_INVENTARIO[r.estado] || r.estado) : 'sin revisar';
+                var tituloFila = r.nombre_obra || r.nombre_canal || '-';
+                var completitud = calcularCompletitudEstructura(tipoActual, r);
+                if (completitud.porcentaje < 100) fila.style.cssText = 'background:rgba(192,57,43,0.15); border-radius:8px;';
+                fila.innerHTML =
+                    '<div class="nombre-resultado">' + escapeHtml(tituloFila) +
+                    '<span class="badge-registrado">' + (r.confirmado ? '✅ confirmado' : '📝 pendiente') + '</span>' +
+                    '<span class="badge-estado">' + escapeHtml(estadoTexto) + '</span>' +
+                    (completitud.porcentaje < 100 ? '<span class="badge-estado" style="background:rgba(192,57,43,0.5);">' + completitud.porcentaje + '% completo</span>' : '') +
+                    '</div>' +
+                    '<div class="detalle-resultado">Desde: ' + escapeHtml(r.canal_fuente || '-') + ' → ' + escapeHtml(r.nombre_canal || '-') + (r.progresiva_km ? ' · Prog. ' + escapeHtml(r.progresiva_km) : '') + '</div>';
+                fila.addEventListener('click', function () { abrirFormularioDesdeRegistro(r); });
+                elListaEstructuras.appendChild(fila);
+            });
+        }
+
+        document.getElementById('inputBusquedaCanal').addEventListener('input', function (e) {
+            renderizarListaEstructuras(e.target.value);
+        });
+
+        document.getElementById('btnVolverATomas').addEventListener('click', mostrarVistaTomas);
+
+        document.getElementById('btnAgregarNuevo').addEventListener('click', function () {
+            abrirFormularioDesdeRegistro(null);
+        });
+
+        // ═══ Mapa satelital de la infraestructura — geometría real del
+        // levantamiento GIS (mapas/inventario_gis/*.json), no ya la
+        // aproximación por conversión UTM→lat/lon que se usaba antes.
+        function _colorPorEstadoInventario(estado) {
+            if (estado === 'B') return '#1e7e34';
+            if (estado === 'R') return '#c8a84b';
+            if (estado === 'M') return '#c0392b';
+            return '#888888';
+        }
+
+        function inicializarMapaInventarioSiHaceFalta() {
+            if (mapaInventarioLeaflet) {
+                setTimeout(function () { mapaInventarioLeaflet.invalidateSize(); }, 50);
+                return;
+            }
+            mapaInventarioLeaflet = L.map('mapaInventario', { preferCanvas: true }).setView([-4.9, -80.6], 12);
+            // Google Satellite en vez de Esri World_Imagery — Esri no tenía imagen en
+            // zoom alto para varias zonas rurales de Piura ("Map data not yet
+            // available"); Google sí, verificado contra la zona real. Nota: es la URL
+            // "de tiles" que usa el propio Google Maps, no la API oficial con clave/
+            // facturación — fuera de sus Términos de Servicio para este uso, decisión
+            // tomada explícitamente por el usuario tras comparar ambas.
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }).addTo(mapaInventarioLeaflet);
+            setTimeout(function () { mapaInventarioLeaflet.invalidateSize(); }, 50);
+        }
+
+        var capaGisCache = {}; // tipo → array de figuras del KMZ ya parseado
+
+        function _normMatch(v) {
+            return (v || '').toString().trim().replace(/\s+/g, ' ').toUpperCase();
+        }
+
+        // El Excel oficial y el KMZ traen la progresiva con formato distinto
+        // a veces (ej. "07+899.00" vs "7+899" vs "7+899.00") — se normaliza
+        // a km+metros con 2 decimales fijos para que ambas fuentes calcen
+        // aunque difieran en ceros a la izquierda o decimales.
+        function _normProgresiva(v) {
+            var s = (v || '').toString().trim().toUpperCase();
+            var m = s.match(/^(\d+)\s*\+\s*(\d+(?:\.\d+)?)$/);
+            if (!m) return s.replace(/\s+/g, '');
+            return parseInt(m[1], 10) + '+' + parseFloat(m[2]).toFixed(2);
+        }
+
+        // Tolera la diferencia de convención entre el KMZ ("CANAL PRINCIPAL
+        // SD-3", "DREN BANANEROS - SANTA CLARA") y el Excel sincronizado
+        // ("Principal SD3", sin la palabra CANAL/DREN ni guion) — quita esas
+        // palabras COMPLETAS (límite de palabra, no substring: no rompe
+        // nombres que las contengan en otra posición, ej. "CANALIZACION")
+        // y los guiones, en ambos lados de la comparación por igual.
+        function _normNombreLibre(v) {
+            var s = _normMatch(v);
+            s = s.replace(/\bCANAL\b/g, ' ').replace(/\bDREN\b/g, ' ');
+            s = s.replace(/-/g, '');
+            return s.replace(/\s+/g, ' ').trim();
+        }
+
+        function _numOrNull(v) {
+            var n = parseFloat(v);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        // Empareja una figura del KMZ contra los registros de Supabase ya
+        // cargados, por la misma clave natural que ya usa la sincronización
+        // (canal fuente + nombre del canal + progresiva), normalizada para
+        // tolerar diferencias de mayúsculas/espacios/formato de progresiva
+        // entre el Excel y el GIS.
+        function _buscarRegistroParaFigura(registros, figura, claves) {
+            var canalFuenteKmz = claves.canalFuenteKey ? _normMatch(figura.campos[claves.canalFuenteKey]) : '';
+            var nombreCanalKmz = _normNombreLibre(figura.campos[claves.nombreCanalKey]);
+            var progresivaKmz = _normProgresiva(figura.campos[claves.progresivaKey]);
+            return registros.find(function (r) {
+                return (!claves.canalFuenteKey || _normMatch(r.canal_fuente) === canalFuenteKmz) &&
+                    _normNombreLibre(r.nombre_canal) === nombreCanalKmz &&
+                    _normProgresiva(r.progresiva_km) === progresivaKmz;
+            }) || null;
+        }
+
+        async function pintarMarcadoresInventario() {
+            marcadoresInventario.forEach(function (m) { mapaInventarioLeaflet.removeLayer(m); });
+            marcadoresInventario = [];
+            var elEstado = document.getElementById('estadoMapaInventario');
+            var tipo = tipoActual;
+            var esLineal = TIPOS_LINEALES_GIS.indexOf(tipo) !== -1;
+            var claves = CLAVES_KMZ_POR_TIPO[tipo];
+
+            elEstado.textContent = 'Cargando infraestructura…';
+            if (!capaGisCache[tipo]) {
+                try {
+                    var resp = await fetch('../mapas/inventario_gis/' + tipo + '.json');
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    capaGisCache[tipo] = await resp.json();
+                } catch (e) {
+                    elEstado.textContent = 'No se pudo cargar el mapa: ' + e.message;
+                    return;
+                }
+            }
+
+            // Los Drenes cruzan varias tomas y su KMZ no trae ese dato
+            // resuelto — se muestran completos, sin importar la toma
+            // seleccionada (mismo criterio ya verificado con el usuario).
+            var esDren = (tipo === 'dren_principal' || tipo === 'dren_secundario');
+            var figuras = capaGisCache[tipo].filter(function (f) {
+                return esDren || f.toma === tomaSeleccionada;
+            });
+
+            if (!figuras.length) {
+                elEstado.textContent = esDren
+                    ? 'No hay ' + FUNCIONES_POR_TIPO[tipo].etiquetaPlural.toLowerCase() + ' en el levantamiento GIS.'
+                    : 'El levantamiento GIS no trae ' + FUNCIONES_POR_TIPO[tipo].etiquetaPlural.toLowerCase() + ' identificadas para esta toma.';
+                return;
+            }
+            elEstado.textContent = esDren ? figuras.length + ' — cruzan varias tomas, no se filtran por la toma seleccionada.' : '';
+
+            // Para pintar el color por Estado y saber a qué ficha abrir al
+            // tocar, se empareja contra Supabase: los 13 tipos normales ya
+            // están cargados en registrosPorTipo (Pantalla 3); los Drenes,
+            // al no tener toma resuelta, se traen sin filtro de toma.
+            var registrosParaEmparejar = registrosPorTipo[tipo] || [];
+            if (esDren) {
+                var resultadoTipo = await FUNCIONES_POR_TIPO[tipo].listarPorTipo(comisionKeyActual);
+                if (resultadoTipo.ok) registrosParaEmparejar = resultadoTipo.registros;
+            }
+
+            var esPuntualConIcono = TIPOS_PUNTUALES_GIS.indexOf(tipo) !== -1;
+            var incompletos = 0;
+            figuras.forEach(function (f) {
+                var match = _buscarRegistroParaFigura(registrosParaEmparejar, f, claves);
+                var completitud = match ? calcularCompletitudEstructura(tipo, match) : null;
+                var incompleto = completitud ? completitud.porcentaje < 100 : false;
+                if (incompleto) incompletos++;
+                var colorEstado = incompleto ? '#c0392b' : (match ? _colorPorEstadoInventario(match.estado) : '#888888');
+                var capa;
+                if (esLineal && f.geom && f.geom.type === 'LineString') {
+                    // Canal Lateral respeta el color real del KMZ (simboliza
+                    // el orden de riego, L1..L5). Drenes: verificado contra
+                    // el KMZ original que su <LineStyle><color> es negro fijo
+                    // (ff000000) para el 100% de las figuras, sin variar por
+                    // tipo/orden — se replica ese negro tal cual en vez del
+                    // color por Estado (que sí se conserva como respaldo
+                    // cuando falta información del formato oficial, mismo
+                    // criterio ya usado para el resto de tipos).
+                    var colorLinea;
+                    if (tipo === 'canal_lateral' && f.color) colorLinea = f.color;
+                    else if (esDren) colorLinea = incompleto ? '#c0392b' : '#000000';
+                    else colorLinea = colorEstado;
+                    capa = L.polyline(f.geom.coords, { color: colorLinea, weight: 4, opacity: 0.9, dashArray: incompleto ? '2,6' : null }).addTo(mapaInventarioLeaflet);
+                } else if (esPuntualConIcono && f.geom && f.geom.type === 'Point') {
+                    // Ícono real del KMZ (respeta la simbología original) +
+                    // una insignia de color en la esquina con el Estado (o
+                    // rojo si falta información del formato oficial).
+                    var icono = L.divIcon({
+                        className: '', html:
+                            '<div style="position:relative; width:24px; height:24px;">' +
+                            '<img src="../mapas/inventario_gis/iconos/' + tipo + '.png" style="width:24px; height:24px;">' +
+                            '<span style="position:absolute; right:-2px; bottom:-2px; width:9px; height:9px; border-radius:50%; background:' + colorEstado + '; border:1.5px solid #002555;"></span>' +
+                            '</div>',
+                        iconSize: [24, 24], iconAnchor: [12, 12],
+                    });
+                    capa = L.marker(f.geom.coords, { icon: icono }).addTo(mapaInventarioLeaflet);
+                } else if (!esLineal && f.geom && f.geom.type === 'Point') {
+                    capa = L.circleMarker(f.geom.coords, { radius: 8, color: '#002555', weight: 1.5, fillColor: colorEstado, fillOpacity: 0.9 }).addTo(mapaInventarioLeaflet);
+                } else {
+                    return;
+                }
+                capa.on('click', function () {
+                    document.getElementById('vistaMapaInventario').style.display = 'none';
+                    abrirFichaDesdeFiguraGis(f, tipo, match);
+                });
+                marcadoresInventario.push(capa);
+            });
+            if (incompletos) {
+                elEstado.textContent = (elEstado.textContent ? elEstado.textContent + ' · ' : '') + incompletos + ' con datos del formato incompletos (resaltadas en rojo).';
+            }
+
+            if (marcadoresInventario.length) {
+                var grupo = L.featureGroup(marcadoresInventario);
+                mapaInventarioLeaflet.fitBounds(grupo.getBounds(), { padding: [30, 30], maxZoom: 17 });
+            } else {
+                mapaInventarioLeaflet.setView([-4.9, -80.6], 12);
+            }
+        }
+
+        function mostrarVistaMapaInventario() {
+            document.getElementById('vistaLista').style.display = 'none';
+            document.getElementById('vistaMapaInventario').style.display = 'flex';
+            var nombreToma = tomaSeleccionada === 'Sin toma asignada' ? tomaSeleccionada : ('Toma ' + tomaSeleccionada);
+            document.getElementById('tituloMapaInventario').textContent = nombreToma + ' — ' + FUNCIONES_POR_TIPO[tipoActual].etiquetaPlural;
+            inicializarMapaInventarioSiHaceFalta();
+            pintarMarcadoresInventario();
+        }
+
+        document.getElementById('btnVerMapaInventario').addEventListener('click', mostrarVistaMapaInventario);
+        document.getElementById('btnVolverAListaDesdeMapa').addEventListener('click', function () {
+            document.getElementById('vistaMapaInventario').style.display = 'none';
+            document.getElementById('vistaLista').style.display = 'flex';
+        });
+
+        // Al tocar una figura del mapa: si ya existe una fila de Supabase
+        // con la misma identidad, abre su ficha completa (editable,
+        // confirmable, con fotos) tal cual siempre existió. Si no existe
+        // todavía (la obra no estaba en el Excel sincronizado, o su nombre
+        // difiere levemente) se crea de inmediato con los datos del propio
+        // levantamiento GIS, para que quede editable ya mismo — no tiene
+        // sentido mostrar "no existe" cuando la estructura sí está ahí,
+        // visible en la imagen satelital.
+        async function abrirFichaDesdeFiguraGis(figura, tipo, matchYaResuelto) {
+            tipoActual = tipo;
+            var claves = CLAVES_KMZ_POR_TIPO[tipo];
+            var registros = registrosPorTipo[tipo] || [];
+            var match = matchYaResuelto !== undefined ? matchYaResuelto : _buscarRegistroParaFigura(registros, figura, claves);
+
+            if (match) {
+                abrirFormularioDesdeRegistro(match);
+                return;
+            }
+
+            registroActual = nuevoRegistroBase();
+            registroActual.tipo = tipo;
+            // Sin canalFuenteKey (Drenes) no hay con qué llenar el campo, y
+            // la columna es obligatoria en Supabase — se usa el propio
+            // nombre del canal como relleno técnico (el campo queda de
+            // solo lectura igual que siempre, no se le muestra al usuario
+            // como si fuera un dato real de canal fuente).
+            registroActual.canalFuente = claves.canalFuenteKey ? (figura.campos[claves.canalFuenteKey] || '') : (figura.campos[claves.nombreCanalKey] || '');
+            registroActual.nombreCanal = figura.campos[claves.nombreCanalKey] || '';
+            registroActual.progresivaKm = figura.campos[claves.progresivaKey] || '';
+            registroActual.tomaNombre = figura.toma || null;
+            registroActual.zonaUtm = '17';
+            registroActual.nombreObra = figura.nombre || '';
+            registroActual.campos = {};
+
+            if (TIPOS_LINEALES_GIS.indexOf(tipo) !== -1) {
+                registroActual.campos.esteInicio = _numOrNull(figura.campos[claves.esteIniKey]);
+                registroActual.campos.norteInicio = _numOrNull(figura.campos[claves.norteIniKey]);
+                registroActual.campos.esteFinal = _numOrNull(figura.campos[claves.esteFinKey]);
+                registroActual.campos.norteFinal = _numOrNull(figura.campos[claves.norteFinKey]);
+            } else {
+                registroActual.este = figura.campos[claves.esteKey] || '';
+                registroActual.norte = figura.campos[claves.norteKey] || '';
+            }
+
+            document.getElementById('vistaLista').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+
+            var resultado = await FUNCIONES_POR_TIPO[tipo].guardar(datosParaGuardar());
+            if (!resultado.ok) {
+                alert('No se pudo crear la estructura desde el levantamiento GIS: ' + resultado.error);
+                document.getElementById('vistaFormulario').style.display = 'none';
+                document.getElementById('vistaLista').style.display = 'flex';
+                return;
+            }
+            registroActual.id = resultado.id;
+            pintarFormularioDesdeRegistro();
+            document.getElementById('estadoGuardadoFormulario').textContent = 'Estructura nueva — no estaba en el Excel sincronizado, se creó desde el levantamiento GIS.';
+        }
+
+        // ═══ Usuarios de la toma de la estructura abierta ═══
+        async function mostrarUsuariosDeToma() {
+            var r = registroActual;
+            var tomaNombre = r ? r.tomaNombre : null;
+            var esCanalLateral = r && r.tipo === 'canal_lateral';
+            var canalNombre = esCanalLateral ? r.nombreCanal : null;
+
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaUsuariosToma').style.display = 'flex';
+            document.getElementById('tituloUsuariosToma').textContent = esCanalLateral
+                ? ('Usuarios — ' + canalNombre) : (tomaNombre ? ('Usuarios — Toma ' + tomaNombre) : 'Usuarios');
+            var elEstado = document.getElementById('estadoUsuariosToma');
+            var elLista = document.getElementById('listaUsuariosToma');
+            elLista.innerHTML = '';
+            if (!tomaNombre) {
+                elEstado.textContent = 'Esta estructura no tiene una toma asignada — no se puede listar usuarios.';
+                return;
+            }
+            elEstado.textContent = 'Cargando…';
+
+            // Los demás canales de la misma toma, para el desplegable de
+            // reasignación — solo hace falta pedirlo si es un Canal Lateral.
+            var otrosCanales = [];
+            if (esCanalLateral) {
+                var resultadoCanales = await CusshmiDatos.listarRegistrosInventarioEstructurasDeToma(comisionKeyActual, tomaNombre, 'canal_lateral');
+                if (resultadoCanales.ok) {
+                    var vistos = {};
+                    resultadoCanales.registros.forEach(function (c) {
+                        if (c.nombre_canal && !vistos[c.nombre_canal]) { vistos[c.nombre_canal] = true; otrosCanales.push(c.nombre_canal); }
+                    });
+                }
+            }
+
+            var resultado = await CusshmiDatos.cargarPadronOficialA1(comisionKeyActual);
+            if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar el padrón.'; return; }
+            var usuarios = resultado.resultados.filter(function (u) {
+                if (u.toma_nombre !== tomaNombre) return false;
+                if (esCanalLateral) return u.canal_nombre === canalNombre;
+                return true;
+            });
+            if (!usuarios.length) {
+                elEstado.textContent = esCanalLateral
+                    ? 'Ningún usuario del padrón está asignado todavía a este canal.'
+                    : 'No hay usuarios del padrón oficial A-1 registrados para esta toma.';
+                return;
+            }
+            var areaTotal = 0;
+            usuarios.forEach(function (u) { areaTotal += Number(u.area_bajo_riego_ha) || 0; });
+            elEstado.textContent = usuarios.length + ' usuario(s) · ' + areaTotal.toFixed(2) + ' ha en total';
+            usuarios.forEach(function (u) {
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                fila.innerHTML = '<div class="nombre-resultado">' + escapeHtml(u.apellidos_nombres) + '</div>' +
+                    '<div class="detalle-resultado">UC ' + escapeHtml(u.unidad_catastral || '-') + ' · ' + (Number(u.area_bajo_riego_ha) || 0).toFixed(2) + ' ha</div>';
+
+                // Reasignación — solo tiene sentido en un Canal Lateral (el
+                // usuario mostrado puede no corresponder a este canal; se
+                // reasigna a otro de la misma toma sin salir de la pantalla).
+                if (esCanalLateral && otrosCanales.length) {
+                    var contReasignar = document.createElement('div');
+                    contReasignar.style.cssText = 'margin-top:6px; display:flex; gap:6px; align-items:center;';
+                    var selectCanal = document.createElement('select');
+                    selectCanal.style.cssText = 'flex:1; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.25); background:rgba(255,255,255,0.95); color:#002555; font-size:12px;';
+                    otrosCanales.filter(function (c) { return c !== canalNombre; }).forEach(function (c) {
+                        var opt = document.createElement('option'); opt.value = c; opt.textContent = c; selectCanal.appendChild(opt);
+                    });
+                    var btnReasignar = document.createElement('button');
+                    btnReasignar.type = 'button';
+                    btnReasignar.textContent = '↔ Reasignar';
+                    btnReasignar.style.cssText = 'padding:6px 10px; border:none; border-radius:6px; background:#003876; color:#fff; font-weight:600; font-size:12px; cursor:pointer;';
+                    btnReasignar.addEventListener('click', async function () {
+                        if (!selectCanal.value) return;
+                        btnReasignar.disabled = true; btnReasignar.textContent = 'Guardando…';
+                        var resultadoReasignar = await CusshmiDatos.reasignarUsuarioCanal(u.id, selectCanal.value);
+                        if (!resultadoReasignar.ok) {
+                            alert('No se pudo reasignar: ' + resultadoReasignar.error);
+                            btnReasignar.disabled = false; btnReasignar.textContent = '↔ Reasignar';
+                            return;
+                        }
+                        mostrarUsuariosDeToma(); // refresca — el usuario ya no aparece en este canal
+                    });
+                    contReasignar.appendChild(selectCanal);
+                    contReasignar.appendChild(btnReasignar);
+                    fila.appendChild(contReasignar);
+                }
+                elLista.appendChild(fila);
+            });
+        }
+        document.getElementById('btnVerUsuariosToma').addEventListener('click', mostrarUsuariosDeToma);
+        document.getElementById('btnVolverDesdeUsuariosToma').addEventListener('click', function () {
+            document.getElementById('vistaUsuariosToma').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        });
+
+        // ═══ Mapa de ubicación de la ficha — la estructura sola + los
+        // polígonos de los predios que abastece esa toma (mismos KML y
+        // funciones ya usados por movil/mapa.html: KML_POR_TOMA,
+        // parsearKmlATomas, filtrarPorToma, cruzarPredioConPadron). ═══
+        var mapaFichaLeaflet = null;
+        function inicializarMapaFichaSiHaceFalta() {
+            if (mapaFichaLeaflet) { setTimeout(function () { mapaFichaLeaflet.invalidateSize(); }, 50); return; }
+            mapaFichaLeaflet = L.map('mapaFichaUbicacion', { preferCanvas: true }).setView([-4.9, -80.6], 13);
+            // Google Satellite en vez de Esri (ver nota más arriba en este archivo).
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }).addTo(mapaFichaLeaflet);
+            setTimeout(function () { mapaFichaLeaflet.invalidateSize(); }, 50);
+        }
+
+        async function pintarMapaFicha() {
+            var r = registroActual;
+            var elMapa = document.getElementById('mapaFichaUbicacion');
+            var elEstado = document.getElementById('estadoMapaFicha');
+            var esLineal = TIPOS_LINEALES_GIS.indexOf(r.tipo) !== -1;
+            var este = esLineal ? null : r.este, norte = esLineal ? null : r.norte;
+            var esteIni = esLineal ? (r.campos || {}).esteInicio : null, norteIni = esLineal ? (r.campos || {}).norteInicio : null;
+            var esteFin = esLineal ? (r.campos || {}).esteFinal : null, norteFin = esLineal ? (r.campos || {}).norteFinal : null;
+
+            var hayGeom = esLineal ? (esteIni && norteIni && esteFin && norteFin) : (este && norte);
+            if (!hayGeom) { elMapa.style.display = 'none'; elEstado.textContent = ''; return; }
+
+            elMapa.style.display = 'block';
+            elEstado.textContent = 'Cargando ubicación…';
+            inicializarMapaFichaSiHaceFalta();
+            mapaFichaLeaflet.eachLayer(function (l) { if (l.esCapaFicha) mapaFichaLeaflet.removeLayer(l); });
+
+            // El mapa de la ficha muestra ÚNICAMENTE la estructura abierta
+            // — nunca los polígonos de predios (a pedido explícito del
+            // usuario, tanto para puntuales como para Canales/Drenes: acá
+            // se viene a ver/editar UNA obra, no el padrón de la toma; eso
+            // ya tiene su propia pantalla en "Usuarios de esta toma").
+            var capasFicha = [];
+            if (esLineal) {
+                var pIni = utm17SALatLon(Number(esteIni), Number(norteIni));
+                var pFin = utm17SALatLon(Number(esteFin), Number(norteFin));
+                var colorLinea = await _colorRealDeCanal(r);
+                var linea = L.polyline([[pIni.lat, pIni.lon], [pFin.lat, pFin.lon]], { color: colorLinea, weight: 5 }).addTo(mapaFichaLeaflet);
+                linea.esCapaFicha = true;
+                capasFicha.push(linea);
+            } else {
+                var p = utm17SALatLon(Number(este), Number(norte));
+                var punto;
+                if (TIPOS_PUNTUALES_GIS.indexOf(r.tipo) !== -1) {
+                    punto = L.marker([p.lat, p.lon], {
+                        icon: L.icon({ iconUrl: '../mapas/inventario_gis/iconos/' + r.tipo + '.png', iconSize: [28, 28], iconAnchor: [14, 14] })
+                    }).addTo(mapaFichaLeaflet);
+                } else {
+                    punto = L.circleMarker([p.lat, p.lon], { radius: 9, color: '#002555', weight: 1.5, fillColor: '#00bcd4', fillOpacity: 0.95 }).addTo(mapaFichaLeaflet);
+                }
+                punto.esCapaFicha = true;
+                capasFicha.push(punto);
+            }
+
+            elEstado.textContent = '';
+            if (capasFicha.length) mapaFichaLeaflet.fitBounds(L.featureGroup(capasFicha).getBounds(), { padding: [24, 24], maxZoom: 17 });
+        }
+
+        // Busca en el KMZ (mismo archivo/caché ya usado por el mapa
+        // general) el color real del canal abierto — el color simboliza el
+        // orden de riego (L1..L5), verificado 1:1 contra el KMZ real; se
+        // preserva tal cual en vez de un cian genérico. Respaldo neutro si
+        // no se encuentra (no debería pasar salvo un canal recién creado a
+        // mano, sin figura de origen en el KMZ). Drenes: su KMZ original
+        // usa un negro fijo (ff000000) para todas las figuras, sin variar
+        // por tipo — se replica ese negro directo, sin buscar en ningún
+        // JSON (no hay nada que buscar, es constante).
+        async function _colorRealDeCanal(r) {
+            if (r.tipo === 'dren_principal' || r.tipo === 'dren_secundario') return '#000000';
+            if (r.tipo !== 'canal_lateral') return '#00bcd4';
+            if (!capaGisCache.canal_lateral) {
+                try {
+                    var resp = await fetch('../mapas/inventario_gis/canal_lateral.json');
+                    capaGisCache.canal_lateral = await resp.json();
+                } catch (e) { return '#00bcd4'; }
+            }
+            var claves = CLAVES_KMZ_POR_TIPO.canal_lateral;
+            var figuraMatch = capaGisCache.canal_lateral.find(function (f) {
+                return _normNombreLibre(f.campos[claves.nombreCanalKey]) === _normNombreLibre(r.nombreCanal) &&
+                    _normProgresiva(f.campos[claves.progresivaKey]) === _normProgresiva(r.progresivaKm);
+            });
+            return (figuraMatch && figuraMatch.color) || '#00bcd4';
+        }
+
+        // ═══ Editor de ubicación a pantalla completa — mismo esqueleto que
+        // el editor de polígono de Sinceramiento de Áreas
+        // (movil/sinceramiento-areas.html: abrirEditorPoligono/
+        // redibujarEditor/construirVertice), adaptado a 1 punto o 2
+        // extremos (línea abierta) en vez de un polígono cerrado de N
+        // vértices, con ubicación GPS en vivo (watchPosition) en vez de un
+        // solo tiro. ═══
+        function iniciarSeguimientoGps(onActualizar, onError) {
+            if (!navigator.geolocation) { onError(new Error('Este dispositivo no soporta geolocalización.')); return null; }
+            return navigator.geolocation.watchPosition(onActualizar, onError, { enableHighAccuracy: true, maximumAge: 2000 });
+        }
+        function detenerSeguimientoGps(watchId) {
+            if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId);
+        }
+
+        var mapaEditorEstructura = null;
+        var watchIdEditor = null;
+        var marcadorGpsEditor = null;
+        var posicionGpsEditorActual = null; // {easting, northing}
+        var edicionEstructuraTemp = null; // { esLineal, punto:{este,norte}|null, inicio, fin }
+        var marcadorPuntoEditor = null, marcadorInicioEditor = null, marcadorFinEditor = null, capaLineaEditor = null;
+
+        function _iconoEditorEstructura(letra) {
+            return L.divIcon({ className: 'marcador-vertice-editor', html: letra, iconSize: [26, 26], iconAnchor: [13, 13] });
+        }
+
+        function _utmAmbosValidos(este, norte) {
+            return este != null && este !== '' && norte != null && norte !== '' && Number.isFinite(Number(este)) && Number.isFinite(Number(norte));
+        }
+
+        function inicializarMapaEditorEstructuraSiHaceFalta() {
+            if (mapaEditorEstructura) return;
+            mapaEditorEstructura = L.map('mapaEditorEstructura', { preferCanvas: true }).setView([-4.9, -80.6], 12);
+            // Google Satellite en vez de Esri (ver nota más arriba en este archivo).
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }).addTo(mapaEditorEstructura);
+            mapaEditorEstructura.on('click', function (e) {
+                var t = edicionEstructuraTemp;
+                if (!t) return;
+                if (!t.esLineal) {
+                    if (!t.punto) t.punto = {};
+                    Object.assign(t.punto, latLonAUtm17S(e.latlng.lat, e.latlng.lng), { lat: e.latlng.lat, lon: e.latlng.lng });
+                } else if (!t.inicio) {
+                    t.inicio = Object.assign(latLonAUtm17S(e.latlng.lat, e.latlng.lng), { lat: e.latlng.lat, lon: e.latlng.lng });
+                } else if (!t.fin) {
+                    t.fin = Object.assign(latLonAUtm17S(e.latlng.lat, e.latlng.lng), { lat: e.latlng.lat, lon: e.latlng.lng });
+                }
+                redibujarEditorEstructura();
+            });
+        }
+
+        function redibujarEditorEstructura() {
+            setTimeout(function () { mapaEditorEstructura.invalidateSize(); }, 50);
+            var t = edicionEstructuraTemp;
+            [marcadorPuntoEditor, marcadorInicioEditor, marcadorFinEditor, capaLineaEditor].forEach(function (capa) {
+                if (capa) mapaEditorEstructura.removeLayer(capa);
+            });
+            marcadorPuntoEditor = marcadorInicioEditor = marcadorFinEditor = capaLineaEditor = null;
+
+            var capasParaEncuadrar = [];
+            if (!t.esLineal) {
+                if (t.punto) {
+                    marcadorPuntoEditor = L.marker([t.punto.lat, t.punto.lon], { draggable: true, icon: _iconoEditorEstructura('📍') }).addTo(mapaEditorEstructura);
+                    marcadorPuntoEditor.on('dragend', function (e) {
+                        var ll = e.target.getLatLng();
+                        Object.assign(t.punto, latLonAUtm17S(ll.lat, ll.lng), { lat: ll.lat, lon: ll.lng });
+                        actualizarEstadoEditorEstructura();
+                    });
+                    capasParaEncuadrar.push(marcadorPuntoEditor);
+                }
+            } else {
+                if (t.inicio) {
+                    marcadorInicioEditor = L.marker([t.inicio.lat, t.inicio.lon], { draggable: true, icon: _iconoEditorEstructura('I') }).addTo(mapaEditorEstructura);
+                    marcadorInicioEditor.on('dragend', function (e) {
+                        var ll = e.target.getLatLng();
+                        Object.assign(t.inicio, latLonAUtm17S(ll.lat, ll.lng), { lat: ll.lat, lon: ll.lng });
+                        if (capaLineaEditor && t.fin) capaLineaEditor.setLatLngs([[t.inicio.lat, t.inicio.lon], [t.fin.lat, t.fin.lon]]);
+                        actualizarEstadoEditorEstructura();
+                    });
+                    capasParaEncuadrar.push(marcadorInicioEditor);
+                }
+                if (t.fin) {
+                    marcadorFinEditor = L.marker([t.fin.lat, t.fin.lon], { draggable: true, icon: _iconoEditorEstructura('F') }).addTo(mapaEditorEstructura);
+                    marcadorFinEditor.on('dragend', function (e) {
+                        var ll = e.target.getLatLng();
+                        Object.assign(t.fin, latLonAUtm17S(ll.lat, ll.lng), { lat: ll.lat, lon: ll.lng });
+                        if (capaLineaEditor && t.inicio) capaLineaEditor.setLatLngs([[t.inicio.lat, t.inicio.lon], [t.fin.lat, t.fin.lon]]);
+                        actualizarEstadoEditorEstructura();
+                    });
+                    capasParaEncuadrar.push(marcadorFinEditor);
+                }
+                if (t.inicio && t.fin) {
+                    capaLineaEditor = L.polyline([[t.inicio.lat, t.inicio.lon], [t.fin.lat, t.fin.lon]], { color: '#00bcd4', weight: 4 }).addTo(mapaEditorEstructura);
+                    capasParaEncuadrar.push(capaLineaEditor);
+                }
+            }
+            if (capasParaEncuadrar.length) {
+                mapaEditorEstructura.fitBounds(L.featureGroup(capasParaEncuadrar).getBounds(), { padding: [40, 40], maxZoom: 19 });
+            }
+            actualizarEstadoEditorEstructura();
+        }
+
+        function actualizarEstadoEditorEstructura() {
+            var t = edicionEstructuraTemp;
+            var elEstado = document.getElementById('estadoEditorEstructura');
+            if (!t.esLineal) {
+                elEstado.textContent = t.punto
+                    ? 'Punto colocado — arrástralo para ajustar, o usa "Fijar con mi ubicación".'
+                    : 'Toca el mapa para colocar el punto, o usa "Fijar con mi ubicación".';
+                document.getElementById('btnFijarPuntualEditor').disabled = !posicionGpsEditorActual;
+            } else {
+                var faltan = [];
+                if (!t.inicio) faltan.push('Inicio');
+                if (!t.fin) faltan.push('Fin');
+                elEstado.textContent = faltan.length
+                    ? 'Toca el mapa para colocar: ' + faltan.join(' y ') + '.'
+                    : 'Inicio y Fin colocados — arrastra para ajustar.';
+                document.getElementById('btnFijarInicioEditor').disabled = !posicionGpsEditorActual;
+                document.getElementById('btnFijarFinEditor').disabled = !posicionGpsEditorActual;
+            }
+        }
+
+        function abrirEditorEstructura() {
+            if (!registroActual || registroActual.confirmado) return;
+            var r = registroActual;
+            var esLineal = TIPOS_LINEALES_GIS.indexOf(r.tipo) !== -1;
+            edicionEstructuraTemp = esLineal
+                ? {
+                    esLineal: true,
+                    inicio: _utmAmbosValidos(r.campos.esteInicio, r.campos.norteInicio)
+                        ? Object.assign(utm17SALatLon(Number(r.campos.esteInicio), Number(r.campos.norteInicio)), { easting: Number(r.campos.esteInicio), northing: Number(r.campos.norteInicio) })
+                        : null,
+                    fin: _utmAmbosValidos(r.campos.esteFinal, r.campos.norteFinal)
+                        ? Object.assign(utm17SALatLon(Number(r.campos.esteFinal), Number(r.campos.norteFinal)), { easting: Number(r.campos.esteFinal), northing: Number(r.campos.norteFinal) })
+                        : null,
+                }
+                : {
+                    esLineal: false,
+                    punto: _utmAmbosValidos(r.este, r.norte)
+                        ? Object.assign(utm17SALatLon(Number(r.este), Number(r.norte)), { easting: Number(r.este), northing: Number(r.norte) })
+                        : null,
+                };
+
+            document.getElementById('tituloEditorEstructura').textContent = esLineal ? 'Editar Inicio/Fin' : 'Editar ubicación';
+            document.getElementById('filaFijarPuntualEditor').style.display = esLineal ? 'none' : 'flex';
+            document.getElementById('filaFijarLinealEditor').style.display = esLineal ? 'flex' : 'none';
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaEditorEstructura').style.display = 'flex';
+            inicializarMapaEditorEstructuraSiHaceFalta();
+            redibujarEditorEstructura();
+
+            posicionGpsEditorActual = null;
+            watchIdEditor = iniciarSeguimientoGps(function (pos) {
+                posicionGpsEditorActual = latLonAUtm17S(pos.coords.latitude, pos.coords.longitude);
+                posicionGpsEditorActual.lat = pos.coords.latitude; posicionGpsEditorActual.lon = pos.coords.longitude;
+                if (marcadorGpsEditor) mapaEditorEstructura.removeLayer(marcadorGpsEditor);
+                marcadorGpsEditor = L.circleMarker([pos.coords.latitude, pos.coords.longitude], {
+                    radius: 8, color: '#ffffff', weight: 2, fillColor: '#2563eb', fillOpacity: 0.9
+                }).addTo(mapaEditorEstructura).bindTooltip('Tu ubicación (±' + Math.round(pos.coords.accuracy) + ' m)');
+                actualizarEstadoEditorEstructura();
+            }, function (err) {
+                document.getElementById('estadoEditorEstructura').textContent = '⚠️ GPS: ' + (err.message || 'no se pudo obtener ubicación') + '.';
+            });
+        }
+
+        function cerrarEditorEstructura() {
+            detenerSeguimientoGps(watchIdEditor);
+            watchIdEditor = null;
+            marcadorGpsEditor = null;
+            document.getElementById('vistaEditorEstructura').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        }
+
+        document.getElementById('btnCerrarEditorEstructura').addEventListener('click', cerrarEditorEstructura);
+
+        document.getElementById('btnFinalizarEditorEstructura').addEventListener('click', function () {
+            var t = edicionEstructuraTemp;
+            var r = registroActual;
+            if (!t.esLineal && t.punto) {
+                r.este = Number(t.punto.easting.toFixed(2));
+                r.norte = Number(t.punto.northing.toFixed(2));
+            } else if (t.esLineal) {
+                r.campos = r.campos || {};
+                if (t.inicio) { r.campos.esteInicio = Number(t.inicio.easting.toFixed(2)); r.campos.norteInicio = Number(t.inicio.northing.toFixed(2)); }
+                if (t.fin) { r.campos.esteFinal = Number(t.fin.easting.toFixed(2)); r.campos.norteFinal = Number(t.fin.northing.toFixed(2)); }
+            }
+            cerrarEditorEstructura();
+            pintarFormularioDesdeRegistro();
+        });
+
+        document.getElementById('btnFijarPuntualEditor').addEventListener('click', function () {
+            if (!posicionGpsEditorActual) return;
+            edicionEstructuraTemp.punto = Object.assign({}, posicionGpsEditorActual);
+            redibujarEditorEstructura();
+        });
+        document.getElementById('btnFijarInicioEditor').addEventListener('click', function () {
+            if (!posicionGpsEditorActual) return;
+            edicionEstructuraTemp.inicio = Object.assign({}, posicionGpsEditorActual);
+            redibujarEditorEstructura();
+        });
+        document.getElementById('btnFijarFinEditor').addEventListener('click', function () {
+            if (!posicionGpsEditorActual) return;
+            edicionEstructuraTemp.fin = Object.assign({}, posicionGpsEditorActual);
+            redibujarEditorEstructura();
+        });
+
+        document.getElementById('btnAbrirEditorEstructura').addEventListener('click', abrirEditorEstructura);
+        document.getElementById('mapaFichaUbicacion').addEventListener('click', function () {
+            if (document.getElementById('btnAbrirEditorEstructura').style.display !== 'none') abrirEditorEstructura();
+        });
+
+        // ═══ Dibujo esquemático (SVG) — solo Canal Lateral y Drenes. Los 9
+        // tipos puntuales (Toma, Compuerta y afines) lo perdieron a pedido
+        // del usuario: ese formato no les corresponde. ═══
+        function pintarDibujoEstructura() {
+            var r = registroActual;
+            var campos = r.campos || {};
+            var svg = null;
+            if (TIPOS_LINEALES_GIS.indexOf(r.tipo) !== -1) {
+                svg = dibujarSeccionTrapezoidal(campos.baseMayor, campos.baseMenor, campos.altura, campos.tirante);
+            }
+            var seccion = document.getElementById('seccionDibujoEstructura');
+            var cont = document.getElementById('contenidoDibujoEstructura');
+            if (TIPOS_LINEALES_GIS.indexOf(r.tipo) === -1) {
+                seccion.style.display = 'none';
+                return;
+            }
+            seccion.style.display = 'flex';
+            cont.innerHTML = svg || '<div class="estado-busqueda">Sin dimensiones suficientes para dibujar el esquema.</div>';
+        }
+
+        // ═══ Pantalla 4 — formulario ═══
+        function nuevoRegistroBase() {
+            var base = {
+                id: null, tipo: tipoActual, comisionKey: comisionKeyActual, tomaNombre: tomaSeleccionada === 'Sin toma asignada' ? null : tomaSeleccionada,
+                canalFuente: '', nombreCanal: '', progresivaKm: '', ordenCompuerta: '',
+                zonaUtm: '17', este: '', norte: '', margen: '',
+                material: '', tipo_: '', estado: '', dimensionA: '', dimensionH: '', dimensionD: '',
+                operacion: '', hojaA: '', hojaH: '', marcoA: '', marcoH: '', bloqueRiego: '',
+                observacion: '', fotos: [], nombreObra: '', campos: {},
+                confirmado: false, solicitudEdicion: false, solicitudEdicionPorNombre: '', solicitudEdicionEn: null,
+            };
+            return base;
+        }
+
+        function registroDesdeFilaServidor(r, tipo) {
+            var base = {
+                id: r.id, tipo: tipo, comisionKey: comisionKeyActual, tomaNombre: r.toma_nombre,
+                canalFuente: r.canal_fuente || '', nombreCanal: r.nombre_canal || '',
+                progresivaKm: r.progresiva_km || '', ordenCompuerta: r.orden_compuerta || '',
+                zonaUtm: r.zona_utm || '', este: r.este != null ? r.este : '', norte: r.norte != null ? r.norte : '',
+                margen: r.margen || '', estado: r.estado || '', observacion: r.observacion || '',
+                confirmado: !!r.confirmado, solicitudEdicion: !!r.solicitud_edicion,
+                solicitudEdicionPorNombre: r.solicitud_edicion_por_nombre || '', solicitudEdicionEn: r.solicitud_edicion_en || null,
+                nombreObra: r.nombre_obra || '', bloqueRiego: r.bloque_riego || '', campos: r.campos || {},
+                fotos: [],
+            };
+            if (tipo === 'toma') {
+                base.material = r.material || ''; base.tipo_ = r.tipo || '';
+                base.dimensionA = r.dimension_a != null ? r.dimension_a : '';
+                base.dimensionH = r.dimension_h != null ? r.dimension_h : '';
+                base.dimensionD = r.dimension_d != null ? r.dimension_d : '';
+            } else if (tipo === 'compuerta') {
+                base.tipo_ = r.tipo || ''; base.material = r.material || ''; base.operacion = r.operacion || '';
+                base.hojaA = r.hoja_a != null ? r.hoja_a : ''; base.hojaH = r.hoja_h != null ? r.hoja_h : '';
+                base.marcoA = r.marco_a != null ? r.marco_a : ''; base.marcoH = r.marco_h != null ? r.marco_h : '';
+                base.bloqueRiego = r.bloque_riego || '';
+            }
+            return base;
+        }
+
+        async function abrirFormularioDesdeRegistro(registroExistente) {
+            document.getElementById('vistaLista').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+
+            if (registroExistente) {
+                var resultado = await FUNCIONES_POR_TIPO[tipoActual].cargar(registroExistente.id);
+                if (!resultado.ok) { alert(resultado.error || 'No se pudo abrir el registro.'); return; }
+                registroActual = registroDesdeFilaServidor(resultado.registro, tipoActual);
+            } else {
+                registroActual = nuevoRegistroBase();
+            }
+            pintarFormularioDesdeRegistro();
+        }
+
+        // Fila "etiqueta: valor" donde el valor es tocable — al tocarlo se
+        // reemplaza por un <select> (si hay diccionario) o un <input>, y al
+        // perder foco o Enter llama onGuardar(nuevoValor) y vuelve a
+        // mostrarse como texto. Reemplaza la vieja distinción "solo lectura"
+        // / "editable aparte": ahora cualquier dato mostrado se corrige
+        // tocándolo, sin una sección de formulario separada — a pedido
+        // explícito del usuario (él decide qué corregir, no la app).
+        function _filaCampoEditable(etiqueta, valorActual, diccionario, tipoInput, onGuardar) {
+            var fila = document.createElement('div');
+            fila.className = 'resumen-fila';
+            var elEtiqueta = document.createElement('span');
+            elEtiqueta.className = 'etiqueta-resumen';
+            elEtiqueta.textContent = etiqueta;
+            fila.appendChild(elEtiqueta);
+
+            function textoMostrado(valor) {
+                if (valor === undefined || valor === null || valor === '') return '— (tocar para editar)';
+                if (diccionario && diccionario[valor]) return valor + ' — ' + diccionario[valor];
+                return String(valor);
+            }
+
+            var elValor = document.createElement('button');
+            elValor.type = 'button';
+            elValor.className = 'valor-resumen';
+            elValor.style.cssText = 'background:none; border:none; color:inherit; text-decoration:underline dotted; cursor:pointer; font:inherit; padding:0; text-align:right;';
+            elValor.textContent = textoMostrado(valorActual);
+            elValor.addEventListener('click', function () {
+                if (registroActual.confirmado) return;
+                var input;
+                if (diccionario) {
+                    input = document.createElement('select');
+                    var optVacio = document.createElement('option'); optVacio.value = ''; optVacio.textContent = '—'; input.appendChild(optVacio);
+                    Object.keys(diccionario).forEach(function (codigo) {
+                        var opt = document.createElement('option'); opt.value = codigo; opt.textContent = codigo + ' — ' + diccionario[codigo]; input.appendChild(opt);
+                    });
+                    input.value = valorActual || '';
+                } else {
+                    input = document.createElement('input');
+                    input.type = tipoInput === 'number' ? 'number' : 'text';
+                    if (tipoInput === 'number') input.step = '0.01';
+                    input.value = valorActual != null ? valorActual : '';
+                }
+                input.style.cssText = 'max-width:170px; padding:6px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.25); background:rgba(255,255,255,0.95); color:#002555; font-size:13px;';
+                fila.replaceChild(input, elValor);
+                input.focus();
+                var yaConfirmado = false;
+                function confirmar() {
+                    if (yaConfirmado) return;
+                    yaConfirmado = true;
+                    var nuevo = input.value === '' ? null : (tipoInput === 'number' ? parseFloat(input.value) : input.value);
+                    valorActual = nuevo;
+                    onGuardar(nuevo);
+                    elValor.textContent = textoMostrado(nuevo);
+                    if (fila.contains(input)) fila.replaceChild(elValor, input);
+                }
+                input.addEventListener('blur', confirmar);
+                input.addEventListener('keydown', function (e) { if (e.key === 'Enter') input.blur(); });
+                if (input.tagName === 'SELECT') input.addEventListener('change', confirmar);
+            });
+            fila.appendChild(elValor);
+            return fila;
+        }
+
+        function pintarFormularioDesdeRegistro() {
+            var r = registroActual;
+            var def = FUNCIONES_POR_TIPO[r.tipo];
+            var esGenerico = !!(def && def.generico);
+
+            document.getElementById('tituloSeccionIdentidad').textContent = 'Datos de la ' +
+                (r.tipo === 'toma' ? 'toma' : r.tipo === 'compuerta' ? 'compuerta' : ('obra (' + def.etiqueta + ')'));
+            document.getElementById('inputCanalFuente').value = r.canalFuente;
+            document.getElementById('inputNombreCanal').value = r.nombreCanal;
+            document.getElementById('inputProgresivaKm').value = r.progresivaKm;
+            document.getElementById('campoOrdenCompuerta').style.display = (r.tipo === 'compuerta') ? 'block' : 'none';
+            document.getElementById('inputOrdenCompuerta').value = r.ordenCompuerta;
+            document.getElementById('textoTomaAsignada').textContent = r.tomaNombre ? ('Toma asignada: ' + r.tomaNombre) : 'Sin toma asignada — no se pudo resolver el canal fuente al sincronizar.';
+
+            var esLineal = TIPOS_LINEALES_GIS.indexOf(r.tipo) !== -1;
+            // Zona/Margen/Este/Norte "clásicos" son solo para Toma/Compuerta
+            // — los 12 tipos genéricos los muestran (junto con todo lo
+            // demás) en la lista única tocar-para-editar de más abajo.
+            document.getElementById('seccionUbicacionComun').style.display = esGenerico ? 'none' : 'flex';
+            if (!esGenerico) {
+                document.getElementById('inputZonaUtm').value = r.zonaUtm;
+                document.getElementById('selectMargen').value = r.margen;
+                document.getElementById('inputEste').value = r.este;
+                document.getElementById('inputNorte').value = r.norte;
+                document.getElementById('filaEsteNorteUnico').style.display = 'flex';
+            }
+            // "Usuarios de esta toma" solo tiene sentido para Canal Lateral
+            // (y Drenes) — los 9 tipos puntuales y Toma/Compuerta no traen
+            // una lista de usuarios propia en el formato oficial.
+            document.getElementById('btnVerUsuariosToma').style.display =
+                (TIPOS_PUNTUALES_GIS.indexOf(r.tipo) !== -1 || r.tipo === 'toma' || r.tipo === 'compuerta') ? 'none' : 'block';
+
+            document.getElementById('camposToma').style.display = (r.tipo === 'toma') ? 'flex' : 'none';
+            document.getElementById('camposCompuerta').style.display = (r.tipo === 'compuerta') ? 'flex' : 'none';
+            document.getElementById('camposGenericos').style.display = esGenerico ? 'flex' : 'none';
+
+            if (r.tipo === 'toma') {
+                document.getElementById('selectMaterialToma').value = r.material;
+                document.getElementById('selectTipoToma').value = r.tipo_;
+                document.getElementById('inputDimensionA').value = r.dimensionA;
+                document.getElementById('inputDimensionH').value = r.dimensionH;
+                document.getElementById('inputDimensionD').value = r.dimensionD;
+            } else if (r.tipo === 'compuerta') {
+                document.getElementById('inputTipoCompuerta').value = r.tipo_;
+                document.getElementById('selectMaterialCompuerta').value = r.material;
+                document.getElementById('selectOperacion').value = r.operacion;
+                document.getElementById('inputHojaA').value = r.hojaA;
+                document.getElementById('inputHojaH').value = r.hojaH;
+                document.getElementById('inputMarcoA').value = r.marcoA;
+                document.getElementById('inputMarcoH').value = r.marcoH;
+                document.getElementById('inputBloqueRiego').value = r.bloqueRiego;
+            } else if (esGenerico) {
+                // Una sola lista tocar-para-editar: Nombre de la obra,
+                // ubicación, y TODO lo que trae camposReferencia (ya sin
+                // distinguir "solo lectura" de "editable" — cualquier dato
+                // mostrado se corrige tocándolo, decisión del sectorista en
+                // campo, no de la app).
+                r.campos = r.campos || {};
+                var cont = document.getElementById('listaCamposGenericos');
+                cont.innerHTML = '';
+                cont.appendChild(_filaCampoEditable('Nombre de la obra', r.nombreObra, null, 'text', function (v) { r.nombreObra = v; }));
+                if (esLineal) {
+                    cont.appendChild(_filaCampoEditable('Este inicio', r.campos.esteInicio, null, 'number', function (v) { r.campos.esteInicio = v; }));
+                    cont.appendChild(_filaCampoEditable('Norte inicio', r.campos.norteInicio, null, 'number', function (v) { r.campos.norteInicio = v; }));
+                    cont.appendChild(_filaCampoEditable('Este final', r.campos.esteFinal, null, 'number', function (v) { r.campos.esteFinal = v; }));
+                    cont.appendChild(_filaCampoEditable('Norte final', r.campos.norteFinal, null, 'number', function (v) { r.campos.norteFinal = v; }));
+                } else {
+                    cont.appendChild(_filaCampoEditable('Este', r.este, null, 'number', function (v) { r.este = v; }));
+                    cont.appendChild(_filaCampoEditable('Norte', r.norte, null, 'number', function (v) { r.norte = v; }));
+                }
+                if (r.bloqueRiego !== undefined) cont.appendChild(_filaCampoEditable('Bloque de Riego', r.bloqueRiego, null, 'text', function (v) { r.bloqueRiego = v; }));
+
+                (def.definicion.camposReferencia || []).forEach(function (c) {
+                    // Ya mostradas arriba con su propio par de coordenadas.
+                    if (esLineal && ['esteInicio', 'norteInicio', 'esteFinal', 'norteFinal'].indexOf(c.clave) !== -1) return;
+                    // "Número Total de Usuarios" de un Canal Lateral se pinta
+                    // aparte, como botón clickeable (abre la lista real y
+                    // permite reasignar) — no como texto tocar-para-editar.
+                    if (r.tipo === 'canal_lateral' && c.clave === 'numeroUsuarios') return;
+                    cont.appendChild(_filaCampoEditable(c.etiqueta, r.campos[c.clave], c.diccionario, 'text', function (v) { r.campos[c.clave] = v; }));
+                });
+
+                if (r.tipo === 'canal_lateral') {
+                    var nUsuariosCanal = r.campos.numeroUsuarios;
+                    var filaUsuarios = document.createElement('div');
+                    filaUsuarios.className = 'resumen-fila';
+                    filaUsuarios.innerHTML = '<span class="etiqueta-resumen">Número Total de Usuarios</span>';
+                    var btnValorUsuarios = document.createElement('button');
+                    btnValorUsuarios.type = 'button';
+                    btnValorUsuarios.className = 'valor-resumen';
+                    btnValorUsuarios.style.cssText = 'background:none; border:none; color:#00bcd4; text-decoration:underline; cursor:pointer; font:inherit;';
+                    btnValorUsuarios.textContent = (nUsuariosCanal != null && nUsuariosCanal !== '') ? nUsuariosCanal : '— ver usuarios';
+                    btnValorUsuarios.addEventListener('click', function () { mostrarUsuariosDeToma(); });
+                    filaUsuarios.appendChild(btnValorUsuarios);
+                    cont.appendChild(filaUsuarios);
+                }
+            }
+
+            document.getElementById('selectEstado').value = r.estado;
+            document.getElementById('inputObservacion').value = r.observacion;
+
+            var bloqueado = r.confirmado;
+            document.getElementById('avisoBloqueadoFormulario').style.display = bloqueado ? 'block' : 'none';
+            document.getElementById('estadoGuardadoFormulario').textContent = '';
+            document.getElementById('btnContinuarConfirmacion').textContent = bloqueado ? 'Ver confirmación →' : 'Continuar →';
+
+            // Identidad de canal (Canal Fuente/Nombre del Canal/Progresiva)
+            // sigue de solo lectura para los 12 genéricos — es la clave
+            // natural usada para emparejar con el KMZ y con la sincronización
+            // desde Excel; tocarla generaría duplicados o registros
+            // huérfanos. Todo lo demás de los genéricos ya se edita tocando
+            // el dato (arriba) — acá solo quedan Estado/Observación y,
+            // para Toma/Compuerta, sus campos propios de siempre.
+            var idsCamposEditables = ['selectEstado', 'inputObservacion'];
+            var idsCamposSoloLecturaGenerico = ['inputCanalFuente', 'inputNombreCanal', 'inputProgresivaKm', 'inputOrdenCompuerta'];
+            var idsCamposTomaCompuerta = ['inputZonaUtm', 'selectMargen', 'inputEste', 'inputNorte',
+                'selectMaterialToma', 'selectTipoToma', 'inputDimensionA', 'inputDimensionH', 'inputDimensionD',
+                'inputTipoCompuerta', 'selectMaterialCompuerta', 'selectOperacion', 'inputHojaA', 'inputHojaH', 'inputMarcoA', 'inputMarcoH',
+                'inputBloqueRiego'];
+            idsCamposEditables.forEach(function (id) { document.getElementById(id).disabled = bloqueado; });
+            idsCamposSoloLecturaGenerico.forEach(function (id) { document.getElementById(id).disabled = bloqueado || esGenerico; });
+            if (!esGenerico) idsCamposTomaCompuerta.forEach(function (id) { document.getElementById(id).disabled = bloqueado; });
+
+            document.getElementById('btnAbrirEditorEstructura').style.display = bloqueado ? 'none' : 'block';
+            pintarMapaFicha();
+            pintarDibujoEstructura();
+            cargarFotosDeRegistro();
+        }
+
+        // ═══ Fotos (14 tipos por igual) ═══
+        // A diferencia de Sinceramiento de Áreas, ninguna tabla de inventario
+        // tiene columna fotos_urls (evita que el resync desde Excel la borre)
+        // — las fotos se listan directo desde Storage por carpeta.
+        function _tablaSupabaseDeTipo(tipo) {
+            if (tipo === 'toma') return 'inventario_tomas';
+            if (tipo === 'compuerta') return 'inventario_compuertas';
+            return 'inventario_estructuras';
+        }
+
+        function renderizarFotosInventario() {
+            var cont = document.getElementById('listaFotosInventario');
+            cont.innerHTML = '';
+            (registroActual.fotos || []).forEach(function (f, idx) {
+                var elFoto = document.createElement('div');
+                elFoto.className = 'foto-miniatura';
+                var img = document.createElement('img');
+                img.src = f.urlMostrar || '';
+                elFoto.appendChild(img);
+                var badge = document.createElement('span');
+                badge.className = 'badge-foto';
+                if (f.sincronizada) { badge.style.background = '#1e7e34'; badge.style.color = '#fff'; badge.textContent = '✓'; }
+                else { badge.style.background = '#c8a84b'; badge.style.color = '#002555'; badge.textContent = '🕓'; }
+                elFoto.appendChild(badge);
+                if (!registroActual.confirmado) {
+                    var btnQuitar = document.createElement('button');
+                    btnQuitar.type = 'button';
+                    btnQuitar.className = 'btn-quitar-foto';
+                    btnQuitar.textContent = '✕';
+                    btnQuitar.addEventListener('click', async function () {
+                        if (f.idLocal) await eliminarFotoLocal(f.idLocal);
+                        registroActual.fotos.splice(idx, 1);
+                        renderizarFotosInventario();
+                    });
+                    elFoto.appendChild(btnQuitar);
+                }
+                cont.appendChild(elFoto);
+            });
+        }
+
+        async function cargarFotosDeRegistro() {
+            var r = registroActual;
+            var elAviso = document.getElementById('estadoFotosAviso');
+            var elBoton = document.getElementById('btnTomarFotoInventario');
+            if (!r.id) {
+                r.fotos = [];
+                renderizarFotosInventario();
+                elAviso.textContent = 'Guarda la estructura (Continuar →) antes de agregar fotos.';
+                elBoton.style.display = 'none';
+                return;
+            }
+            elAviso.textContent = '';
+            elBoton.style.display = r.confirmado ? 'none' : 'block';
+
+            var tabla = _tablaSupabaseDeTipo(r.tipo);
+            var remoto = await CusshmiDatos.listarFotosInventario(r.comisionKey, tabla, r.id);
+            var mapaFotos = {};
+            (remoto.ok ? remoto.fotos : []).forEach(function (fr) {
+                mapaFotos[fr.nombreArchivo] = { idLocal: null, path: fr.path, nombreArchivo: fr.nombreArchivo, sincronizada: true, urlMostrar: null };
+            });
+            var fotosLocalesGuardadas = await listarFotosLocal(r.id);
+            fotosLocalesGuardadas.forEach(function (fl) {
+                if (mapaFotos[fl.nombreArchivo]) {
+                    mapaFotos[fl.nombreArchivo].idLocal = fl.id;
+                } else {
+                    mapaFotos[fl.nombreArchivo] = {
+                        idLocal: fl.id, path: fl.pathRemoto, nombreArchivo: fl.nombreArchivo,
+                        sincronizada: fl.sincronizada, urlMostrar: URL.createObjectURL(fl.blob),
+                    };
+                }
+            });
+            r.fotos = Object.values(mapaFotos);
+            for (var i = 0; i < r.fotos.length; i++) {
+                var f = r.fotos[i];
+                if (!f.urlMostrar && f.path) {
+                    var firmada = await CusshmiDatos.obtenerUrlFirmadaFotoInventario(f.path);
+                    if (firmada.ok) f.urlMostrar = firmada.url;
+                }
+            }
+            renderizarFotosInventario();
+            sincronizarFotosPendientesInventario();
+            actualizarBannerCompletitud();
+        }
+
+        // Convierte registroActual (ya transformado por
+        // registroDesdeFilaServidor) de vuelta al esquema de columnas
+        // crudo que espera calcularCompletitudEstructura — la misma
+        // función que ya usa el mapa (assets/core/inventarioInfraestructura.js),
+        // sin duplicar la lógica de qué campos son obligatorios.
+        function _registroActualComoCrudo() {
+            var r = registroActual;
+            if (r.tipo === 'toma') {
+                return { estado: r.estado, material: r.material, tipo: r.tipo_, dimension_a: r.dimensionA, dimension_h: r.dimensionH, dimension_d: r.dimensionD };
+            }
+            if (r.tipo === 'compuerta') {
+                return { estado: r.estado, tipo: r.tipo_, material: r.material, operacion: r.operacion, hoja_a: r.hojaA, hoja_h: r.hojaH };
+            }
+            return { estado: r.estado, campos: r.campos || {} };
+        }
+
+        function actualizarBannerCompletitud() {
+            var r = registroActual;
+            var banner = document.getElementById('bannerCompletitudFicha');
+            if (!r.id) { banner.style.display = 'none'; return; }
+            var completitud = calcularCompletitudEstructura(r.tipo, _registroActualComoCrudo());
+            var faltantes = completitud.faltantes.slice();
+            if (!r.fotos || !r.fotos.length) faltantes.push('Foto');
+            if (faltantes.length) {
+                banner.style.display = 'block';
+                banner.textContent = '⚠️ Faltan ' + faltantes.length + ' dato(s) del formato oficial: ' + faltantes.join(', ') + '.';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        var sincronizandoFotosInventario = false;
+        async function sincronizarFotosPendientesInventario() {
+            var r = registroActual;
+            if (!r || !r.id || r.confirmado) return;
+            if (!navigator.onLine) return;
+            if (sincronizandoFotosInventario) return;
+            sincronizandoFotosInventario = true;
+            try {
+                var tabla = _tablaSupabaseDeTipo(r.tipo);
+                var fotosLocalesCompletas = await listarFotosLocal(r.id);
+                for (var i = 0; i < fotosLocalesCompletas.length; i++) {
+                    var fl = fotosLocalesCompletas[i];
+                    if (fl.sincronizada) continue;
+                    var subida = await CusshmiDatos.subirFotoInventario(r.comisionKey, tabla, r.id, fl.blob, fl.nombreArchivo);
+                    if (subida.ok) {
+                        await marcarFotoSincronizada(fl.id, subida.path);
+                        var enMemoria = r.fotos.find(function (f) { return f.idLocal === fl.id; });
+                        if (enMemoria) { enMemoria.sincronizada = true; enMemoria.path = subida.path; }
+                    }
+                }
+                renderizarFotosInventario();
+            } finally {
+                sincronizandoFotosInventario = false;
+            }
+        }
+
+        window.addEventListener('online', function () { if (registroActual) sincronizarFotosPendientesInventario(); });
+
+        document.getElementById('btnTomarFotoInventario').addEventListener('click', function () {
+            document.getElementById('inputFotoInventario').click();
+        });
+        document.getElementById('inputFotoInventario').addEventListener('change', async function (e) {
+            if (!registroActual || !registroActual.id || registroActual.confirmado) return;
+            var archivo = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!archivo) return;
+
+            var nombreArchivo = Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
+            var idLocal = await guardarFotoLocal(registroActual.id, archivo, nombreArchivo);
+            registroActual.fotos.push({
+                idLocal: idLocal, path: null, nombreArchivo: nombreArchivo,
+                sincronizada: false, urlMostrar: URL.createObjectURL(archivo),
+            });
+            renderizarFotosInventario();
+            sincronizarFotosPendientesInventario();
+        });
+
+        // Lee todos los campos del formulario hacia registroActual — se llama
+        // antes de cada guardado (no hay autoguardado por campo, a diferencia
+        // de otros módulos: acá el sectorista revisa varios campos técnicos
+        // antes de guardar de una sola vez).
+        function leerFormularioARegistro() {
+            var r = registroActual;
+            var def = FUNCIONES_POR_TIPO[r.tipo];
+            var esGenerico = !!(def && def.generico);
+            if (!esGenerico) {
+                r.canalFuente = document.getElementById('inputCanalFuente').value;
+                r.nombreCanal = document.getElementById('inputNombreCanal').value;
+                r.progresivaKm = document.getElementById('inputProgresivaKm').value;
+                r.ordenCompuerta = document.getElementById('inputOrdenCompuerta').value;
+                r.zonaUtm = document.getElementById('inputZonaUtm').value;
+                r.margen = document.getElementById('selectMargen').value;
+                r.este = document.getElementById('inputEste').value;
+                r.norte = document.getElementById('inputNorte').value;
+                if (r.tipo === 'toma') {
+                    r.material = document.getElementById('selectMaterialToma').value;
+                    r.tipo_ = document.getElementById('selectTipoToma').value;
+                    r.dimensionA = document.getElementById('inputDimensionA').value;
+                    r.dimensionH = document.getElementById('inputDimensionH').value;
+                    r.dimensionD = document.getElementById('inputDimensionD').value;
+                } else {
+                    r.tipo_ = document.getElementById('inputTipoCompuerta').value;
+                    r.material = document.getElementById('selectMaterialCompuerta').value;
+                    r.operacion = document.getElementById('selectOperacion').value;
+                    r.hojaA = document.getElementById('inputHojaA').value;
+                    r.hojaH = document.getElementById('inputHojaH').value;
+                    r.marcoA = document.getElementById('inputMarcoA').value;
+                    r.marcoH = document.getElementById('inputMarcoH').value;
+                    r.bloqueRiego = document.getElementById('inputBloqueRiego').value;
+                }
+            }
+            // Nada que leer para los 12 tipos genéricos acá: cada fila de
+            // _filaCampoEditable ya escribió su valor directo en
+            // r.nombreObra/r.este/r.norte/r.campos[...] al tocarla — este
+            // "leer" quedaba pensado para un formulario con inputs
+            // permanentes que ya no existe.
+            r.estado = document.getElementById('selectEstado').value;
+            r.observacion = document.getElementById('inputObservacion').value;
+        }
+
+        // Arma el objeto en el shape que espera guardarRegistroInventarioToma/
+        // Compuerta (assets/supabase/datos.js) — mismo nombre de campos salvo
+        // `tipo_` (evita el choque con la propiedad `tipo` de nivel superior
+        // que indica Toma/Compuerta) que se traduce de vuelta a `tipo`.
+        function datosParaGuardar() {
+            var r = registroActual;
+            var def = FUNCIONES_POR_TIPO[r.tipo];
+            if (def && def.generico) {
+                // Los 12 tipos genéricos guardan Estado/Observación, Nombre
+                // de la obra, Este/Norte (tipos puntuales) y los campos
+                // marcados `editable` (Orden, coordenadas de inicio/final,
+                // Tipo/Longitud según el tipo) — el resto de `campos` lo
+                // pone la sincronización desde el Excel, sin tocarlo.
+                var datosGenerico = {
+                    id: r.id, estado: r.estado, observacion: r.observacion, campos: r.campos || {},
+                    nombreObra: r.nombreObra, este: r.este, norte: r.norte,
+                };
+                if (!r.id) {
+                    // Registro nuevo (creado desde el mapa GIS, ver
+                    // abrirFichaDesdeFiguraGis) — hace falta la identidad
+                    // completa para el insert.
+                    datosGenerico.comisionKey = r.comisionKey; datosGenerico.tipoEstructura = r.tipo;
+                    datosGenerico.tomaNombre = r.tomaNombre;
+                    datosGenerico.canalFuente = r.canalFuente; datosGenerico.nombreCanal = r.nombreCanal;
+                    datosGenerico.progresivaKm = r.progresivaKm;
+                }
+                return datosGenerico;
+            }
+            var datos = {
+                id: r.id, comisionKey: r.comisionKey, tomaNombre: r.tomaNombre,
+                canalFuente: r.canalFuente, nombreCanal: r.nombreCanal, progresivaKm: r.progresivaKm,
+                zonaUtm: r.zonaUtm, este: r.este, norte: r.norte, margen: r.margen,
+                estado: r.estado, observacion: r.observacion,
+            };
+            if (r.tipo === 'toma') {
+                datos.material = r.material; datos.tipo = r.tipo_;
+                datos.dimensionA = r.dimensionA; datos.dimensionH = r.dimensionH; datos.dimensionD = r.dimensionD;
+            } else {
+                datos.ordenCompuerta = r.ordenCompuerta;
+                datos.tipo = r.tipo_; datos.material = r.material; datos.operacion = r.operacion;
+                datos.hojaA = r.hojaA; datos.hojaH = r.hojaH; datos.marcoA = r.marcoA; datos.marcoH = r.marcoH;
+                datos.bloqueRiego = r.bloqueRiego;
+            }
+            return datos;
+        }
+
+        async function volverALista() {
+            document.getElementById('vistaFormulario').style.display = 'none';
+            abrirToma(tomaSeleccionada); // refresca la lista para que los badges queden al día
+        }
+        document.getElementById('btnVolverALista').addEventListener('click', volverALista);
+        document.getElementById('btnVolverAListaAbajo').addEventListener('click', volverALista);
+
+        document.getElementById('btnContinuarConfirmacion').addEventListener('click', async function () {
+            if (!registroActual.confirmado) {
+                leerFormularioARegistro();
+                if (!registroActual.canalFuente.trim() || !registroActual.nombreCanal.trim()) {
+                    alert('Ingresa el Canal Fuente y el Nombre del Canal antes de continuar.');
+                    return;
+                }
+                document.getElementById('estadoGuardadoFormulario').textContent = 'Guardando…';
+                var resultado = await FUNCIONES_POR_TIPO[registroActual.tipo].guardar(datosParaGuardar());
+                document.getElementById('estadoGuardadoFormulario').textContent = '';
+                if (!resultado.ok) { alert('No se pudo guardar: ' + resultado.error); return; }
+                registroActual.id = resultado.id;
+                cargarFotosDeRegistro();
+            }
+            mostrarConfirmacion();
+        });
+
+        // ═══ Pantalla 5 — confirmación ═══
+        function filaResumen(etiqueta, valor) {
+            return '<div class="resumen-fila"><span class="etiqueta-resumen">' + escapeHtml(etiqueta) + '</span>' +
+                '<span class="valor-resumen">' + escapeHtml(valor || '-') + '</span></div>';
+        }
+
+        function mostrarConfirmacion() {
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaConfirmacion').style.display = 'flex';
+
+            var r = registroActual;
+            var html = '';
+            html += filaResumen(FUNCIONES_POR_TIPO[r.tipo].etiqueta, r.nombreObra || r.nombreCanal);
+            html += filaResumen('Canal Fuente', r.canalFuente);
+            html += filaResumen('Toma', r.tomaNombre || 'Sin toma asignada');
+            html += filaResumen('Progresiva', r.progresivaKm);
+            html += filaResumen('Estado', r.estado ? (ESTADO_INVENTARIO[r.estado] || r.estado) : '-');
+            if (r.observacion) html += filaResumen('Observación', r.observacion);
+            document.getElementById('resumenRegistro').innerHTML = html;
+
+            var bloqueado = r.confirmado;
+            var solicitado = !!r.solicitudEdicion;
+            document.getElementById('avisoBloqueadoConfirmacion').style.display = bloqueado ? 'block' : 'none';
+            document.getElementById('btnConfirmarGuardar').style.display = bloqueado ? 'none' : 'block';
+
+            document.getElementById('btnSolicitarEdicion').style.display = (bloqueado && !esAdmin && !solicitado) ? 'block' : 'none';
+            document.getElementById('avisoSolicitudEnviada').style.display = (bloqueado && !esAdmin && solicitado) ? 'block' : 'none';
+
+            document.getElementById('btnDesbloquear').style.display = (bloqueado && esAdmin) ? 'block' : 'none';
+            document.getElementById('btnDesbloquear').textContent = solicitado ? '✅ Habilitar edición (admin)' : '🔓 Desbloquear (admin)';
+            document.getElementById('btnRechazarSolicitud').style.display = (bloqueado && esAdmin && solicitado) ? 'block' : 'none';
+            var elAvisoAdmin = document.getElementById('avisoSolicitudPendienteAdmin');
+            if (bloqueado && esAdmin && solicitado) {
+                var fecha = r.solicitudEdicionEn ? new Date(r.solicitudEdicionEn).toLocaleString('es-PE') : '';
+                elAvisoAdmin.textContent = '📩 ' + (r.solicitudEdicionPorNombre || 'Un programador') + ' solicitó habilitar la edición' + (fecha ? ' — ' + fecha : '') + '.';
+                elAvisoAdmin.style.display = 'block';
+            } else {
+                elAvisoAdmin.style.display = 'none';
+            }
+
+            document.getElementById('estadoConfirmacion').textContent = '';
+        }
+
+        function volverAFormulario() {
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            pintarFormularioDesdeRegistro();
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        }
+        document.getElementById('btnVolverAFormulario').addEventListener('click', volverAFormulario);
+        document.getElementById('btnVolverAFormularioAbajo').addEventListener('click', volverAFormulario);
+
+        document.getElementById('btnConfirmarGuardar').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Confirmando…';
+            var resultado = await FUNCIONES_POR_TIPO[registroActual.tipo].confirmar(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.confirmado = true;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Confirmación', 'Actualización del Inventario', FUNCIONES_POR_TIPO[registroActual.tipo].etiqueta + ' — ' + registroActual.nombreCanal);
+            }
+            mostrarConfirmacion();
+        });
+
+        document.getElementById('btnDesbloquear').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Desbloqueando…';
+            var resultado = await FUNCIONES_POR_TIPO[registroActual.tipo].desbloquear(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.confirmado = false;
+            registroActual.solicitudEdicion = false;
+            registroActual.solicitudEdicionPorNombre = '';
+            registroActual.solicitudEdicionEn = null;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Desbloqueo', 'Actualización del Inventario', FUNCIONES_POR_TIPO[registroActual.tipo].etiqueta + ' — ' + registroActual.nombreCanal);
+            }
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            pintarFormularioDesdeRegistro();
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        });
+
+        document.getElementById('btnRechazarSolicitud').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Rechazando solicitud…';
+            var resultado = await FUNCIONES_POR_TIPO[registroActual.tipo].rechazarSolicitud(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.solicitudEdicion = false;
+            registroActual.solicitudEdicionPorNombre = '';
+            registroActual.solicitudEdicionEn = null;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Rechazo de solicitud de edición', 'Actualización del Inventario', FUNCIONES_POR_TIPO[registroActual.tipo].etiqueta + ' — ' + registroActual.nombreCanal);
+            }
+            mostrarConfirmacion();
+            document.getElementById('estadoConfirmacion').textContent = 'Solicitud rechazada. El registro sigue bloqueado.';
+        });
+
+        document.getElementById('btnSolicitarEdicion').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Enviando solicitud…';
+            var resultado = await FUNCIONES_POR_TIPO[registroActual.tipo].solicitarEdicion(registroActual.id, perfilActual ? perfilActual.nombre : '');
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.solicitudEdicion = true;
+            registroActual.solicitudEdicionPorNombre = perfilActual ? perfilActual.nombre : '';
+            registroActual.solicitudEdicionEn = new Date().toISOString();
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Solicitud de edición', 'Actualización del Inventario', FUNCIONES_POR_TIPO[registroActual.tipo].etiqueta + ' — ' + registroActual.nombreCanal);
+            }
+            mostrarConfirmacion();
+        });
+
+        // ═══ Arranque ═══
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            esAdmin = perfilActual.rol === 'admin';
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+            if (perfilActual.rol !== 'admin' && perfilActual.rol !== 'programador') {
+                elEstadoTomas.textContent = 'Tu usuario no tiene permiso para este módulo.';
+                return;
+            }
+            mostrarVistaTomas();
+        })();
+    </script>
+</body>
+</html>

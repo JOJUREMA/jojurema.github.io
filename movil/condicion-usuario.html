@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Condición del Usuario — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+    <script src="../assets/core/reporteCondicion.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>🔍 Condición del Usuario</h2>
+        </div>
+
+        <!-- ── Vista de búsqueda ── -->
+        <div id="vistaBusqueda" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectTomaCondicion">Toma</label>
+                <select id="selectTomaCondicion">
+                    <option value="">🔎 Buscar por nombre (todas las tomas)</option>
+                </select>
+            </div>
+
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="selectCondicionFiltro">Filtrar por condición</label>
+                <select id="selectCondicionFiltro">
+                    <option value="">Todos</option>
+                    <option value="con">✅ Con derecho</option>
+                    <option value="sin">❌ Sin derecho</option>
+                </select>
+            </div>
+
+            <div class="campo" id="contenedorDeudaMaxLista" style="width:100%; max-width:420px; display:none;">
+                <label for="inputDeudaMaxLista">Deuda máxima permitida (S/)</label>
+                <input type="number" id="inputDeudaMaxLista" value="0" min="0" step="0.01">
+            </div>
+
+            <div class="buscador campo" style="width:100%; max-width:420px;">
+                <label for="inputBusqueda" id="labelBusqueda">Buscar por nombre</label>
+                <input type="text" id="inputBusqueda" placeholder="ej. Pérez" autocomplete="off">
+            </div>
+
+            <div class="estado-busqueda" id="estadoBusqueda">Elige una toma para ver su reporte, o escribe un nombre para buscar en todas.</div>
+
+            <div class="acciones-reporte" id="accionesReporteToma" style="display:none; width:100%; max-width:420px; margin-bottom:10px;">
+                <button class="boton" id="btnCompartirReporteToma">📤 Compartir / Descargar PDF de la toma</button>
+                <div class="estado-busqueda" id="estadoReporteToma"></div>
+                <div class="tarjeta-reporte" id="contenedorReporteTomaPdf" style="display:none;"></div>
+            </div>
+
+            <div class="resultados" id="resultados"></div>
+        </div>
+
+        <!-- ── Vista de detalle ── -->
+        <div id="vistaDetalle" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverBusqueda" style="max-width:420px;">← Volver a la búsqueda</button>
+            <h1 id="detalleNombre" style="margin-top:18px;"></h1>
+            <p class="subtitulo" id="detalleUbicacion"></p>
+            <div id="detalleBadge"></div>
+
+            <div class="acciones-reporte" style="width:100%; max-width:420px; margin-bottom:14px;">
+                <button class="boton" id="btnCompartirReporteUsuario">📤 Compartir / Descargar PDF</button>
+                <div class="estado-busqueda" id="estadoReporteUsuario"></div>
+                <div class="tarjeta-reporte" id="contenedorReporteUsuarioPdf" style="display:none;"></div>
+            </div>
+
+            <div class="tarjeta" style="max-width:420px; margin-bottom:18px;">
+                <div class="campo" style="margin-bottom:0;">
+                    <label for="inputDeudaMax">Deuda máxima permitida (S/)</label>
+                    <input type="number" id="inputDeudaMax" value="0" min="0" step="0.01">
+                </div>
+            </div>
+
+            <div class="stats-deuda">
+                <div class="stat-deuda">
+                    <div class="valor" id="statCampana">-</div>
+                    <div class="etiqueta">Deuda Campaña</div>
+                </div>
+                <div class="stat-deuda">
+                    <div class="valor" id="statAtrasada">-</div>
+                    <div class="etiqueta">Deuda Atrasada</div>
+                </div>
+                <div class="stat-deuda">
+                    <div class="valor" id="statConvenio">-</div>
+                    <div class="etiqueta">Deuda Convenio</div>
+                </div>
+                <div class="stat-deuda total">
+                    <div class="valor" id="statTotal">-</div>
+                    <div class="etiqueta">Deuda Total</div>
+                </div>
+            </div>
+
+            <div class="lista-cultivos" id="listaCultivos"></div>
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var usuarioSeleccionado = null; // fila cruda de padron_usuarios
+
+        // 'todas' = buscar por nombre en todo el padrón (comportamiento
+        // original); 'toma' = reporte de una toma elegida, con filtro de
+        // nombre solo dentro de lo ya cargado (sin ir de nuevo a Supabase).
+        var modoActual = 'todas';
+        var usuariosTomaActual = []; // cache de la toma elegida, para filtrar en el momento
+        var ultimaBusquedaGlobal = []; // cache del último resultado de buscarEnPadron, para refiltrar sin repetir la consulta
+        var deudaMaxLista = 0; // compartido entre el reporte de toma y la búsqueda global
+        var condicionFiltroActual = ''; // '' (todos) | 'con' | 'sin'
+
+        var elBusqueda = document.getElementById('vistaBusqueda');
+        var elDetalle = document.getElementById('vistaDetalle');
+        var elInputBusqueda = document.getElementById('inputBusqueda');
+        var elLabelBusqueda = document.getElementById('labelBusqueda');
+        var elEstadoBusqueda = document.getElementById('estadoBusqueda');
+        var elResultados = document.getElementById('resultados');
+        var elSelectToma = document.getElementById('selectTomaCondicion');
+        var elSelectCondicionFiltro = document.getElementById('selectCondicionFiltro');
+        var elContenedorDeudaMaxLista = document.getElementById('contenedorDeudaMaxLista');
+        var elInputDeudaMaxLista = document.getElementById('inputDeudaMaxLista');
+        var elAccionesReporteToma = document.getElementById('accionesReporteToma');
+        var elEstadoReporteToma = document.getElementById('estadoReporteToma');
+
+        function formatearSoles(valor) {
+            var n = parseFloat(valor) || 0;
+            return 'S/ ' + n.toFixed(2);
+        }
+
+        // Adapta una fila de padron_usuarios (snake_case, cultivos como
+        // arreglo [{cultivo,area}]) al objeto que esperan esUsuarioApto /
+        // debeExcluirse en assets/core/clasificacion.js (deudaTotal,
+        // cultivo1/area1 ... cultivoN/areaN) — misma lógica sin importar si
+        // la comisión usa el formato clásico (2 cultivos) o el extendido de
+        // Cieneguillo (hasta 10), ya que ambas ramas de esas funciones leen
+        // cultivoN/areaN genéricamente.
+        function adaptarUsuarioPadron(fila) {
+            var adaptado = {
+                nombre: fila.nombre,
+                deudaTotal: parseFloat(fila.deuda_total) || 0,
+            };
+            (fila.cultivos || []).forEach(function (c, i) {
+                adaptado['cultivo' + (i + 1)] = c.cultivo;
+                adaptado['area' + (i + 1)] = c.area;
+            });
+            return adaptado;
+        }
+
+        // Mismo cálculo que actualizarCondicion(), pero sin tocar el DOM —
+        // para poder mostrar el badge mini en cada fila de una lista.
+        function calcularApto(fila, deudaMax) {
+            var adaptado = adaptarUsuarioPadron(fila);
+            var excluido = debeExcluirse(adaptado);
+            if (excluido) return { excluido: true, apto: false };
+            return { excluido: false, apto: esUsuarioApto(adaptado, deudaMax) };
+        }
+
+        // condicionFiltro: '' (todos) | 'con' (solo con derecho) | 'sin'
+        // (sin derecho, incluye excluidos por no tener cultivo registrado).
+        // Aplica en ambos modos (toma y búsqueda global) — igual que el
+        // filtro de nombre, es puramente local sobre lo ya cargado.
+        function aplicarFiltroCondicion(filas, condicionFiltro) {
+            if (!condicionFiltro) return filas;
+            return filas.filter(function (f) {
+                var condicion = calcularApto(f, deudaMaxLista);
+                if (condicionFiltro === 'con') return !condicion.excluido && condicion.apto;
+                return condicion.excluido || !condicion.apto;
+            });
+        }
+
+        function mostrarBusqueda() {
+            elDetalle.style.display = 'none';
+            elBusqueda.style.display = 'flex';
+        }
+
+        function mostrarDetalle(fila) {
+            usuarioSeleccionado = fila;
+            elBusqueda.style.display = 'none';
+            elDetalle.style.display = 'flex';
+
+            var elContenedorReporteUsuario = document.getElementById('contenedorReporteUsuarioPdf');
+            elContenedorReporteUsuario.innerHTML = '';
+            elContenedorReporteUsuario.style.display = 'none';
+            document.getElementById('estadoReporteUsuario').textContent = '';
+
+            document.getElementById('inputDeudaMax').value = deudaMaxLista;
+            document.getElementById('detalleNombre').textContent = fila.nombre;
+            document.getElementById('detalleUbicacion').textContent =
+                'Toma ' + fila.toma_nombre + (fila.unidad_catastral ? ' · U.C. ' + fila.unidad_catastral : '');
+
+            document.getElementById('statCampana').textContent = formatearSoles(fila.deuda_campana);
+            document.getElementById('statAtrasada').textContent = formatearSoles(fila.deuda_atrasada);
+            document.getElementById('statConvenio').textContent = formatearSoles(fila.deuda_convenio);
+            document.getElementById('statTotal').textContent = formatearSoles(fila.deuda_total);
+
+            var listaCultivos = document.getElementById('listaCultivos');
+            var cultivos = fila.cultivos || [];
+            if (cultivos.length === 0) {
+                listaCultivos.innerHTML = '<div class="fila-cultivo"><span>Sin cultivos registrados</span></div>';
+            } else {
+                listaCultivos.innerHTML = cultivos.map(function (c) {
+                    return '<div class="fila-cultivo"><span>' + escapeHtml(c.cultivo || '-') + '</span><span>' +
+                        (parseFloat(c.area) || 0).toFixed(2) + ' ha</span></div>';
+                }).join('');
+            }
+
+            actualizarCondicion();
+        }
+
+        function actualizarCondicion() {
+            if (!usuarioSeleccionado) return;
+            var deudaMax = parseFloat(document.getElementById('inputDeudaMax').value) || 0;
+            var adaptado = adaptarUsuarioPadron(usuarioSeleccionado);
+            var excluido = debeExcluirse(adaptado);
+            var apto = !excluido && esUsuarioApto(adaptado, deudaMax);
+            var elBadge = document.getElementById('detalleBadge');
+            if (excluido) {
+                elBadge.innerHTML = '<span class="badge-condicion no-apto">SIN CULTIVO REGISTRADO</span>';
+            } else {
+                elBadge.innerHTML = apto
+                    ? '<span class="badge-condicion apto">✔ APTO</span>'
+                    : '<span class="badge-condicion no-apto">✖ NO APTO</span>';
+            }
+        }
+
+        document.getElementById('inputDeudaMax').addEventListener('input', actualizarCondicion);
+        document.getElementById('btnVolverBusqueda').addEventListener('click', mostrarBusqueda);
+
+        function renderizarResultados(resultados) {
+            if (resultados.length === 0) {
+                elResultados.innerHTML = '';
+                elEstadoBusqueda.textContent = 'Sin resultados.';
+                return;
+            }
+            elEstadoBusqueda.textContent = resultados.length + ' resultado(s).';
+            elResultados.innerHTML = '';
+            resultados.forEach(function (fila) {
+                var condicion = calcularApto(fila, deudaMaxLista);
+                var badgeClase = condicion.excluido ? 'no-apto' : (condicion.apto ? 'apto' : 'no-apto');
+                var badgeTexto = condicion.excluido ? 'SIN CULTIVO' : (condicion.apto ? 'APTO' : 'NO APTO');
+                var boton = document.createElement('button');
+                boton.className = 'fila-resultado';
+                boton.innerHTML = '<div class="nombre-resultado">' + escapeHtml(fila.nombre) +
+                    '<span class="badge-condicion-mini ' + badgeClase + '">' + badgeTexto + '</span></div>' +
+                    '<div class="detalle-resultado">Toma ' + escapeHtml(fila.toma_nombre) +
+                    (fila.unidad_catastral ? ' · U.C. ' + escapeHtml(fila.unidad_catastral) : '') + '</div>';
+                boton.addEventListener('click', function () { mostrarDetalle(fila); });
+                elResultados.appendChild(boton);
+            });
+        }
+
+        // Recalcula qué mostrar a partir de lo ya cargado en memoria (cache
+        // de la toma elegida, o cache de la última búsqueda global), sin
+        // volver a consultar Supabase — aplica filtro de nombre (solo en
+        // modo toma; en modo global ya lo aplicó el ILIKE del servidor) y
+        // el filtro de condición (con/sin derecho), en ese orden.
+        function renderizarConFiltros() {
+            var filas;
+            if (modoActual === 'toma') {
+                var texto = elInputBusqueda.value.trim().toLowerCase();
+                filas = usuariosTomaActual.slice().sort(function (a, b) {
+                    return a.nombre.localeCompare(b.nombre, 'es');
+                });
+                if (texto.length > 0) {
+                    filas = filas.filter(function (f) { return f.nombre.toLowerCase().indexOf(texto) !== -1; });
+                }
+            } else {
+                filas = ultimaBusquedaGlobal.slice();
+            }
+            filas = aplicarFiltroCondicion(filas, condicionFiltroActual);
+            renderizarResultados(filas);
+            elAccionesReporteToma.style.display = (modoActual === 'toma' && filas.length > 0) ? 'block' : 'none';
+        }
+
+        async function poblarSelectorTomas() {
+            var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+            if (!comisionKey) {
+                elEstadoBusqueda.textContent = 'Tu cuenta (' + (perfilActual ? perfilActual.nombreUsuario : '-') +
+                    ') no tiene una comisión asignada en el sistema, así que no puede consultar ningún dato. ' +
+                    'Pide al administrador que te asigne una comisión en tu perfil.';
+                return;
+            }
+            var nombreComision = perfilActual.comisionNombre || perfilActual.comisionClave;
+            var resultado = await CusshmiDatos.listarTomasConPadron(comisionKey);
+            if (!resultado.ok) {
+                elEstadoBusqueda.textContent = 'No se pudo cargar la lista de tomas: ' + (resultado.error || 'error desconocido') + '.';
+                return;
+            }
+            if (resultado.tomas.length === 0) {
+                elEstadoBusqueda.textContent = 'No hay padrón sincronizado para ' + nombreComision +
+                    '. Si ya sincronizaste desde escritorio, verifica que la comisión seleccionada allí sea la misma que la tuya.';
+            }
+            resultado.tomas.forEach(function (toma) {
+                var opcion = document.createElement('option');
+                opcion.value = toma;
+                opcion.textContent = 'Toma ' + toma;
+                elSelectToma.appendChild(opcion);
+            });
+        }
+
+        elSelectToma.addEventListener('change', async function () {
+            var tomaElegida = elSelectToma.value;
+            elInputBusqueda.value = '';
+            elResultados.innerHTML = '';
+            elAccionesReporteToma.style.display = 'none';
+            elEstadoReporteToma.textContent = '';
+            var elContenedorReporteToma = document.getElementById('contenedorReporteTomaPdf');
+            elContenedorReporteToma.innerHTML = '';
+            elContenedorReporteToma.style.display = 'none';
+
+            if (!tomaElegida) {
+                modoActual = 'todas';
+                usuariosTomaActual = [];
+                ultimaBusquedaGlobal = [];
+                elContenedorDeudaMaxLista.style.display = 'none';
+                elLabelBusqueda.textContent = 'Buscar por nombre';
+                elInputBusqueda.placeholder = 'ej. Pérez';
+                elEstadoBusqueda.textContent = 'Elige una toma para ver su reporte, o escribe un nombre para buscar en todas.';
+                return;
+            }
+
+            modoActual = 'toma';
+            elContenedorDeudaMaxLista.style.display = 'block';
+            elLabelBusqueda.textContent = 'Filtrar por nombre (opcional)';
+            elInputBusqueda.placeholder = 'ej. Pérez (dejar vacío para ver a todos)';
+            elEstadoBusqueda.textContent = 'Cargando reporte de la toma ' + tomaElegida + '…';
+
+            var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+            var resultado = await CusshmiDatos.cargarPadronToma(comisionKey, tomaElegida);
+            if (!resultado.ok) {
+                elEstadoBusqueda.textContent = 'No se pudo cargar la toma: ' + (resultado.error || 'error desconocido');
+                usuariosTomaActual = [];
+                return;
+            }
+            usuariosTomaActual = resultado.resultados || [];
+            renderizarConFiltros();
+        });
+
+        elSelectCondicionFiltro.addEventListener('change', function () {
+            condicionFiltroActual = elSelectCondicionFiltro.value;
+            if (modoActual === 'toma' || ultimaBusquedaGlobal.length > 0) {
+                renderizarConFiltros();
+            }
+        });
+
+        elInputDeudaMaxLista.addEventListener('input', function () {
+            deudaMaxLista = parseFloat(elInputDeudaMaxLista.value) || 0;
+            renderizarConFiltros();
+        });
+
+        var temporizadorBusqueda = null;
+        elInputBusqueda.addEventListener('input', function () {
+            if (modoActual === 'toma') {
+                renderizarConFiltros();
+                return;
+            }
+
+            var texto = elInputBusqueda.value.trim();
+            clearTimeout(temporizadorBusqueda);
+            if (texto.length < 2) {
+                ultimaBusquedaGlobal = [];
+                elResultados.innerHTML = '';
+                elEstadoBusqueda.textContent = 'Escribe al menos 2 letras para buscar.';
+                return;
+            }
+            elEstadoBusqueda.textContent = 'Buscando…';
+            temporizadorBusqueda = setTimeout(async function () {
+                var comisionKey = perfilActual ? perfilActual.comisionClave : null;
+                var resultado = await CusshmiDatos.buscarEnPadron(comisionKey, texto);
+                if (!resultado.ok) {
+                    elEstadoBusqueda.textContent = 'No se pudo buscar: ' + (resultado.error || 'error desconocido');
+                    return;
+                }
+                ultimaBusquedaGlobal = resultado.resultados || [];
+                renderizarConFiltros();
+            }, 300);
+        });
+
+        // Espera a que todas las <img> dentro del contenedor terminen de
+        // cargar (o fallen) antes de seguir — si html2canvas captura antes
+        // de que el logo termine de cargar, el layout todavía no se asentó
+        // del todo y la captura sale cortada a la altura en la que se
+        // quedó en ese instante.
+        function esperarImagenesListas(contenedor) {
+            var imgs = Array.prototype.slice.call(contenedor.querySelectorAll('img'));
+            var promesas = imgs.map(function (img) {
+                if (img.complete) return Promise.resolve();
+                return new Promise(function (resolve) {
+                    img.addEventListener('load', resolve, { once: true });
+                    img.addEventListener('error', resolve, { once: true });
+                });
+            });
+            return Promise.all(promesas);
+        }
+
+        // Espera un par de frames de pintado — cambiar display:none a
+        // 'block' y llenar el innerHTML no garantiza que el navegador ya
+        // haya recalculado el layout final en el mismo tick.
+        function esperarRepintado() {
+            return new Promise(function (resolve) {
+                requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+            });
+        }
+
+        // Genera el PDF del HTML recibido y lo comparte con navigator.share
+        // si el navegador soporta adjuntar archivos; si no, cae a descarga
+        // simple. Mismo patrón que generarYCompartirPdfG4() en
+        // movil/pda-programado.html (Fase 3).
+        //
+        // El contenedor donde se renderiza el HTML se deja VISIBLE en
+        // pantalla (a diferencia de un primer intento que lo ponía fuera de
+        // pantalla con left:-9999px): html2canvas —la librería que usa
+        // html2pdf para capturar el HTML— no siempre rasteriza bien un
+        // elemento que nunca entró al viewport, y en algunos celulares eso
+        // producía un PDF completamente en blanco al compartir. Mostrarlo
+        // en pantalla (como ya hacía el visor del Anexo G-4) evita ese
+        // problema y además deja ver el reporte antes/después de compartir.
+        // Ancho de "documento" para capturar el PDF, en píxeles CSS — NO el
+        // ancho de pantalla del celular. Si se captura al ancho real de la
+        // tarjeta en pantalla (hasta 420px, o menos en celulares angostos:
+        // confirmado 335px en un viewport de 375px), una tabla de varias
+        // columnas (nombre, U.C., cultivos, deuda, condición) se queda sin
+        // espacio y el texto de los encabezados/celdas se corta o queda
+        // ilegible — reportado por el usuario con una captura del PDF.
+        // Ensanchar la tarjeta ANTES de capturar (y devolverla a su ancho
+        // normal después) le da a cada columna el espacio que necesita,
+        // sin afectar cómo se ve la tarjeta compacta en el resto de la
+        // pantalla del celular.
+        var ANCHO_IMPRESION_PX = 700;
+
+        async function generarYCompartirReporte(html, nombreArchivo, textoWhatsApp, tituloCompartir, elEstado, contenedorId) {
+            var contenedor = document.getElementById(contenedorId);
+            contenedor.innerHTML = '<style>' + estilosReporteCondicion() + '</style>' + html;
+            contenedor.style.display = 'block';
+            elEstado.textContent = 'Generando PDF…';
+            var anchoOriginal = contenedor.style.width;
+            var maxAnchoOriginal = contenedor.style.maxWidth;
+            try {
+                contenedor.style.maxWidth = 'none';
+                contenedor.style.width = ANCHO_IMPRESION_PX + 'px';
+                await esperarImagenesListas(contenedor);
+                await esperarRepintado();
+                var MARGEN_MM = 5;
+                // Página del tamaño real del contenido (+ margen) en vez de
+                // A4 fijo: este reporte es una tarjeta corta (usuario
+                // individual) o una tabla de una toma, no un formulario
+                // oficial — con A4 fijo, la tarjeta corta dejaba casi toda
+                // la hoja en blanco debajo del contenido real (reportado
+                // por el usuario, con captura del PDF compartido). 96px =
+                // 25.4mm es la equivalencia estándar CSS px → mm.
+                // COLCHON_MM: con reportes de varias filas (tabla por toma)
+                // se detectó que un cálculo "justo" de altoPaginaMm podía
+                // quedar 1-2px corto del alto real que termina rasterizando
+                // html2canvas/jsPDF — lo suficiente para que la librería
+                // agregue una SEGUNDA página, casi vacía, con solo la
+                // última fila (que "page-break-inside:avoid" empuja
+                // completa a esa página nueva en vez de cortarla a la
+                // mitad). Reportado por el usuario con una captura de esa
+                // segunda página sobrante. Un colchón amplio (muy por
+                // encima de cualquier redondeo de subpíxel) elimina el
+                // problema de raíz.
+                var COLCHON_MM = 15;
+                var anchoPaginaMm = contenedor.offsetWidth * 25.4 / 96 + MARGEN_MM * 2;
+                var altoPaginaMm = contenedor.scrollHeight * 25.4 / 96 + MARGEN_MM * 2 + COLCHON_MM;
+                // La orientación debe coincidir con la forma real del
+                // contenido — pedir 'portrait' junto con un arreglo [ancho,
+                // alto] más ancho que alto hace que la librería INVIERTA el
+                // arreglo para forzar el portrait, dejando una página angosta
+                // y más alta que el contenido real (detectado al verificar
+                // este mismo arreglo antes de desplegarlo).
+                var esApaisado = anchoPaginaMm > altoPaginaMm;
+                var opciones = {
+                    margin: MARGEN_MM,
+                    filename: nombreArchivo + '.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'mm', format: [anchoPaginaMm, altoPaginaMm], orientation: esApaisado ? 'landscape' : 'portrait' }
+                };
+                var blob = await html2pdf().set(opciones).from(contenedor).outputPdf('blob');
+                var archivo = new File([blob], nombreArchivo + '.pdf', { type: 'application/pdf' });
+
+                if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+                    await navigator.share({ files: [archivo], title: tituloCompartir, text: textoWhatsApp });
+                    elEstado.textContent = '';
+                } else {
+                    var url = URL.createObjectURL(blob);
+                    var enlace = document.createElement('a');
+                    enlace.href = url;
+                    enlace.download = nombreArchivo + '.pdf';
+                    document.body.appendChild(enlace);
+                    enlace.click();
+                    document.body.removeChild(enlace);
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+                    elEstado.textContent = 'PDF descargado.';
+                }
+            } catch (e) {
+                elEstado.textContent = 'No se pudo generar el PDF: ' + (e.message || e);
+            } finally {
+                // Devuelve la tarjeta a su ancho compacto normal — el
+                // ensanchado de arriba es solo para la captura del PDF, no
+                // debe quedar así en el resto de la pantalla.
+                contenedor.style.width = anchoOriginal;
+                contenedor.style.maxWidth = maxAnchoOriginal;
+            }
+        }
+
+        document.getElementById('btnCompartirReporteUsuario').addEventListener('click', async function () {
+            if (!usuarioSeleccionado) return;
+            var deudaMax = parseFloat(document.getElementById('inputDeudaMax').value) || 0;
+            var condicion = calcularApto(usuarioSeleccionado, deudaMax);
+            var condicionTexto = condicion.excluido ? 'SIN CULTIVO REGISTRADO' : (condicion.apto ? 'CON DERECHO' : 'SIN DERECHO');
+            var datos = {
+                nombre: usuarioSeleccionado.nombre,
+                tomaNombre: usuarioSeleccionado.toma_nombre,
+                unidadCatastral: usuarioSeleccionado.unidad_catastral,
+                cultivos: usuarioSeleccionado.cultivos || [],
+                deudaCampana: usuarioSeleccionado.deuda_campana,
+                deudaAtrasada: usuarioSeleccionado.deuda_atrasada,
+                deudaConvenio: usuarioSeleccionado.deuda_convenio,
+                deudaTotal: usuarioSeleccionado.deuda_total,
+                condicion: condicion,
+                deudaMax: deudaMax,
+                comisionNombre: perfilActual ? perfilActual.comisionNombre : '',
+                fechaImpresion: new Date(),
+                logoSrc: 'icons/icon-192.png'
+            };
+            var html = construirReporteUsuarioHtml(datos);
+            var textoWa = _textoWhatsAppReporteUsuario({
+                nombre: datos.nombre, tomaNombre: datos.tomaNombre,
+                condicionTexto: condicionTexto, deudaTotal: datos.deudaTotal
+            });
+            var nombreArchivo = _nombreArchivoReporteCondicion(datos.nombre);
+            await generarYCompartirReporte(html, nombreArchivo, textoWa, 'Reporte — ' + datos.nombre,
+                document.getElementById('estadoReporteUsuario'), 'contenedorReporteUsuarioPdf');
+        });
+
+        document.getElementById('btnCompartirReporteToma').addEventListener('click', async function () {
+            var tomaElegida = elSelectToma.value;
+            if (!tomaElegida) return;
+
+            var texto = elInputBusqueda.value.trim().toLowerCase();
+            var filas = usuariosTomaActual.slice().sort(function (a, b) {
+                return a.nombre.localeCompare(b.nombre, 'es');
+            });
+            if (texto.length > 0) {
+                filas = filas.filter(function (f) { return f.nombre.toLowerCase().indexOf(texto) !== -1; });
+            }
+            filas = aplicarFiltroCondicion(filas, condicionFiltroActual);
+
+            var filasReporte = filas.map(function (f) {
+                return {
+                    nombre: f.nombre,
+                    unidadCatastral: f.unidad_catastral,
+                    cultivos: f.cultivos || [],
+                    deudaTotal: f.deuda_total,
+                    condicion: calcularApto(f, deudaMaxLista)
+                };
+            });
+            var datos = {
+                tomaNombre: tomaElegida,
+                filtroTexto: condicionFiltroActual,
+                deudaMax: deudaMaxLista,
+                comisionNombre: perfilActual ? perfilActual.comisionNombre : '',
+                fechaImpresion: new Date(),
+                logoSrc: 'icons/icon-192.png',
+                filas: filasReporte
+            };
+            var html = construirReporteTomaHtml(datos);
+            var textoWa = _textoWhatsAppReporteToma({
+                tomaNombre: tomaElegida, filtroTexto: condicionFiltroActual, cantidad: filasReporte.length
+            });
+            var nombreArchivo = _nombreArchivoReporteCondicion(tomaElegida + ' - ' + _etiquetaFiltroCondicion(condicionFiltroActual));
+            await generarYCompartirReporte(html, nombreArchivo, textoWa, 'Reporte — Toma ' + tomaElegida,
+                elEstadoReporteToma, 'contenedorReporteTomaPdf');
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            if (perfilActual.comisionClave) {
+                localStorage.setItem('cusshmi_comision', perfilActual.comisionClave);
+            }
+            poblarSelectorTomas();
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Sinceramiento de Áreas — CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="stylesheet" href="estilos.css">
+    <!-- Leaflet vendorizado (movil/vendor/) en vez de CDN: este módulo tiene
+         que poder dibujar el polígono sin conexión — un <script src="https://...">
+         que el celular nunca alcanzó a cargar con señal rompería justo al
+         entrar a una zona sin cobertura. Vendorizado, el service worker lo
+         cachea como cualquier otro archivo propio (ver movil/sw.js). -->
+    <link rel="stylesheet" href="vendor/leaflet.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+    <script src="../assets/core/mapa.js"></script>
+    <script src="../assets/core/coordenadasUtm.js"></script>
+    <script src="../assets/core/capturaOffline.js"></script>
+    <script src="vendor/leaflet.js"></script>
+
+    <style>
+        .campo input:disabled { opacity: 0.7; }
+        .seccion-titulo {
+            width: 100%;
+            max-width: 420px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.75;
+            margin: 18px 0 10px;
+        }
+        .fila-toma {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 10px;
+            padding: 12px 14px;
+            text-align: left;
+            color: #ffffff;
+            cursor: pointer;
+            width: 100%;
+        }
+        .fila-toma .nombre-toma { font-size: 14px; font-weight: 600; }
+        .fila-toma .detalle-toma { font-size: 11.5px; opacity: 0.75; margin-top: 2px; }
+        .badge-registrado {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 9.5px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+            margin-left: 8px;
+            vertical-align: middle;
+            background: #1e7e34;
+            color: #ffffff;
+        }
+        .aviso-bloqueado {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(200, 168, 75, 0.15);
+            border: 1px solid rgba(200, 168, 75, 0.5);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 13px;
+            margin-bottom: 14px;
+            text-align: center;
+        }
+        .resumen-fila {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .resumen-fila:last-child { border-bottom: none; }
+        .resumen-fila .etiqueta-resumen { opacity: 0.7; }
+        .resumen-fila .valor-resumen { font-weight: 600; text-align: right; }
+
+        #mapaVertices {
+            width: 100%;
+            max-width: 420px;
+            height: 42vh;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+        /* Editor de polígono a pantalla completa — cubre TODO el viewport
+           (el "maximizar" pedido), independiente del max-width:420px y el
+           padding del resto de las pantallas móviles. */
+        .editor-poligono {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: #001830;
+            flex-direction: column;
+        }
+        .editor-poligono-header, .editor-poligono-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            flex-shrink: 0;
+        }
+        .editor-poligono-header {
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 13px;
+        }
+        .editor-poligono-footer { flex-direction: column; gap: 6px; }
+        .editor-poligono-footer .estado-busqueda { color: #ffffff; opacity: 0.85; }
+        .editor-poligono-mapa { flex: 1; min-height: 0; }
+        .mapa-comparacion {
+            width: 100%;
+            max-width: 420px;
+            height: 26vh;
+            border-radius: 10px;
+            margin: 6px 0;
+        }
+        /* Marcador arrastrable del editor — DivIcon (HTML/CSS, sin imagen)
+           a propósito: el ícono por defecto de L.marker() no está
+           vendorizado (este módulo solo vendorizó Leaflet en sí, ver
+           <head>), y un ícono roto/una descarga fallida en campo sin señal
+           no es aceptable para la herramienta principal de edición. */
+        .marcador-vertice-editor {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: #ffffff; border: 2px solid #003876; color: #003876;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+        .total-siembra {
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 13px;
+            margin: 6px 0 14px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .total-siembra.diferencia-alta { background: rgba(192, 57, 43, 0.2); border-color: #c0392b; }
+        .foto-miniatura {
+            display: inline-block;
+            position: relative;
+            margin: 6px;
+        }
+        .foto-miniatura img {
+            width: 90px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .badge-foto {
+            position: absolute;
+            bottom: 2px;
+            left: 2px;
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 4px;
+        }
+        .btn-quitar-foto {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            background: #c0392b;
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <div class="encabezado-modulo">
+            <a class="volver" href="index.html" title="Volver al menú">←</a>
+            <h2>📐 Sinceramiento de Áreas</h2>
+        </div>
+
+        <!-- ── Pantalla 2: selección de toma ── -->
+        <div id="vistaTomas" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+            <button class="boton" id="btnVerSolicitudes" style="max-width:420px; display:none; margin-bottom:14px; background:#c0392b;">🔔 Solicitudes de edición pendientes</button>
+            <div class="estado-busqueda" id="estadoTomas">Cargando tomas…</div>
+            <div class="resultados" id="listaTomas"></div>
+        </div>
+
+        <!-- ── Pantalla 3: búsqueda de usuario ── -->
+        <div id="vistaBusqueda" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverATomas" style="max-width:420px;">← Volver a las tomas</button>
+            <h1 id="tituloTomaBusqueda" style="margin-top:14px; font-size:16px;"></h1>
+
+            <div class="buscador campo" style="width:100%; max-width:420px; margin-top:8px;">
+                <label for="inputBusquedaUsuario">Buscar por nombre</label>
+                <input type="text" id="inputBusquedaUsuario" placeholder="ej. Pérez" autocomplete="off">
+            </div>
+
+            <button class="boton" id="btnAgregarNuevo" style="max-width:420px; margin-bottom:14px;">+ Agregar usuario nuevo</button>
+
+            <div class="estado-busqueda" id="estadoBusquedaUsuario"></div>
+            <div class="resultados" id="listaUsuarios"></div>
+        </div>
+
+        <!-- ── Pantalla 4: formulario de captura ── -->
+        <div id="vistaFormulario" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverABusqueda" style="max-width:420px;">← Volver a la búsqueda</button>
+
+            <div class="aviso-bloqueado" id="avisoBloqueadoFormulario" style="display:none; margin-top:14px;">
+                🔒 Sinceramiento confirmado. Para editar solicite habilitación al administrador.
+            </div>
+
+            <div class="seccion-titulo" style="margin-top:14px;">Datos del usuario</div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="inputApellidosNombres">Apellidos y nombres</label>
+                <input type="text" id="inputApellidosNombres" autocomplete="off">
+            </div>
+            <div class="campo" style="width:100%; max-width:420px;">
+                <label for="inputUnidadCatastral">Unidad catastral (UC)</label>
+                <input type="text" id="inputUnidadCatastral" autocomplete="off">
+            </div>
+            <div class="estado-busqueda" id="areaOficialTexto" style="max-width:420px;"></div>
+
+            <div class="seccion-titulo">Vértices del predio (UTM Zona 17S)</div>
+            <div class="estado-busqueda" id="textoEstadoPoligono" style="max-width:420px; opacity:0.85;"></div>
+            <div id="mapaVertices"></div>
+            <button class="boton" id="btnEditarPoligono" style="max-width:420px; margin-bottom:10px;"></button>
+            <button class="boton-secundario" id="btnDeshacerEdicionPoligono" style="max-width:420px; margin-bottom:10px; display:none;">↩️ Deshacer edición — volver al polígono del SIG</button>
+            <div class="total-siembra" id="comparacionAreas">Captura al menos 3 vértices para calcular el área.</div>
+
+            <div class="seccion-titulo">Fotos del predio (hasta 3)</div>
+            <div class="estado-busqueda" style="max-width:420px; opacity:0.75;">
+                Cada foto queda marcada con la fecha, hora y coordenadas UTM del lugar donde se tomó.
+            </div>
+            <input type="file" id="inputFoto" accept="image/*" capture="environment" style="display:none;">
+            <button class="boton-secundario" id="btnTomarFoto" style="max-width:420px; margin-bottom:10px;">📷 Tomar foto</button>
+            <div class="estado-busqueda" id="estadoFoto" style="max-width:420px;"></div>
+            <div id="listaFotos" style="width:100%; max-width:420px; text-align:center;"></div>
+
+            <div class="estado-busqueda" id="estadoSincronizacion" style="max-width:420px; margin-top:10px;"></div>
+            <button class="boton-secundario" id="btnVolverABusquedaAbajo" style="max-width:420px; margin-top:6px;">← Volver a la búsqueda</button>
+            <button class="boton" id="btnContinuarConfirmacion" style="max-width:420px; margin-top:10px;">Continuar →</button>
+        </div>
+
+        <!-- ── Editor de polígono a pantalla completa (no es una "vista" del
+             flujo normal — cubre TODA la pantalla mientras está abierto) ── -->
+        <div id="vistaEditorPoligono" class="editor-poligono" style="display:none;">
+            <div class="editor-poligono-header">
+                <button class="boton-secundario" id="btnCerrarEditor" type="button" style="max-width:none; padding:8px 14px; font-size:12.5px;">✕ Cerrar</button>
+                <span>Editar polígono</span>
+                <button class="boton" id="btnFinalizarEdicion" type="button" style="max-width:none; padding:8px 14px; font-size:12.5px;">✔ Finalizar</button>
+            </div>
+            <div id="mapaEditorPoligono" class="editor-poligono-mapa"></div>
+            <div class="editor-poligono-footer">
+                <div class="estado-busqueda" id="estadoEditorPoligono" style="max-width:none;"></div>
+                <button class="boton" id="btnGpsEditor" type="button" style="max-width:420px;">📍 Agregar vértice por GPS</button>
+                <button class="boton-secundario" id="btnDeshacerUltimoPunto" type="button" style="max-width:420px;">↩️ Deshacer último punto</button>
+            </div>
+        </div>
+
+        <!-- ── Comparación del polígono nuevo contra el que ya existía ── -->
+        <div id="vistaComparacionPoligono" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <h1 style="margin-top:14px; font-size:16px;">Comparación de polígonos</h1>
+
+            <div class="seccion-titulo" style="margin-top:14px;">Polígono nuevo</div>
+            <div id="mapaCompNuevo" class="mapa-comparacion"></div>
+
+            <div class="seccion-titulo" id="tituloCompExistente">Polígono registrado en el sistema (SIG)</div>
+            <div id="mapaCompExistente" class="mapa-comparacion"></div>
+
+            <div class="total-siembra" id="textoDiferenciasPoligono"></div>
+
+            <button class="boton" id="btnGuardarPoligonoNuevo" style="max-width:420px;">✅ Guardar este polígono</button>
+            <button class="boton-secundario" id="btnSeguirEditandoPoligono" style="max-width:420px;">✏️ Seguir editando</button>
+        </div>
+
+        <!-- ── Pantalla 5: confirmación ── -->
+        <div id="vistaConfirmacion" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverAFormulario" style="max-width:420px;">← Volver al formulario</button>
+            <h1 style="margin-top:14px; font-size:16px;">Confirmación del sinceramiento</h1>
+
+            <div class="tarjeta" style="max-width:420px; margin-top:14px;">
+                <div id="resumenRegistro"></div>
+            </div>
+
+            <div class="aviso-bloqueado" id="avisoBloqueadoConfirmacion" style="display:none; margin-top:16px;">
+                🔒 Sinceramiento confirmado. Para editar solicite habilitación al administrador.
+            </div>
+            <div class="aviso-bloqueado" id="avisoSolicitudEnviada" style="display:none; margin-top:10px; background: rgba(200,168,75,0.2);">
+                🕓 Solicitud de edición enviada — esperando aprobación del administrador.
+            </div>
+            <div class="aviso-bloqueado" id="avisoSolicitudPendienteAdmin" style="display:none; margin-top:10px; background: rgba(200,168,75,0.2);"></div>
+
+            <div class="estado-busqueda" id="estadoConfirmacion"></div>
+            <button class="boton" id="btnConfirmarGuardar" style="max-width:420px; margin-top:10px;">✔ Confirmar y guardar</button>
+            <button class="boton-secundario" id="btnSolicitarEdicion" style="max-width:420px; display:none;">🔓 Solicitar habilitación de edición</button>
+            <button class="boton-secundario" id="btnDesbloquear" style="max-width:420px; display:none;">✅ Habilitar edición (admin)</button>
+            <button class="boton-secundario" id="btnRechazarSolicitud" style="max-width:420px; display:none; margin-top:10px;">❌ Rechazar solicitud (admin)</button>
+            <button class="boton-secundario" id="btnVolverAFormularioAbajo" style="max-width:420px; margin-top:10px;">← Volver al formulario</button>
+        </div>
+
+        <!-- ── Pantalla admin: solicitudes de edición pendientes ── -->
+        <div id="vistaSolicitudes" style="display:none; width:100%; flex-direction:column; align-items:center;">
+            <button class="boton-secundario" id="btnVolverATomasDesdeSolicitudes" style="max-width:420px;">← Volver a las tomas</button>
+            <h1 style="margin-top:14px; font-size:16px;">Solicitudes de edición pendientes</h1>
+
+            <div class="estado-busqueda" id="estadoSolicitudes"></div>
+            <div class="resultados" id="listaSolicitudes"></div>
+        </div>
+    </div>
+
+    <script>
+        var perfilActual = null;
+        var comisionKeyActual = null;
+        var esAdmin = false;
+
+        var tomaSeleccionada = null;
+        var padronTomaActual = [];
+        var registrosTomaActual = [];
+        var registroActual = null; // objeto local — id SIEMPRE generado por el cliente (ver nuevoRegistroBase)
+
+        var mapaLeaflet = null; // vista previa compacta, dentro del formulario — solo lectura
+        var capaPoligono = null;
+        var marcadoresVertices = [];
+        var sincronizandoAhora = false;
+
+        // Editor de polígono a pantalla completa — estado aparte del
+        // formulario: `verticesEdicionTemp` es una copia de trabajo, nunca
+        // toca registroActual.vertices hasta que se guarda desde la
+        // pantalla de comparación (ver btnGuardarPoligonoNuevo).
+        var mapaEditor = null;
+        var capaPoligonoEditor = null;
+        var marcadoresEditor = [];
+        var verticesEdicionTemp = [];
+
+        // Pantalla de comparación (nuevo vs. lo que ya existía en el SIG) —
+        // dos mini-mapas independientes, uno por polígono.
+        var mapaCompNuevo = null;
+        var mapaCompExistente = null;
+        var poligonoPropuestoTemp = null; // vértices ya finalizados en el editor, en espera de "Guardar" o "Seguir editando"
+
+        // Caché de predios KML por toma (Fase 4 — Mapa de predios) para
+        // cruzar el registro actual contra el polígono ya mapeado, mismo
+        // patrón de fetch+caché que obtenerPrediosDeToma() en seguimiento.html.
+        var prediosTomaKmlCache = {};
+        async function obtenerPrediosDeToma(tomaNombre) {
+            if (prediosTomaKmlCache[tomaNombre]) return prediosTomaKmlCache[tomaNombre];
+            var archivos = (typeof KML_POR_TOMA !== 'undefined' && KML_POR_TOMA[tomaNombre]) || [];
+            if (archivos.length === 0) {
+                prediosTomaKmlCache[tomaNombre] = [];
+                return [];
+            }
+            var listas = await Promise.all(archivos.map(function (nombreArchivo) {
+                return CusshmiDatos.descargarKmlBloque(nombreArchivo, '../mapas/' + nombreArchivo).then(function (texto) { return parsearKmlATomas(texto); });
+            })).catch(function () { return []; });
+            var todos = [].concat.apply([], listas);
+            var predios = filtrarPorToma(todos, tomaNombre);
+            prediosTomaKmlCache[tomaNombre] = predios;
+            return predios;
+        }
+
+        // Mismo criterio base que cruzarPredioConPadron() (assets/core/mapa.js):
+        // primero por unidad catastral, si no por nombre normalizado. Con un
+        // ajuste adicional confirmado contra datos reales: el KML (fuente
+        // GIS) trae la unidad catastral SIN ceros a la izquierda ("38727")
+        // mientras que el padrón sincronizado la trae con ceros ("038727") —
+        // se comparan sin ceros a la izquierda. Y el nombre en el KML viene
+        // "APELLIDOS, NOMBRES" (con coma) mientras el padrón trae
+        // "APELLIDOS NOMBRES" (sin coma) — se compara sin comas.
+        function _ucSinCerosIzq(valor) {
+            return normalizarUC(valor).replace(/^0+/, '');
+        }
+        function _nombreSinComas(valor) {
+            return (valor || '').toString().replace(/,/g, ' ').trim().toUpperCase().replace(/\s+/g, ' ');
+        }
+        function buscarPredioKmlDelUsuario(tomaNombre, unidadCatastral, nombre) {
+            return obtenerPrediosDeToma(tomaNombre).then(function (predios) {
+                var uc = _ucSinCerosIzq(unidadCatastral);
+                if (uc) {
+                    var porUC = predios.find(function (p) { return _ucSinCerosIzq(p.catastralKey) === uc; });
+                    if (porUC) return porUC;
+                }
+                var nombreNorm = _nombreSinComas(nombre);
+                if (!nombreNorm) return null;
+                return predios.find(function (p) { return _nombreSinComas(p.usuario) === nombreNorm; }) || null;
+            });
+        }
+
+        // Padrón oficial A-1 (comisión completa) — se usa solo para leer el
+        // "área oficial registrada" con la que comparar el área medida por
+        // GPS. Mismo patrón de caché-por-sesión que Identificación y registro.
+        var padronA1Promesa = null;
+        function obtenerPadronA1() {
+            if (!padronA1Promesa) {
+                padronA1Promesa = CusshmiDatos.cargarPadronOficialA1(comisionKeyActual)
+                    .then(function (r) { return (r.ok && r.resultados) ? r.resultados : []; });
+            }
+            return padronA1Promesa;
+        }
+
+        function normalizarUC(valor) {
+            return (valor || '').toString().trim().toUpperCase().replace(/\s+/g, '');
+        }
+
+        function emparejarConPadronA1(padronA1, unidadCatastral, nombre) {
+            var uc = normalizarUC(unidadCatastral);
+            if (uc) {
+                var porUC = padronA1.find(function (p) { return normalizarUC(p.unidad_catastral) === uc; });
+                if (porUC) return porUC;
+            }
+            var nombreNorm = (nombre || '').toString().trim().toUpperCase();
+            if (!nombreNorm) return null;
+            return padronA1.find(function (p) { return (p.apellidos_nombres || '').toString().trim().toUpperCase() === nombreNorm; }) || null;
+        }
+
+        function emparejarConPadronUsuarios(lista, unidadCatastral, nombre) {
+            var uc = normalizarUC(unidadCatastral);
+            if (uc) {
+                var porUC = lista.find(function (p) { return normalizarUC(p.unidad_catastral) === uc; });
+                if (porUC) return porUC;
+            }
+            var nombreNorm = (nombre || '').toString().trim().toUpperCase();
+            if (!nombreNorm) return null;
+            return lista.find(function (p) { return (p.nombre || '').toString().trim().toUpperCase() === nombreNorm; }) || null;
+        }
+
+        var elEstadoTomas = document.getElementById('estadoTomas');
+        var elListaTomas = document.getElementById('listaTomas');
+        var elEstadoBusquedaUsuario = document.getElementById('estadoBusquedaUsuario');
+        var elListaUsuarios = document.getElementById('listaUsuarios');
+
+        // ═══ Pantalla 2 — selección de toma ═══
+        async function mostrarVistaTomas() {
+            document.getElementById('vistaTomas').style.display = 'flex';
+            document.getElementById('vistaBusqueda').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            document.getElementById('vistaSolicitudes').style.display = 'none';
+
+            if (esAdmin) actualizarBotonSolicitudes();
+
+            elEstadoTomas.textContent = 'Cargando tomas…';
+            elListaTomas.innerHTML = '';
+
+            var resultadoTomas = await CusshmiDatos.listarTomasConPadron(comisionKeyActual);
+            if (!resultadoTomas.ok) {
+                elEstadoTomas.textContent = resultadoTomas.error || 'No se pudo cargar la lista de tomas.';
+                return;
+            }
+            var tomas = (resultadoTomas.tomas || []).slice().sort(function (a, b) { return compararOrdenTomas(a, b); });
+            if (tomas.length === 0) {
+                elEstadoTomas.textContent = 'No hay padrón sincronizado para tu comisión todavía.';
+                return;
+            }
+
+            var resultadoAvance = await CusshmiDatos.obtenerAvanceSinceramientoPorToma(comisionKeyActual);
+            var avance = (resultadoAvance.ok && resultadoAvance.avance) ? resultadoAvance.avance : {};
+
+            elEstadoTomas.textContent = '';
+            tomas.forEach(function (toma) {
+                var a = avance[toma] || { registrados: 0, totalPadron: 0, porcentaje: null };
+                var bloque = obtenerBloqueDeToma(toma);
+                var detalle = (a.porcentaje !== null)
+                    ? (a.registrados + ' / ' + a.totalPadron + ' sinceradas (' + a.porcentaje + '%)')
+                    : (a.registrados + ' sincerada(s)');
+
+                var fila = document.createElement('button');
+                fila.className = 'fila-toma';
+                fila.type = 'button';
+                fila.innerHTML =
+                    '<div class="nombre-toma">' + escapeHtml(toma) + '</div>' +
+                    '<div class="detalle-toma">Bloque: ' + escapeHtml(bloque) + ' · ' + escapeHtml(detalle) + '</div>';
+                fila.addEventListener('click', function () { abrirToma(toma); });
+                elListaTomas.appendChild(fila);
+            });
+        }
+
+        // ═══ Pantalla admin — solicitudes de edición pendientes ═══
+        async function actualizarBotonSolicitudes() {
+            var btn = document.getElementById('btnVerSolicitudes');
+            var resultado = await CusshmiDatos.listarSolicitudesEdicionSinceramiento(comisionKeyActual);
+            var n = (resultado.ok && resultado.solicitudes) ? resultado.solicitudes.length : 0;
+            if (n > 0) {
+                btn.textContent = '🔔 Solicitudes de edición pendientes (' + n + ')';
+                btn.style.display = 'block';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        async function mostrarVistaSolicitudes() {
+            document.getElementById('vistaTomas').style.display = 'none';
+            document.getElementById('vistaSolicitudes').style.display = 'flex';
+            await renderizarListaSolicitudes();
+        }
+
+        async function renderizarListaSolicitudes() {
+            var elEstado = document.getElementById('estadoSolicitudes');
+            var elLista = document.getElementById('listaSolicitudes');
+            elEstado.textContent = 'Cargando solicitudes…';
+            elLista.innerHTML = '';
+
+            var resultado = await CusshmiDatos.listarSolicitudesEdicionSinceramiento(comisionKeyActual);
+            if (!resultado.ok) { elEstado.textContent = resultado.error || 'No se pudo cargar las solicitudes.'; return; }
+            var solicitudes = resultado.solicitudes || [];
+            if (solicitudes.length === 0) {
+                elEstado.textContent = 'No hay solicitudes de edición pendientes.';
+                return;
+            }
+            elEstado.textContent = '';
+
+            solicitudes.forEach(function (s) {
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                var fecha = s.solicitud_edicion_en ? new Date(s.solicitud_edicion_en).toLocaleString('es-PE') : '-';
+                fila.innerHTML =
+                    '<div class="nombre-resultado">' + escapeHtml(s.apellidos_nombres || '-') + '</div>' +
+                    '<div class="detalle-resultado">Toma ' + escapeHtml(s.toma_nombre || '-') + ' · UC: ' + escapeHtml(s.unidad_catastral || '-') + '</div>' +
+                    '<div class="detalle-resultado">Solicitado por ' + escapeHtml(s.solicitud_edicion_por_nombre || 'un programador') + ' — ' + escapeHtml(fecha) + '</div>';
+
+                var acciones = document.createElement('div');
+                acciones.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
+
+                var btnHabilitar = document.createElement('button');
+                btnHabilitar.className = 'boton';
+                btnHabilitar.type = 'button';
+                btnHabilitar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnHabilitar.textContent = '✅ Habilitar';
+                btnHabilitar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnHabilitar.disabled = true;
+                    var r = await CusshmiDatos.desbloquearRegistroSinceramiento(s.id);
+                    if (!r.ok) { alert(r.error); btnHabilitar.disabled = false; return; }
+                    renderizarListaSolicitudes();
+                    actualizarBotonSolicitudes();
+                });
+
+                var btnRechazar = document.createElement('button');
+                btnRechazar.className = 'boton-secundario';
+                btnRechazar.type = 'button';
+                btnRechazar.style.cssText = 'max-width:none; flex:1; padding:8px; font-size:12px;';
+                btnRechazar.textContent = '❌ Rechazar';
+                btnRechazar.addEventListener('click', async function (ev) {
+                    ev.stopPropagation();
+                    btnRechazar.disabled = true;
+                    var r = await CusshmiDatos.rechazarSolicitudEdicionSinceramiento(s.id);
+                    if (!r.ok) { alert(r.error); btnRechazar.disabled = false; return; }
+                    renderizarListaSolicitudes();
+                    actualizarBotonSolicitudes();
+                });
+
+                acciones.appendChild(btnHabilitar);
+                acciones.appendChild(btnRechazar);
+                fila.appendChild(acciones);
+                elLista.appendChild(fila);
+            });
+        }
+
+        document.getElementById('btnVerSolicitudes').addEventListener('click', mostrarVistaSolicitudes);
+        document.getElementById('btnVolverATomasDesdeSolicitudes').addEventListener('click', mostrarVistaTomas);
+
+        // ═══ Pantalla 3 — búsqueda de usuario ═══
+        async function abrirToma(tomaNombre) {
+            tomaSeleccionada = tomaNombre;
+            document.getElementById('vistaTomas').style.display = 'none';
+            document.getElementById('vistaBusqueda').style.display = 'flex';
+            document.getElementById('tituloTomaBusqueda').textContent = 'Toma ' + tomaNombre;
+            document.getElementById('inputBusquedaUsuario').value = '';
+            elEstadoBusquedaUsuario.textContent = 'Cargando padrón de la toma…';
+            elListaUsuarios.innerHTML = '';
+
+            var resultadoPadron = await CusshmiDatos.cargarPadronToma(comisionKeyActual, tomaNombre);
+            padronTomaActual = (resultadoPadron.ok && resultadoPadron.resultados) ? resultadoPadron.resultados : [];
+
+            var resultadoRegistros = await CusshmiDatos.listarRegistrosSinceramientoDeToma(comisionKeyActual, tomaNombre);
+            registrosTomaActual = (resultadoRegistros.ok && resultadoRegistros.registros) ? resultadoRegistros.registros : [];
+
+            if (padronTomaActual.length === 0) {
+                elEstadoBusquedaUsuario.textContent = 'No hay padrón sincronizado para esta toma. Usa "+ Agregar usuario nuevo".';
+            } else {
+                elEstadoBusquedaUsuario.textContent = '';
+            }
+            renderizarListaUsuarios('');
+        }
+
+        function registroDeUsuarioPadron(padronUsuarioId) {
+            return registrosTomaActual.find(function (r) { return r.padron_usuario_id === padronUsuarioId; }) || null;
+        }
+
+        function renderizarListaUsuarios(textoFiltro) {
+            elListaUsuarios.innerHTML = '';
+            var filtro = (textoFiltro || '').trim().toUpperCase();
+            var filas = filtro
+                ? padronTomaActual.filter(function (u) { return (u.nombre || '').toUpperCase().indexOf(filtro) !== -1; })
+                : padronTomaActual;
+
+            if (padronTomaActual.length > 0 && filas.length === 0) {
+                elEstadoBusquedaUsuario.textContent = 'Sin coincidencias — usa "+ Agregar usuario nuevo" si no está en el padrón.';
+            } else if (padronTomaActual.length > 0) {
+                elEstadoBusquedaUsuario.textContent = '';
+            }
+
+            filas.forEach(function (u) {
+                var registro = registroDeUsuarioPadron(u.id);
+                var fila = document.createElement('div');
+                fila.className = 'fila-resultado';
+                fila.innerHTML =
+                    '<div class="nombre-resultado">' + escapeHtml(u.nombre || '-') +
+                    (registro ? '<span class="badge-registrado">' + (registro.confirmado ? '✅ confirmado' : '📝 borrador') + '</span>' : '') +
+                    '</div>' +
+                    '<div class="detalle-resultado">UC: ' + escapeHtml(u.unidad_catastral || '-') + '</div>';
+                fila.addEventListener('click', function () { abrirFormularioDesdeUsuario(u, registro); });
+                elListaUsuarios.appendChild(fila);
+            });
+        }
+
+        document.getElementById('inputBusquedaUsuario').addEventListener('input', function (e) {
+            renderizarListaUsuarios(e.target.value);
+        });
+
+        document.getElementById('btnVolverATomas').addEventListener('click', mostrarVistaTomas);
+
+        document.getElementById('btnAgregarNuevo').addEventListener('click', function () {
+            abrirFormularioDesdeUsuario(null, null);
+        });
+
+        // ═══ Pantalla 4 — formulario de captura ═══
+        // El id lo genera el CLIENTE (no el servidor) desde el primer
+        // instante — la captura de vértices tiene que poder guardarse en
+        // IndexedDB sin conexión desde el primer vértice, y para eso
+        // necesita una clave estable desde antes del primer guardado en
+        // Supabase (ver guardarRegistroSinceramiento en datos.js).
+        // Convierte el polígono ya mapeado (GIS/KML) de un predio en el
+        // arreglo de vértices que usa este módulo — mismo cálculo que antes
+        // hacía el botón "usar este polígono". Ya NO se pide confirmación
+        // para usarlo: el polígono del SIG, cuando existe, ES el punto de
+        // partida del registro desde el arranque (se puede editar después,
+        // ver abrirEditorPoligono).
+        function poligonoKmlComoVertices(predioKml) {
+            return predioKml.coordenadas.map(function (par, idx) {
+                var utm = latLonAUtm17S(par[1], par[0]);
+                return {
+                    orden: idx + 1, easting: utm.easting, northing: utm.northing, zonaUtm: '17S',
+                    lat: par[1], lon: par[0], precisionM: null, origen: 'mapeado',
+                    capturadoEn: new Date().toISOString(),
+                };
+            });
+        }
+
+        // Se calcula en vez de guardarse como bandera aparte: compara los
+        // vértices actuales contra los que resultarían de convertir el
+        // polígono del SIG tal cual — así el panel compacto sabe si mostrar
+        // "esto es lo que ya estaba registrado" o "esto lo editaste tú",
+        // sin necesitar una columna nueva en Supabase ni mantenerla en
+        // sincronía manualmente.
+        function poligonoCoincideConKml(vertices, poligonoKml) {
+            if (!poligonoKml) return false;
+            var esperados = poligonoKmlComoVertices(poligonoKml);
+            if (esperados.length !== (vertices || []).length) return false;
+            for (var i = 0; i < esperados.length; i++) {
+                if (Math.abs(esperados[i].easting - vertices[i].easting) > 0.01 ||
+                    Math.abs(esperados[i].northing - vertices[i].northing) > 0.01) return false;
+            }
+            return true;
+        }
+
+        async function nuevoRegistroBase(padronUsuario) {
+            var base = {
+                id: crypto.randomUUID(),
+                comisionKey: comisionKeyActual,
+                tomaNombre: tomaSeleccionada,
+                padronUsuarioId: padronUsuario ? padronUsuario.id : null,
+                apellidosNombres: padronUsuario ? (padronUsuario.nombre || '') : '',
+                unidadCatastral: padronUsuario ? (padronUsuario.unidad_catastral || '') : '',
+                vertices: [],
+                areaMedidaHa: null,
+                areaDeclaradaHa: null,
+                fotos: [],
+                confirmado: false,
+                solicitudEdicion: false,
+                solicitudEdicionPorNombre: '',
+                solicitudEdicionEn: null,
+                poligonoKmlExistente: null, // {catastralKey, usuario, areaHa, coordenadas} del GIS, o null si no hay
+            };
+            if (!base.apellidosNombres || !base.unidadCatastral) {
+                var usuarioPdaExcel = padronUsuario || emparejarConPadronUsuarios(padronTomaActual, base.unidadCatastral, base.apellidosNombres);
+                if (usuarioPdaExcel) {
+                    if (!base.apellidosNombres) base.apellidosNombres = usuarioPdaExcel.nombre || '';
+                    if (!base.unidadCatastral) base.unidadCatastral = usuarioPdaExcel.unidad_catastral || '';
+                    if (!base.padronUsuarioId) base.padronUsuarioId = usuarioPdaExcel.id || null;
+                }
+            }
+            var padronA1 = await obtenerPadronA1();
+            var coincidencia = emparejarConPadronA1(padronA1, base.unidadCatastral, base.apellidosNombres);
+            base.areaDeclaradaHa = (coincidencia && coincidencia.area_bajo_riego_ha != null) ? parseFloat(coincidencia.area_bajo_riego_ha) : null;
+            base.poligonoKmlExistente = await buscarPredioKmlDelUsuario(base.tomaNombre, base.unidadCatastral, base.apellidosNombres);
+            if (base.poligonoKmlExistente && base.vertices.length === 0) {
+                base.vertices = poligonoKmlComoVertices(base.poligonoKmlExistente);
+            }
+            return base;
+        }
+
+        async function abrirFormularioDesdeUsuario(padronUsuario, registroExistente) {
+            if (registroExistente) {
+                var resultado = await CusshmiDatos.cargarRegistroSinceramiento(registroExistente.id);
+                if (!resultado.ok) { alert(resultado.error || 'No se pudo abrir el registro.'); return; }
+                var r = resultado.registro;
+                registroActual = {
+                    id: r.id,
+                    comisionKey: comisionKeyActual,
+                    tomaNombre: r.toma_nombre,
+                    padronUsuarioId: r.padron_usuario_id,
+                    apellidosNombres: r.apellidos_nombres || '',
+                    unidadCatastral: r.unidad_catastral || '',
+                    vertices: Array.isArray(r.vertices_utm) ? r.vertices_utm.slice() : [],
+                    areaMedidaHa: r.area_medida_ha != null ? parseFloat(r.area_medida_ha) : null,
+                    areaDeclaradaHa: r.area_declarada_ha != null ? parseFloat(r.area_declarada_ha) : null,
+                    fotos: [],
+                    confirmado: !!r.confirmado,
+                    solicitudEdicion: !!r.solicitud_edicion,
+                    solicitudEdicionPorNombre: r.solicitud_edicion_por_nombre || '',
+                    solicitudEdicionEn: r.solicitud_edicion_en || null,
+                    poligonoKmlExistente: null,
+                };
+                registroActual.poligonoKmlExistente = await buscarPredioKmlDelUsuario(registroActual.tomaNombre, registroActual.unidadCatastral, registroActual.apellidosNombres);
+
+                // Preferir vértices locales si hay más que los del servidor
+                // (quedaron capturados sin conexión y no se alcanzaron a
+                // sincronizar) — nunca se pierde una captura de campo.
+                var verticesLocales = await obtenerVerticesLocal(registroActual.id);
+                if (Array.isArray(verticesLocales) && verticesLocales.length > registroActual.vertices.length) {
+                    registroActual.vertices = verticesLocales;
+                }
+
+                // Si el registro se creó antes de tener ningún vértice (ej.
+                // se guardó solo con nombre/UC) y ahora existe un polígono
+                // en el SIG, se siembra recién acá — nunca si ya hay
+                // vértices propios guardados (local o en servidor), para no
+                // pisar una edición ya hecha.
+                if (registroActual.poligonoKmlExistente && registroActual.vertices.length === 0) {
+                    registroActual.vertices = poligonoKmlComoVertices(registroActual.poligonoKmlExistente);
+                }
+
+                // Fotos: mezclar lo ya sincronizado (r.fotos_urls, con URL
+                // firmada) con lo que quedó local sin sincronizar todavía.
+                var mapaFotos = {};
+                (Array.isArray(r.fotos_urls) ? r.fotos_urls : []).forEach(function (fr) {
+                    mapaFotos[fr.nombreArchivo] = { idLocal: null, path: fr.path, nombreArchivo: fr.nombreArchivo, sincronizada: true, urlMostrar: null };
+                });
+                var fotosLocalesGuardadas = await listarFotosLocal(registroActual.id);
+                fotosLocalesGuardadas.forEach(function (fl) {
+                    if (mapaFotos[fl.nombreArchivo]) {
+                        mapaFotos[fl.nombreArchivo].idLocal = fl.id;
+                    } else {
+                        mapaFotos[fl.nombreArchivo] = {
+                            idLocal: fl.id, path: fl.pathRemoto, nombreArchivo: fl.nombreArchivo,
+                            sincronizada: fl.sincronizada, urlMostrar: URL.createObjectURL(fl.blob),
+                        };
+                    }
+                });
+                registroActual.fotos = Object.values(mapaFotos);
+                for (var i = 0; i < registroActual.fotos.length; i++) {
+                    var f = registroActual.fotos[i];
+                    if (!f.urlMostrar && f.path) {
+                        var firmada = await CusshmiDatos.obtenerUrlFirmadaFotoSinceramiento(f.path);
+                        if (firmada.ok) f.urlMostrar = firmada.url;
+                    }
+                }
+
+                pintarFormularioDesdeRegistro();
+                document.getElementById('vistaBusqueda').style.display = 'none';
+                document.getElementById('vistaFormulario').style.display = 'flex';
+                intentarSincronizarPendientes(); // por si quedó algo pendiente de una sesión anterior
+            } else {
+                document.getElementById('vistaBusqueda').style.display = 'none';
+                document.getElementById('vistaFormulario').style.display = 'flex';
+                registroActual = await nuevoRegistroBase(padronUsuario);
+                pintarFormularioDesdeRegistro();
+            }
+        }
+
+        function pintarFormularioDesdeRegistro() {
+            document.getElementById('inputApellidosNombres').value = registroActual.apellidosNombres;
+            document.getElementById('inputUnidadCatastral').value = registroActual.unidadCatastral;
+            document.getElementById('areaOficialTexto').textContent = registroActual.areaDeclaradaHa != null
+                ? ('Área oficial registrada: ' + registroActual.areaDeclaradaHa.toFixed(2) + ' ha')
+                : 'Sin área oficial registrada todavía en el Padrón A-1.';
+
+            recalcularAreaYComparacion();
+            actualizarPanelPoligono();
+            redibujarPoligonoPreview();
+            renderizarFotos();
+
+            var bloqueado = registroActual.confirmado;
+            document.getElementById('avisoBloqueadoFormulario').style.display = bloqueado ? 'block' : 'none';
+            document.getElementById('btnContinuarConfirmacion').textContent = bloqueado ? 'Ver confirmación →' : 'Continuar →';
+            ['inputApellidosNombres', 'inputUnidadCatastral'].forEach(function (id) {
+                document.getElementById(id).disabled = bloqueado;
+            });
+            actualizarIndicadorSincronizacion(bloqueado ? '' : 'listo');
+        }
+
+        // ── Vértices / mapa ──
+        // El polígono del predio ya NO se construye a mano dentro de este
+        // panel: si existe en el SIG, se cargó solo (ver
+        // poligonoKmlComoVertices, llamado desde nuevoRegistroBase/reapertura)
+        // y este panel es una vista previa de solo lectura — el único botón
+        // decide si se acepta tal cual (seguir con "Continuar →" más abajo)
+        // o si se entra al editor de pantalla completa a modificarlo.
+        function actualizarPanelPoligono() {
+            var elTexto = document.getElementById('textoEstadoPoligono');
+            var elBoton = document.getElementById('btnEditarPoligono');
+            var elDeshacer = document.getElementById('btnDeshacerEdicionPoligono');
+            var bloqueado = registroActual.confirmado;
+
+            if (bloqueado) {
+                elBoton.style.display = 'none';
+                elDeshacer.style.display = 'none';
+                elTexto.textContent = registroActual.vertices.length > 0
+                    ? '📐 Polígono confirmado (' + registroActual.vertices.length + ' vértices).'
+                    : 'Sin polígono capturado.';
+                return;
+            }
+
+            if (registroActual.vertices.length === 0) {
+                elTexto.textContent = 'Aún no hay un polígono registrado en el sistema (SIG) para este predio.';
+                elBoton.textContent = '📐 Crear polígono';
+                elBoton.style.display = 'block';
+                elDeshacer.style.display = 'none';
+                return;
+            }
+
+            var coincide = poligonoCoincideConKml(registroActual.vertices, registroActual.poligonoKmlExistente);
+            elTexto.textContent = coincide
+                ? '📍 Polígono registrado en el sistema (SIG). Si coincide con el campo, continúa. Si no, edítalo.'
+                : '✏️ Polígono editado por ti.';
+            elBoton.textContent = '✏️ Editar polígono';
+            elBoton.style.display = 'block';
+            // Solo tiene sentido "deshacer" cuando hay a qué volver (existe
+            // el polígono original del SIG) y el actual ya no coincide con
+            // él — si nunca se editó, no hay nada que deshacer.
+            elDeshacer.style.display = (!coincide && registroActual.poligonoKmlExistente) ? 'block' : 'none';
+        }
+
+        document.getElementById('btnEditarPoligono').addEventListener('click', function () {
+            abrirEditorPoligono(registroActual.vertices);
+        });
+
+        // Deshace la edición hecha sobre el polígono: descarta los vértices
+        // actuales y vuelve a los del polígono ya registrado en el sistema
+        // (SIG), tal como estaban antes de que el sectorista los tocara.
+        document.getElementById('btnDeshacerEdicionPoligono').addEventListener('click', async function () {
+            if (!registroActual || registroActual.confirmado || !registroActual.poligonoKmlExistente) return;
+            var confirmado = confirm('¿Deshacer la edición y volver al polígono registrado en el sistema (SIG)? Se perderán los cambios hechos sobre los vértices.');
+            if (!confirmado) return;
+            registroActual.vertices = poligonoKmlComoVertices(registroActual.poligonoKmlExistente);
+            await guardarVerticesLocal(registroActual.id, registroActual.vertices);
+            recalcularAreaYComparacion();
+            actualizarPanelPoligono();
+            redibujarPoligonoPreview();
+            intentarSincronizarPendientes();
+        });
+
+        function inicializarMapaPreviewSiHaceFalta() {
+            if (mapaLeaflet) return;
+            mapaLeaflet = L.map('mapaVertices', { preferCanvas: true }).setView([-4.9, -80.6], 12);
+            // Google Satellite en vez de Esri World_Imagery — Esri no tenía imagen en
+            // zoom alto para varias zonas rurales de Piura ("Map data not yet
+            // available"); Google sí, verificado contra la zona real. Nota: es la URL
+            // "de tiles" que usa el propio Google Maps, no la API oficial con clave/
+            // facturación — fuera de sus Términos de Servicio para este uso, decisión
+            // tomada explícitamente por el usuario tras comparar ambas.
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }).addTo(mapaLeaflet);
+        }
+
+        // Vista previa compacta, de solo lectura — sin manejador de click
+        // (agregar/editar vértices pasó exclusivamente al editor de pantalla
+        // completa) y sin recentrado por GPS (con vértices ya poblados desde
+        // el arranque, fitBounds sobre el polígono siempre basta).
+        function redibujarPoligonoPreview() {
+            if (registroActual.vertices.length === 0) {
+                document.getElementById('mapaVertices').style.display = 'none';
+                return;
+            }
+            inicializarMapaPreviewSiHaceFalta();
+            document.getElementById('mapaVertices').style.display = 'block';
+            setTimeout(function () { mapaLeaflet.invalidateSize(); }, 50);
+
+            if (capaPoligono) { mapaLeaflet.removeLayer(capaPoligono); capaPoligono = null; }
+            marcadoresVertices.forEach(function (m) { mapaLeaflet.removeLayer(m); });
+            marcadoresVertices = [];
+
+            var latlngs = registroActual.vertices.map(function (v) { return [v.lat, v.lon]; });
+            if (latlngs.length >= 3) {
+                capaPoligono = L.polygon(latlngs, { color: '#c8a84b', fillColor: '#c8a84b', fillOpacity: 0.35, weight: 2 }).addTo(mapaLeaflet);
+            } else if (latlngs.length === 2) {
+                capaPoligono = L.polyline(latlngs, { color: '#c8a84b', weight: 2 }).addTo(mapaLeaflet);
+            }
+            registroActual.vertices.forEach(function (v, idx) {
+                var marcador = L.circleMarker([v.lat, v.lon], { radius: 6, color: '#003876', fillColor: '#ffffff', fillOpacity: 1, weight: 2 })
+                    .bindTooltip(String(idx + 1), { permanent: true, direction: 'top' })
+                    .addTo(mapaLeaflet);
+                marcadoresVertices.push(marcador);
+            });
+
+            var capasGrupo = marcadoresVertices.slice();
+            if (capaPoligono) capasGrupo.push(capaPoligono);
+            var grupo = L.featureGroup(capasGrupo);
+            mapaLeaflet.fitBounds(grupo.getBounds(), { padding: [30, 30], maxZoom: 19 });
+        }
+
+        function recalcularAreaYComparacion() {
+            registroActual.areaMedidaHa = registroActual.vertices.length >= 3
+                ? calcularAreaPoligonoHa(registroActual.vertices.map(function (v) { return { easting: v.easting, northing: v.northing }; }))
+                : null;
+            var el = document.getElementById('comparacionAreas');
+            el.className = 'total-siembra';
+            if (registroActual.areaMedidaHa == null) {
+                el.textContent = 'Captura al menos 3 vértices para calcular el área (llevas ' + registroActual.vertices.length + ').';
+                return;
+            }
+            var texto = '📐 Área medida: ' + registroActual.areaMedidaHa.toFixed(2) + ' ha';
+            if (registroActual.areaDeclaradaHa != null) {
+                var diferencia = registroActual.areaMedidaHa - registroActual.areaDeclaradaHa;
+                var porcentaje = registroActual.areaDeclaradaHa > 0 ? (diferencia / registroActual.areaDeclaradaHa) * 100 : 0;
+                texto += ' · Oficial: ' + registroActual.areaDeclaradaHa.toFixed(2) + ' ha · Diferencia: ' +
+                    (diferencia >= 0 ? '+' : '') + diferencia.toFixed(2) + ' ha (' + (porcentaje >= 0 ? '+' : '') + porcentaje.toFixed(1) + '%)';
+                if (Math.abs(porcentaje) > 15) el.classList.add('diferencia-alta');
+            } else {
+                texto += ' · Sin área oficial registrada para comparar.';
+            }
+            el.textContent = texto;
+        }
+
+        // ── Editor de polígono a pantalla completa ──
+        // Construye un vértice del formato que usa este módulo a partir de
+        // lat/lon — mismo cálculo que antes hacía agregarVertice(), ahora
+        // reutilizado tanto por el tap-para-agregar como por el botón GPS,
+        // ambos dentro del editor.
+        function construirVertice(lat, lon, precisionM, origen, orden) {
+            var utm = latLonAUtm17S(lat, lon);
+            return {
+                orden: orden, easting: utm.easting, northing: utm.northing, zonaUtm: '17S',
+                lat: lat, lon: lon, precisionM: precisionM || null, origen: origen,
+                capturadoEn: new Date().toISOString(),
+            };
+        }
+
+        function renumerarVertices(lista) {
+            lista.forEach(function (v, i) { v.orden = i + 1; });
+        }
+
+        function iconoVerticeEditor(numero) {
+            return L.divIcon({
+                className: 'marcador-vertice-editor',
+                html: String(numero),
+                iconSize: [26, 26],
+                iconAnchor: [13, 13],
+            });
+        }
+
+        function inicializarMapaEditorSiHaceFalta() {
+            if (mapaEditor) return;
+            mapaEditor = L.map('mapaEditorPoligono', { preferCanvas: true }).setView([-4.9, -80.6], 12);
+            // Google Satellite en vez de Esri (ver nota más arriba en este archivo).
+            L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                attribution: 'Imágenes © Google',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }).addTo(mapaEditor);
+            mapaEditor.on('click', function (e) {
+                verticesEdicionTemp.push(construirVertice(e.latlng.lat, e.latlng.lng, null, 'manual', verticesEdicionTemp.length + 1));
+                redibujarEditor();
+            });
+        }
+
+        function actualizarEstadoEditor() {
+            var area = verticesEdicionTemp.length >= 3
+                ? calcularAreaPoligonoHa(verticesEdicionTemp.map(function (v) { return { easting: v.easting, northing: v.northing }; }))
+                : null;
+            document.getElementById('estadoEditorPoligono').textContent = verticesEdicionTemp.length + ' vértice(s)' +
+                (area != null ? ' · Área: ' + area.toFixed(2) + ' ha' : ' · faltan al menos 3 para calcular el área');
+        }
+
+        function redibujarEditor() {
+            setTimeout(function () { mapaEditor.invalidateSize(); }, 50);
+
+            if (capaPoligonoEditor) { mapaEditor.removeLayer(capaPoligonoEditor); capaPoligonoEditor = null; }
+            marcadoresEditor.forEach(function (m) { mapaEditor.removeLayer(m); });
+            marcadoresEditor = [];
+
+            var latlngs = verticesEdicionTemp.map(function (v) { return [v.lat, v.lon]; });
+            if (latlngs.length >= 3) {
+                capaPoligonoEditor = L.polygon(latlngs, { color: '#c8a84b', fillColor: '#c8a84b', fillOpacity: 0.35, weight: 2 }).addTo(mapaEditor);
+            } else if (latlngs.length === 2) {
+                capaPoligonoEditor = L.polyline(latlngs, { color: '#c8a84b', weight: 2 }).addTo(mapaEditor);
+            }
+
+            verticesEdicionTemp.forEach(function (v, idx) {
+                var marcador = L.marker([v.lat, v.lon], { draggable: true, icon: iconoVerticeEditor(idx + 1) }).addTo(mapaEditor);
+                // Arrastrar mueve el punto sin redibujar todo el editor (se
+                // vería brusco a mitad de un drag) — solo se recalculan sus
+                // coordenadas UTM y se redibuja el trazo del polígono.
+                marcador.on('dragend', function (e) {
+                    var ll = e.target.getLatLng();
+                    var utm = latLonAUtm17S(ll.lat, ll.lng);
+                    v.lat = ll.lat; v.lon = ll.lng; v.easting = utm.easting; v.northing = utm.northing; v.origen = 'manual';
+                    if (capaPoligonoEditor) capaPoligonoEditor.setLatLngs(verticesEdicionTemp.map(function (vv) { return [vv.lat, vv.lon]; }));
+                    actualizarEstadoEditor();
+                });
+                var btnQuitar = document.createElement('button');
+                btnQuitar.type = 'button';
+                btnQuitar.className = 'boton-secundario';
+                btnQuitar.style.cssText = 'max-width:none; padding:6px 10px; font-size:11.5px;';
+                btnQuitar.textContent = '🗑 Quitar este vértice';
+                btnQuitar.addEventListener('click', function () {
+                    var pos = verticesEdicionTemp.indexOf(v);
+                    if (pos !== -1) verticesEdicionTemp.splice(pos, 1);
+                    renumerarVertices(verticesEdicionTemp);
+                    redibujarEditor();
+                });
+                marcador.bindPopup(btnQuitar);
+                marcadoresEditor.push(marcador);
+            });
+
+            if (latlngs.length > 0) {
+                var capasGrupo = marcadoresEditor.slice();
+                if (capaPoligonoEditor) capasGrupo.push(capaPoligonoEditor);
+                var grupo = L.featureGroup(capasGrupo);
+                mapaEditor.fitBounds(grupo.getBounds(), { padding: [40, 40], maxZoom: 19 });
+            }
+            actualizarEstadoEditor();
+        }
+
+        function abrirEditorPoligono(verticesIniciales) {
+            if (!registroActual || registroActual.confirmado) return;
+            verticesEdicionTemp = (verticesIniciales || []).map(function (v) { return Object.assign({}, v); });
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaComparacionPoligono').style.display = 'none';
+            document.getElementById('vistaEditorPoligono').style.display = 'flex';
+            inicializarMapaEditorSiHaceFalta();
+            redibujarEditor();
+        }
+
+        document.getElementById('btnGpsEditor').addEventListener('click', function () {
+            if (!navigator.geolocation) { alert('Este dispositivo no soporta geolocalización.'); return; }
+            var elEstado = document.getElementById('estadoEditorPoligono');
+            elEstado.textContent = 'Obteniendo ubicación…';
+            navigator.geolocation.getCurrentPosition(function (pos) {
+                verticesEdicionTemp.push(construirVertice(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, 'gps', verticesEdicionTemp.length + 1));
+                redibujarEditor();
+            }, function (err) {
+                elEstado.textContent = '⚠️ No se pudo obtener ubicación: ' + (err.message || 'error desconocido') + '.';
+            }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        });
+
+        // Deshacer el último punto agregado — más rápido que tener que
+        // encontrar y tocar el marcador exacto justo después de haberlo
+        // puesto por error (tap o GPS, cualquiera haya sido el último).
+        // Para quitar un vértice que NO es el último, se sigue usando el
+        // popup "🗑 Quitar este vértice" al tocarlo en el mapa.
+        document.getElementById('btnDeshacerUltimoPunto').addEventListener('click', function () {
+            if (verticesEdicionTemp.length === 0) {
+                document.getElementById('estadoEditorPoligono').textContent = 'No hay ningún punto que deshacer.';
+                return;
+            }
+            verticesEdicionTemp.pop();
+            renumerarVertices(verticesEdicionTemp);
+            redibujarEditor();
+        });
+
+        document.getElementById('btnCerrarEditor').addEventListener('click', function () {
+            verticesEdicionTemp = [];
+            document.getElementById('vistaEditorPoligono').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        });
+
+        document.getElementById('btnFinalizarEdicion').addEventListener('click', function () {
+            if (verticesEdicionTemp.length < 3) { alert('Captura al menos 3 vértices antes de finalizar.'); return; }
+            renumerarVertices(verticesEdicionTemp);
+            poligonoPropuestoTemp = verticesEdicionTemp;
+            document.getElementById('vistaEditorPoligono').style.display = 'none';
+            mostrarComparacionPoligono();
+        });
+
+        // ── Comparación del polígono nuevo contra el que ya existía ──
+        function dibujarPoligonoEnMiniMapa(mapaExistenteVar, contenedorId, latlngs, color) {
+            if (!mapaExistenteVar) {
+                mapaExistenteVar = L.map(contenedorId, { preferCanvas: true }).setView([-4.9, -80.6], 12);
+                // Google Satellite en vez de Esri (ver nota más arriba en este archivo).
+                L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+                    attribution: 'Imágenes © Google',
+                    subdomains: ['0', '1', '2', '3'],
+                    maxZoom: 20
+                }).addTo(mapaExistenteVar);
+            }
+            setTimeout(function () { mapaExistenteVar.invalidateSize(); }, 50);
+            mapaExistenteVar.eachLayer(function (capa) { if (capa instanceof L.Polygon) mapaExistenteVar.removeLayer(capa); });
+            if (latlngs.length >= 3) {
+                var capa = L.polygon(latlngs, { color: color, fillColor: color, fillOpacity: 0.3, weight: 2 }).addTo(mapaExistenteVar);
+                mapaExistenteVar.fitBounds(capa.getBounds(), { padding: [20, 20], maxZoom: 19 });
+            }
+            return mapaExistenteVar;
+        }
+
+        function mostrarComparacionPoligono() {
+            document.getElementById('vistaComparacionPoligono').style.display = 'flex';
+
+            var latlngsNuevo = poligonoPropuestoTemp.map(function (v) { return [v.lat, v.lon]; });
+            mapaCompNuevo = dibujarPoligonoEnMiniMapa(mapaCompNuevo, 'mapaCompNuevo', latlngsNuevo, '#c8a84b');
+            var areaNueva = calcularAreaPoligonoHa(poligonoPropuestoTemp.map(function (v) { return { easting: v.easting, northing: v.northing }; }));
+
+            var predioKml = registroActual.poligonoKmlExistente;
+            var elTituloExistente = document.getElementById('tituloCompExistente');
+            var elMapaExistente = document.getElementById('mapaCompExistente');
+            var elTexto = document.getElementById('textoDiferenciasPoligono');
+
+            if (!predioKml) {
+                elTituloExistente.style.display = 'none';
+                elMapaExistente.style.display = 'none';
+                elTexto.textContent = '📐 Polígono creado: ' + areaNueva.toFixed(2) + ' ha (' + poligonoPropuestoTemp.length +
+                    ' vértices). No había un polígono previamente registrado en el sistema para comparar.';
+                return;
+            }
+            elTituloExistente.style.display = 'block';
+            elMapaExistente.style.display = 'block';
+
+            var verticesExistente = poligonoKmlComoVertices(predioKml);
+            var latlngsExistente = verticesExistente.map(function (v) { return [v.lat, v.lon]; });
+            mapaCompExistente = dibujarPoligonoEnMiniMapa(mapaCompExistente, 'mapaCompExistente', latlngsExistente, '#1d4ed8');
+            var areaExistente = calcularAreaPoligonoHa(verticesExistente.map(function (v) { return { easting: v.easting, northing: v.northing }; }));
+
+            var diferencia = areaNueva - areaExistente;
+            var porcentaje = areaExistente > 0 ? (diferencia / areaExistente) * 100 : 0;
+            elTexto.textContent = '📐 Polígono nuevo: ' + areaNueva.toFixed(2) + ' ha (' + poligonoPropuestoTemp.length + ' vértices) · Polígono registrado: ' +
+                areaExistente.toFixed(2) + ' ha (' + verticesExistente.length + ' vértices) · Diferencia: ' +
+                (diferencia >= 0 ? '+' : '') + diferencia.toFixed(2) + ' ha (' + (porcentaje >= 0 ? '+' : '') + porcentaje.toFixed(1) + '%).';
+        }
+
+        document.getElementById('btnGuardarPoligonoNuevo').addEventListener('click', async function () {
+            registroActual.vertices = poligonoPropuestoTemp;
+            poligonoPropuestoTemp = null;
+            await guardarVerticesLocal(registroActual.id, registroActual.vertices);
+            recalcularAreaYComparacion();
+            document.getElementById('vistaComparacionPoligono').style.display = 'none';
+            document.getElementById('vistaFormulario').style.display = 'flex';
+            actualizarPanelPoligono();
+            redibujarPoligonoPreview();
+            intentarSincronizarPendientes();
+        });
+
+        document.getElementById('btnSeguirEditandoPoligono').addEventListener('click', function () {
+            document.getElementById('vistaComparacionPoligono').style.display = 'none';
+            abrirEditorPoligono(poligonoPropuestoTemp);
+        });
+
+        // ── Fotos ──
+        function renderizarFotos() {
+            var cont = document.getElementById('listaFotos');
+            cont.innerHTML = '';
+            registroActual.fotos.forEach(function (f, idx) {
+                var elFoto = document.createElement('div');
+                elFoto.className = 'foto-miniatura';
+                var img = document.createElement('img');
+                img.src = f.urlMostrar || '';
+                elFoto.appendChild(img);
+                var badge = document.createElement('span');
+                badge.className = 'badge-foto';
+                if (f.sincronizada) { badge.style.background = '#1e7e34'; badge.style.color = '#fff'; badge.textContent = '✓'; }
+                else { badge.style.background = '#c8a84b'; badge.style.color = '#002555'; badge.textContent = '🕓'; }
+                elFoto.appendChild(badge);
+                if (!registroActual.confirmado) {
+                    var btnQuitar = document.createElement('button');
+                    btnQuitar.type = 'button';
+                    btnQuitar.className = 'btn-quitar-foto';
+                    btnQuitar.textContent = '✕';
+                    btnQuitar.addEventListener('click', async function () {
+                        if (f.idLocal) await eliminarFotoLocal(f.idLocal);
+                        registroActual.fotos.splice(idx, 1);
+                        renderizarFotos();
+                    });
+                    elFoto.appendChild(btnQuitar);
+                }
+                cont.appendChild(elFoto);
+            });
+            document.getElementById('btnTomarFoto').style.display = (registroActual.confirmado || registroActual.fotos.length >= 3) ? 'none' : 'block';
+        }
+
+        // Ubicación puntual para la etiqueta de la foto — independiente de
+        // los vértices del predio (la foto puede ser de cualquier ángulo,
+        // no necesariamente parada justo en una esquina). Si el GPS no
+        // responde a tiempo, la foto igual se guarda, solo que la etiqueta
+        // dice "Ubicación no disponible" en vez de bloquear la captura.
+        function obtenerUbicacionParaEtiqueta() {
+            return new Promise(function (resolve) {
+                if (!navigator.geolocation) { resolve(null); return; }
+                navigator.geolocation.getCurrentPosition(
+                    function (pos) { resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }); },
+                    function () { resolve(null); },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+                );
+            });
+        }
+
+        // Dibuja la fecha/hora y las coordenadas UTM directamente sobre los
+        // píxeles de la foto (no son metadatos que se puedan perder al
+        // compartir el archivo) — una franja semitransparente abajo con
+        // texto blanco, mismo criterio que una marca de agua de cámara GPS.
+        async function generarFotoConEtiqueta(archivoOriginal) {
+            var ubicacion = await obtenerUbicacionParaEtiqueta();
+            var lineas = [new Date().toLocaleString('es-PE')];
+            if (ubicacion) {
+                var utm = latLonAUtm17S(ubicacion.lat, ubicacion.lon);
+                lineas.push('UTM 17S — Este: ' + Math.round(utm.easting) + ' m, Norte: ' + Math.round(utm.northing) + ' m');
+            } else {
+                lineas.push('Ubicación no disponible');
+            }
+
+            var urlTemporal = URL.createObjectURL(archivoOriginal);
+            var imagen;
+            try {
+                imagen = await new Promise(function (resolve, reject) {
+                    var img = new Image();
+                    img.onload = function () { resolve(img); };
+                    img.onerror = reject;
+                    img.src = urlTemporal;
+                });
+            } catch (e) {
+                URL.revokeObjectURL(urlTemporal);
+                return archivoOriginal; // no se pudo procesar — se guarda la foto tal cual antes que perderla
+            }
+
+            var canvas = document.createElement('canvas');
+            canvas.width = imagen.naturalWidth;
+            canvas.height = imagen.naturalHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(imagen, 0, 0);
+            URL.revokeObjectURL(urlTemporal);
+
+            var tamanoFuente = Math.max(16, Math.round(canvas.width * 0.028));
+            ctx.font = tamanoFuente + 'px sans-serif';
+            var alturaLinea = tamanoFuente * 1.4;
+            var alturaCaja = alturaLinea * lineas.length + 16;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, canvas.height - alturaCaja, canvas.width, alturaCaja);
+            ctx.fillStyle = '#ffffff';
+            ctx.textBaseline = 'middle';
+            lineas.forEach(function (texto, idx) {
+                ctx.fillText(texto, 10, canvas.height - alturaCaja + 8 + alturaLinea * idx + alturaLinea / 2);
+            });
+
+            return new Promise(function (resolve) {
+                canvas.toBlob(function (blob) { resolve(blob || archivoOriginal); }, 'image/jpeg', 0.85);
+            });
+        }
+
+        document.getElementById('btnTomarFoto').addEventListener('click', function () {
+            document.getElementById('inputFoto').click();
+        });
+        document.getElementById('inputFoto').addEventListener('change', async function (e) {
+            if (!registroActual || registroActual.confirmado) return;
+            var archivo = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!archivo) return;
+            if (registroActual.fotos.length >= 3) { alert('Ya se tomaron 3 fotos (máximo).'); return; }
+
+            var elEstadoFoto = document.getElementById('estadoFoto');
+            elEstadoFoto.textContent = 'Etiquetando foto con fecha, hora y ubicación…';
+            document.getElementById('btnTomarFoto').disabled = true;
+            var fotoEtiquetada = await generarFotoConEtiqueta(archivo);
+            document.getElementById('btnTomarFoto').disabled = false;
+            elEstadoFoto.textContent = '';
+
+            var nombreArchivo = Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
+            var idLocal = await guardarFotoLocal(registroActual.id, fotoEtiquetada, nombreArchivo);
+            registroActual.fotos.push({
+                idLocal: idLocal, path: null, nombreArchivo: nombreArchivo,
+                sincronizada: false, urlMostrar: URL.createObjectURL(fotoEtiquetada),
+            });
+            renderizarFotos();
+            intentarSincronizarPendientes();
+        });
+
+        // ── Sincronización (offline-first: IndexedDB manda, esto es best-effort) ──
+        function actualizarIndicadorSincronizacion(estado, detalle) {
+            var el = document.getElementById('estadoSincronizacion');
+            var textos = {
+                listo: '',
+                pendiente: '🕓 Guardado en el celular — pendiente de sincronizar (sin conexión).',
+                sincronizando: '🔄 Sincronizando…',
+                sincronizado: '✅ Sincronizado.',
+                error: '⚠️ No se pudo sincronizar' + (detalle ? ': ' + detalle : '') + ' — se reintentará solo.',
+            };
+            el.textContent = textos[estado] || '';
+        }
+
+        async function intentarSincronizarPendientes() {
+            if (!registroActual) return;
+            if (registroActual.confirmado) return;
+            if (!navigator.onLine) { actualizarIndicadorSincronizacion('pendiente'); return; }
+            if (sincronizandoAhora) return;
+            sincronizandoAhora = true;
+            actualizarIndicadorSincronizacion('sincronizando');
+            try {
+                var guardado = await CusshmiDatos.guardarRegistroSinceramiento({
+                    id: registroActual.id,
+                    comisionKey: registroActual.comisionKey,
+                    tomaNombre: registroActual.tomaNombre,
+                    padronUsuarioId: registroActual.padronUsuarioId,
+                    apellidosNombres: registroActual.apellidosNombres,
+                    unidadCatastral: registroActual.unidadCatastral,
+                    verticesUtm: registroActual.vertices,
+                    areaMedidaHa: registroActual.areaMedidaHa,
+                    areaDeclaradaHa: registroActual.areaDeclaradaHa,
+                    fotosUrls: registroActual.fotos.filter(function (f) { return f.sincronizada && f.path; })
+                        .map(function (f) { return { path: f.path, nombreArchivo: f.nombreArchivo, subidoEn: new Date().toISOString() }; }),
+                });
+                if (!guardado.ok) { actualizarIndicadorSincronizacion('error', guardado.error); return; }
+
+                var fotosLocalesCompletas = await listarFotosLocal(registroActual.id);
+                for (var i = 0; i < fotosLocalesCompletas.length; i++) {
+                    var fl = fotosLocalesCompletas[i];
+                    if (fl.sincronizada) continue;
+                    var subida = await CusshmiDatos.subirFotoSinceramiento(registroActual.comisionKey, registroActual.id, fl.blob, fl.nombreArchivo);
+                    if (subida.ok) {
+                        await marcarFotoSincronizada(fl.id, subida.path);
+                        var enMemoria = registroActual.fotos.find(function (f) { return f.idLocal === fl.id; });
+                        if (enMemoria) { enMemoria.sincronizada = true; enMemoria.path = subida.path; }
+                    }
+                }
+                renderizarFotos();
+                actualizarIndicadorSincronizacion('sincronizado');
+            } catch (e) {
+                actualizarIndicadorSincronizacion('error', e.message);
+            } finally {
+                sincronizandoAhora = false;
+            }
+        }
+
+        window.addEventListener('online', function () { if (registroActual) intentarSincronizarPendientes(); });
+
+        // Botón de "volver" duplicado arriba y abajo — mismo criterio ya
+        // usado en Identificación y registro / DIS.
+        async function volverABusqueda() {
+            if (registroActual && !registroActual.confirmado && registroActual.apellidosNombres && registroActual.apellidosNombres.trim()) {
+                await intentarSincronizarPendientes();
+            }
+            document.getElementById('vistaFormulario').style.display = 'none';
+            abrirToma(tomaSeleccionada);
+        }
+        document.getElementById('btnVolverABusqueda').addEventListener('click', volverABusqueda);
+        document.getElementById('btnVolverABusquedaAbajo').addEventListener('click', volverABusqueda);
+
+        document.getElementById('inputApellidosNombres').addEventListener('input', function (e) {
+            registroActual.apellidosNombres = e.target.value;
+        });
+        document.getElementById('inputUnidadCatastral').addEventListener('input', function (e) {
+            registroActual.unidadCatastral = e.target.value;
+        });
+
+        document.getElementById('btnContinuarConfirmacion').addEventListener('click', async function () {
+            if (!registroActual.confirmado) {
+                if (!registroActual.apellidosNombres || !registroActual.apellidosNombres.trim()) {
+                    alert('Ingresa apellidos y nombres antes de continuar.');
+                    return;
+                }
+                if (registroActual.vertices.length < 3) {
+                    alert('Captura al menos 3 vértices del predio antes de continuar.');
+                    return;
+                }
+                await intentarSincronizarPendientes(); // intento explícito; si falla por estar offline, no bloquea
+            }
+            mostrarConfirmacion();
+        });
+
+        // ═══ Pantalla 5 — confirmación ═══
+        function filaResumen(etiqueta, valor) {
+            return '<div class="resumen-fila"><span class="etiqueta-resumen">' + escapeHtml(etiqueta) + '</span>' +
+                '<span class="valor-resumen">' + escapeHtml(valor || '-') + '</span></div>';
+        }
+
+        function mostrarConfirmacion() {
+            document.getElementById('vistaFormulario').style.display = 'none';
+            document.getElementById('vistaConfirmacion').style.display = 'flex';
+
+            var r = registroActual;
+            var html = '';
+            html += filaResumen('Toma', r.tomaNombre);
+            html += filaResumen('Apellidos y nombres', r.apellidosNombres);
+            html += filaResumen('Unidad catastral', r.unidadCatastral);
+            html += filaResumen('Vértices capturados', String(r.vertices.length));
+            html += filaResumen('Área medida (ha)', r.areaMedidaHa != null ? r.areaMedidaHa.toFixed(2) : '-');
+            html += filaResumen('Área oficial (ha)', r.areaDeclaradaHa != null ? r.areaDeclaradaHa.toFixed(2) : 'Sin registrar');
+            if (r.areaMedidaHa != null && r.areaDeclaradaHa != null) {
+                var diferencia = r.areaMedidaHa - r.areaDeclaradaHa;
+                html += filaResumen('Diferencia (ha)', (diferencia >= 0 ? '+' : '') + diferencia.toFixed(2));
+            }
+            html += filaResumen('Fotos adjuntas', String(r.fotos.length));
+            document.getElementById('resumenRegistro').innerHTML = html;
+
+            var bloqueado = r.confirmado;
+            var solicitado = !!r.solicitudEdicion;
+            document.getElementById('avisoBloqueadoConfirmacion').style.display = bloqueado ? 'block' : 'none';
+            document.getElementById('btnConfirmarGuardar').style.display = bloqueado ? 'none' : 'block';
+
+            document.getElementById('btnSolicitarEdicion').style.display = (bloqueado && !esAdmin && !solicitado) ? 'block' : 'none';
+            document.getElementById('avisoSolicitudEnviada').style.display = (bloqueado && !esAdmin && solicitado) ? 'block' : 'none';
+
+            document.getElementById('btnDesbloquear').style.display = (bloqueado && esAdmin) ? 'block' : 'none';
+            document.getElementById('btnDesbloquear').textContent = solicitado ? '✅ Habilitar edición (admin)' : '🔓 Desbloquear (admin)';
+            document.getElementById('btnRechazarSolicitud').style.display = (bloqueado && esAdmin && solicitado) ? 'block' : 'none';
+            var elAvisoAdmin = document.getElementById('avisoSolicitudPendienteAdmin');
+            if (bloqueado && esAdmin && solicitado) {
+                var fecha = r.solicitudEdicionEn ? new Date(r.solicitudEdicionEn).toLocaleString('es-PE') : '';
+                elAvisoAdmin.textContent = '📩 ' + (r.solicitudEdicionPorNombre || 'Un programador') + ' solicitó habilitar la edición' + (fecha ? ' — ' + fecha : '') + '.';
+                elAvisoAdmin.style.display = 'block';
+            } else {
+                elAvisoAdmin.style.display = 'none';
+            }
+
+            document.getElementById('estadoConfirmacion').textContent = '';
+        }
+
+        function volverAFormulario() {
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            pintarFormularioDesdeRegistro();
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        }
+        document.getElementById('btnVolverAFormulario').addEventListener('click', volverAFormulario);
+        document.getElementById('btnVolverAFormularioAbajo').addEventListener('click', volverAFormulario);
+
+        document.getElementById('btnConfirmarGuardar').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Confirmando…';
+            if (!navigator.onLine) { elEstado.textContent = '⚠️ Necesitas conexión para confirmar (los vértices/fotos ya están a salvo en el celular).'; return; }
+            await intentarSincronizarPendientes();
+            var resultado = await CusshmiDatos.confirmarRegistroSinceramiento(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.confirmado = true;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Confirmación', 'Sinceramiento de Áreas', registroActual.apellidosNombres + ' — Toma ' + registroActual.tomaNombre);
+            }
+            mostrarConfirmacion();
+        });
+
+        document.getElementById('btnDesbloquear').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Desbloqueando…';
+            var resultado = await CusshmiDatos.desbloquearRegistroSinceramiento(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.confirmado = false;
+            registroActual.solicitudEdicion = false;
+            registroActual.solicitudEdicionPorNombre = '';
+            registroActual.solicitudEdicionEn = null;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Desbloqueo', 'Sinceramiento de Áreas', registroActual.apellidosNombres + ' — Toma ' + registroActual.tomaNombre);
+            }
+            document.getElementById('vistaConfirmacion').style.display = 'none';
+            pintarFormularioDesdeRegistro();
+            document.getElementById('vistaFormulario').style.display = 'flex';
+        });
+
+        document.getElementById('btnRechazarSolicitud').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Rechazando solicitud…';
+            var resultado = await CusshmiDatos.rechazarSolicitudEdicionSinceramiento(registroActual.id);
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.solicitudEdicion = false;
+            registroActual.solicitudEdicionPorNombre = '';
+            registroActual.solicitudEdicionEn = null;
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Rechazo de solicitud de edición', 'Sinceramiento de Áreas', registroActual.apellidosNombres + ' — Toma ' + registroActual.tomaNombre);
+            }
+            mostrarConfirmacion();
+            document.getElementById('estadoConfirmacion').textContent = 'Solicitud rechazada. El registro sigue bloqueado.';
+        });
+
+        document.getElementById('btnSolicitarEdicion').addEventListener('click', async function () {
+            var elEstado = document.getElementById('estadoConfirmacion');
+            elEstado.textContent = 'Enviando solicitud…';
+            var resultado = await CusshmiDatos.solicitarEdicionSinceramiento(registroActual.id, perfilActual ? perfilActual.nombre : '');
+            if (!resultado.ok) { elEstado.textContent = '⚠️ ' + resultado.error; return; }
+            registroActual.solicitudEdicion = true;
+            registroActual.solicitudEdicionPorNombre = perfilActual ? perfilActual.nombre : '';
+            registroActual.solicitudEdicionEn = new Date().toISOString();
+            if (window.CusshmiAuditoria) {
+                CusshmiAuditoria.registrarAuditoria('Solicitud de edición', 'Sinceramiento de Áreas', registroActual.apellidosNombres + ' — Toma ' + registroActual.tomaNombre);
+            }
+            mostrarConfirmacion();
+        });
+
+        // ═══ Arranque ═══
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined') {
+                location.href = 'index.html';
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (!resultado.ok) {
+                location.href = 'index.html';
+                return;
+            }
+            perfilActual = resultado.perfil;
+            comisionKeyActual = perfilActual.comisionClave;
+            esAdmin = perfilActual.rol === 'admin';
+            if (comisionKeyActual) localStorage.setItem('cusshmi_comision', comisionKeyActual);
+            if (perfilActual.rol !== 'admin' && perfilActual.rol !== 'programador') {
+                elEstadoTomas.textContent = 'Tu usuario no tiene permiso para este módulo.';
+                return;
+            }
+            mostrarVistaTomas();
+        })();
+    </script>
+</body>
+</html>

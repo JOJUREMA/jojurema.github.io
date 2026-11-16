@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Confirmar recepción — Anexo G-4</title>
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="../icons/icon-192.png">
+    <link rel="stylesheet" href="../estilos.css">
+
+    <!-- Página PÚBLICA, sin sesión: la persona que recibe el Anexo G-4 no
+         tiene cuenta en el sistema. Por eso NO carga auth.js/datos.js/
+         bloqueo.js/presencia.js (asumen sesión) ni pasa por el gateway de
+         enrutamiento del escritorio — vive suelta en movil/g4/. Solo carga
+         lo necesario para pedir el documento por token (vía las funciones
+         RPC de Supabase, ver assets/supabase/sql/010_confirmacion_g4.sql)
+         y dibujarlo con la MISMA plantilla oficial que ya usa el visor
+         móvil autenticado — nunca una versión simplificada. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../../assets/supabase/supabase-config.js"></script>
+    <script src="../../assets/supabase/supabase-client.js"></script>
+    <script src="../../assets/core/utilidades.js"></script>
+    <script src="../../assets/core/anexoG4.js"></script>
+
+    <style>
+        .tarjeta-g4 {
+            width: 100%;
+            max-width: 420px;
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 14px;
+            margin: 14px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="pantalla">
+        <img class="logo-chico" src="../icons/icon-192.png" alt="Comisión de Usuarios S.S.H. Margen Izquierda">
+        <h1>Confirmación de recepción</h1>
+        <p class="subtitulo">Anexo G-4 — Orden de Riego</p>
+        <div class="franja"></div>
+
+        <div class="estado-busqueda" id="estado">Cargando…</div>
+
+        <div class="tarjeta-g4" id="contenedorG4" style="display:none;"></div>
+
+        <div style="width:100%; max-width:420px; margin-top:4px;">
+            <button class="boton" id="btnConfirmar" style="display:none;">✅ Confirmar recepción del Anexo G-4</button>
+            <div class="estado-busqueda" id="estadoConfirmacion"></div>
+        </div>
+    </div>
+
+    <script>
+        var token = new URLSearchParams(location.search).get('t');
+        var elEstado = document.getElementById('estado');
+        var elContenedor = document.getElementById('contenedorG4');
+        var elBtnConfirmar = document.getElementById('btnConfirmar');
+        var elEstadoConfirmacion = document.getElementById('estadoConfirmacion');
+
+        function datosParaG4(fila) {
+            return {
+                usuario: fila.usuario_nombre,
+                canal: fila.canal,
+                caudalLs: parseFloat(fila.caudal_ls) || 0,
+                horasTotal: parseFloat(fila.horas_total) || 0,
+                volumenEntregar: parseFloat(fila.volumen_m3) || 0,
+                dtIni: parsearFechaHoraTexto(fila.inicio_texto),
+                dtTer: parsearFechaHoraTexto(fila.termino_texto),
+                fechaImpresion: new Date(),
+                logoSrc: '../icons/icon-192.png'
+            };
+        }
+
+        function renderizarG4(fila) {
+            elContenedor.innerHTML = '<style>' + estilosAnexoG4RJ() + '</style>' + construirAnexoG4RJHtml(datosParaG4(fila));
+            elContenedor.style.display = 'block';
+        }
+
+        function formatearFechaHora(iso) {
+            if (!iso) return '';
+            var f = new Date(iso);
+            return f.toLocaleDateString('es-PE') + ' a las ' + f.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Refleja el estado de la fila en pantalla — se llama tanto al
+        // cargar la página (por si ya se había confirmado antes) como
+        // después de confirmar.
+        function mostrarEstadoSegunFila(fila) {
+            if (fila.estado === 'confirmado') {
+                elBtnConfirmar.style.display = 'none';
+                elEstadoConfirmacion.textContent = 'Ya confirmaste la recepción el ' + formatearFechaHora(fila.confirmado_en) + '.';
+            } else {
+                elBtnConfirmar.style.display = 'block';
+                elEstadoConfirmacion.textContent = '';
+            }
+        }
+
+        async function confirmar() {
+            elBtnConfirmar.disabled = true;
+            elBtnConfirmar.textContent = 'Confirmando…';
+            var resultado = await window.CusshmiSupabase.ejecutarConsulta(
+                (client) => client.rpc('confirmar_g4', { token_param: token, dispositivo_param: navigator.userAgent }),
+                'confirmar recepción del G-4'
+            );
+            elBtnConfirmar.disabled = false;
+            elBtnConfirmar.textContent = '✅ Confirmar recepción del Anexo G-4';
+
+            var fila = resultado.data && resultado.data[0];
+            if (resultado.error || !fila) {
+                elEstadoConfirmacion.textContent = 'No se pudo registrar la confirmación. Intenta de nuevo.';
+                return;
+            }
+            if (fila.estado === 'confirmado') {
+                elBtnConfirmar.style.display = 'none';
+                elEstadoConfirmacion.textContent = 'La recepción de su Orden de Riego ha sido registrada correctamente. Gracias.';
+            } else {
+                // No debería pasar (la RPC solo confirma si estaba pendiente),
+                // pero por si acaso se refleja el estado real devuelto.
+                mostrarEstadoSegunFila(fila);
+            }
+        }
+        elBtnConfirmar.addEventListener('click', confirmar);
+
+        (async function iniciar() {
+            if (!token) {
+                elEstado.textContent = 'Enlace inválido: falta el identificador de confirmación.';
+                return;
+            }
+            var resultado = await window.CusshmiSupabase.ejecutarConsulta(
+                (client) => client.rpc('obtener_g4_por_token', { token_param: token }),
+                'obtener G-4 por token'
+            );
+            if (resultado.error) {
+                elEstado.textContent = 'No se pudo cargar el documento: ' + resultado.error.mensaje;
+                return;
+            }
+            var fila = (resultado.data || [])[0];
+            if (!fila) {
+                elEstado.textContent = 'Enlace no encontrado o vencido.';
+                return;
+            }
+            elEstado.textContent = '';
+            renderizarG4(fila);
+            mostrarEstadoSegunFila(fila);
+        })();
+    </script>
+</body>
+</html>

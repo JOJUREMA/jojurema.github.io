@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>CUSSHMI Móvil</title>
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#003876">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CUSSHMI">
+    <link rel="stylesheet" href="estilos.css">
+
+    <!-- Núcleo compartido con el escritorio (Fases 0-1 PWA) — misma fuente -->
+    <!-- de datos y de autenticación, nunca se duplica lógica aquí. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="../assets/supabase/supabase-config.js"></script>
+    <script src="../assets/supabase/supabase-client.js"></script>
+    <script src="../assets/supabase/auth.js"></script>
+    <script src="../assets/supabase/migracion.js"></script>
+    <script src="../assets/supabase/datos.js"></script>
+    <script src="../assets/supabase/bloqueo.js"></script>
+    <script src="../assets/supabase/auditoria.js"></script>
+    <script src="../assets/supabase/presencia.js"></script>
+    <script src="../assets/core/clasificacion.js"></script>
+    <script src="../assets/core/utilidades.js"></script>
+    <script src="../assets/core/anexoG2.js"></script>
+</head>
+<body>
+    <div class="pantalla">
+        <img class="logo-chico" src="icons/icon-192.png" alt="Comisión de Usuarios S.S.H. Margen Izquierda">
+        <h1>CUSSHMI Móvil</h1>
+        <p class="subtitulo">Junta de Usuarios Chira</p>
+        <div class="franja"></div>
+
+        <!-- ── Pantalla de login ── -->
+        <div id="pantallaLogin" class="tarjeta" style="display:none;">
+            <div id="errorLogin" class="mensaje-error"></div>
+            <div class="campo">
+                <label for="loginUsuario">Usuario (nombre y apellido)</label>
+                <input type="text" id="loginUsuario" autocomplete="username" placeholder="ej. juan perez">
+            </div>
+            <div class="campo">
+                <label for="loginPassword">Contraseña</label>
+                <input type="password" id="loginPassword" autocomplete="current-password">
+            </div>
+            <button class="boton" id="btnLogin">Iniciar sesión</button>
+        </div>
+
+        <!-- ── Menú principal (tras iniciar sesión) ── -->
+        <div id="pantallaMenu" style="display:none; width:100%; display:flex; flex-direction:column; align-items:center;">
+            <div class="saludo">
+                <div class="nombre" id="saludoNombre"></div>
+                <div class="comision" id="saludoComision"></div>
+            </div>
+            <div class="menu-grid">
+                <a class="tile" href="condicion-usuario.html">
+                    <span class="icono">🔍</span>
+                    <span class="texto">Condición del Usuario</span>
+                </a>
+                <a class="tile" href="pda-programado.html">
+                    <span class="icono">📋</span>
+                    <span class="texto">PDA Programado</span>
+                </a>
+                <a class="tile" href="seguimiento.html">
+                    <span class="icono">📡</span>
+                    <span class="texto">Seguimiento PDA</span>
+                </a>
+                <a class="tile" href="asistente-voz.html">
+                    <span class="icono">🎙️</span>
+                    <span class="texto">Asistente de Voz</span>
+                </a>
+                <a class="tile" href="orden-riego.html" id="tileOrdenRiego" style="display:none;">
+                    <span class="icono">🚿</span>
+                    <span class="texto">Orden de Riego</span>
+                </a>
+                <a class="tile" href="identificacion-registro.html" id="tileIdentificacionRegistro" style="display:none;">
+                    <span class="icono">🧾</span>
+                    <span class="texto">Identificación y registro</span>
+                </a>
+                <a class="tile" href="siembra-intencion.html" id="tileSiembraDIS" style="display:none;">
+                    <span class="icono">🌱</span>
+                    <span class="texto">Declaración de Intención de Siembra</span>
+                </a>
+                <a class="tile" href="sinceramiento-areas.html" id="tileSinceramiento" style="display:none;">
+                    <span class="icono">📐</span>
+                    <span class="texto">Sinceramiento de Áreas</span>
+                </a>
+                <a class="tile" href="inventario-infraestructura.html" id="tileInventario" style="display:none;">
+                    <span class="icono">📦</span>
+                    <span class="texto">Actualización del Inventario</span>
+                </a>
+                <a class="tile" href="notificaciones.html" id="tileNotificaciones" style="display:none; position:relative;">
+                    <span class="icono">🔔</span>
+                    <span class="texto">Notificaciones</span>
+                    <span id="badgeNotificaciones" style="display:none; position:absolute; top:8px; right:8px; background:#c0392b; color:#fff; font-size:10px; font-weight:800; border-radius:999px; min-width:18px; height:18px; padding:0 4px; align-items:center; justify-content:center;"></span>
+                </a>
+            </div>
+            <div style="width:100%; max-width:420px;">
+                <button class="boton-secundario" id="btnCerrarSesion">Cerrar sesión</button>
+            </div>
+        </div>
+
+        <div id="estadoCascaron" class="estado-busqueda"></div>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(function (e) {
+                console.warn('No se pudo registrar el service worker:', e);
+            });
+        }
+
+        var elLogin = document.getElementById('pantallaLogin');
+        var elMenu = document.getElementById('pantallaMenu');
+        var elError = document.getElementById('errorLogin');
+        var elEstado = document.getElementById('estadoCascaron');
+
+        function mostrarError(mensaje) {
+            elError.textContent = mensaje;
+            elError.classList.add('visible');
+        }
+
+        function limpiarError() {
+            elError.textContent = '';
+            elError.classList.remove('visible');
+        }
+
+        function mostrarMenu(perfil) {
+            // Mismo localStorage que ya usa esUsuarioApto/debeExcluirse (assets/core/clasificacion.js)
+            // para saber si el formato de cultivos es el clásico o el extendido de Cieneguillo —
+            // en escritorio lo fija un selector manual; en móvil se deriva del perfil autenticado.
+            if (perfil.comisionClave) {
+                localStorage.setItem('cusshmi_comision', perfil.comisionClave);
+            }
+            document.getElementById('saludoNombre').textContent = perfil.nombre;
+            document.getElementById('saludoComision').textContent = perfil.comisionNombre || perfil.comisionClave || '';
+
+            // Primer tile del menú móvil restringido por rol — "Orden de
+            // Riego" es un panel administrativo (ver quién confirmó el
+            // Anexo G-4), no una herramienta de campo para cualquiera.
+            var tileOrdenRiego = document.getElementById('tileOrdenRiego');
+            if (tileOrdenRiego) {
+                tileOrdenRiego.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
+            // "Identificación y registro" (verificación de campo) — mismo
+            // criterio que Orden de Riego: admin o programador (el
+            // "sectorista" del pedido original es el rol programador que ya
+            // existe, no se creó un rol nuevo).
+            var tileIdentificacionRegistro = document.getElementById('tileIdentificacionRegistro');
+            if (tileIdentificacionRegistro) {
+                tileIdentificacionRegistro.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
+            // "Declaración de Intención de Siembra" — mismo criterio que
+            // los dos anteriores: admin o programador.
+            var tileSiembraDIS = document.getElementById('tileSiembraDIS');
+            if (tileSiembraDIS) {
+                tileSiembraDIS.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
+            // "Sinceramiento de Áreas" — mismo criterio que los anteriores.
+            var tileSinceramiento = document.getElementById('tileSinceramiento');
+            if (tileSinceramiento) {
+                tileSinceramiento.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
+            // "Actualización del Inventario" — mismo criterio que los anteriores.
+            var tileInventario = document.getElementById('tileInventario');
+            if (tileInventario) {
+                tileInventario.style.display = (perfil.rol === 'admin' || perfil.rol === 'programador') ? 'flex' : 'none';
+            }
+
+            // "Notificaciones" — solo admin (la RLS de auditoria ya limita a
+            // un programador a ver solo sus propias filas, sin sentido acá).
+            var tileNotificaciones = document.getElementById('tileNotificaciones');
+            if (tileNotificaciones) {
+                tileNotificaciones.style.display = (perfil.rol === 'admin') ? 'flex' : 'none';
+                if (perfil.rol === 'admin') actualizarBadgeNotificaciones();
+            }
+
+            elLogin.style.display = 'none';
+            elMenu.style.display = 'flex';
+        }
+
+        async function actualizarBadgeNotificaciones() {
+            if (typeof CusshmiAuditoria === 'undefined') return;
+            var filas = await CusshmiAuditoria.listarAuditoria(200);
+            var vistasEn = localStorage.getItem('cusshmi_notif_vistas_en');
+            var nuevas = vistasEn ? filas.filter(function (f) { return f.creado_en > vistasEn; }).length : filas.length;
+            var badge = document.getElementById('badgeNotificaciones');
+            if (!badge) return;
+            if (nuevas > 0) {
+                badge.textContent = nuevas > 99 ? '99+' : String(nuevas);
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        function mostrarLogin() {
+            elMenu.style.display = 'none';
+            elLogin.style.display = 'block';
+        }
+
+        async function intentarLogin() {
+            limpiarError();
+            var usuario = document.getElementById('loginUsuario').value.trim();
+            var password = document.getElementById('loginPassword').value;
+            if (!usuario || !password) {
+                mostrarError('Ingresa usuario y contraseña.');
+                return;
+            }
+            var btn = document.getElementById('btnLogin');
+            btn.disabled = true;
+            btn.textContent = 'Ingresando…';
+            var resultado = await CusshmiAuth.iniciarSesion(usuario, password);
+            btn.disabled = false;
+            btn.textContent = 'Iniciar sesión';
+            if (!resultado.ok) {
+                mostrarError(resultado.mensaje || 'No se pudo iniciar sesión.');
+                return;
+            }
+            mostrarMenu(resultado.perfil);
+        }
+
+        document.getElementById('btnLogin').addEventListener('click', intentarLogin);
+        document.getElementById('loginPassword').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') intentarLogin();
+        });
+        document.getElementById('btnCerrarSesion').addEventListener('click', async function () {
+            await CusshmiAuth.cerrarSesion();
+            mostrarLogin();
+        });
+
+        (async function iniciar() {
+            if (typeof CusshmiAuth === 'undefined' || typeof esUsuarioApto !== 'function') {
+                elEstado.textContent = 'Aviso: el núcleo compartido no cargó correctamente.';
+                mostrarLogin();
+                return;
+            }
+            var resultado = await CusshmiAuth.recuperarSesion();
+            if (resultado.ok) {
+                mostrarMenu(resultado.perfil);
+            } else {
+                mostrarLogin();
+            }
+        })();
+    </script>
+</body>
+</html>
