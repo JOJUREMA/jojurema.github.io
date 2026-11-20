@@ -4006,15 +4006,16 @@ const COMISIONES = {
             ['frecuenciaCortaDias', 'frecuenciaLargaDias', 'limiteCortoDias', 'maxDias'].forEach(k => { if (p[k] != null) o[k] = p[k]; });
             return o;
         }
-        // TIAPARO: parámetros efectivos de una fuente (bocatoma). El caudal de la fuente es el AFORADO (editable, por
-        // si hay un aforo nuevo) y se reparte entre los usuarios que riegan a la vez: caudal por usuario = caudal ÷ a la vez.
-        // El tiempo por topo es la regla de la comunidad (7 h), no cambia con el caudal. La licencia (R.D. 310-2014) solo
-        // se usa como control del volumen (ver _huaroPatLicenciaHtml).
+        // TIAPARO: parámetros efectivos de una fuente (bocatoma). El caudal por usuario depende del mes:
+        //   · meses de la licencia (marzo–octubre): sale del VOLUMEN de la licencia de ese mes (R.D. 310-2014);
+        //   · meses con aforo (noviembre, ver HUARO_LICENCIA_TIAPARO.mesesConAforo): caudal AFORADO de la fuente
+        //     (editable, por si hay un aforo nuevo) ÷ usuarios que riegan a la vez.
+        // El tiempo por topo es la regla de la comunidad (7 h), no cambia con el caudal.
         function _huaroPatBocLicencia(boc, referenciaISO, o, cfg, perfil) {
             const L = HuaroCore.HUARO_LICENCIA_TIAPARO;
             const norm = HuaroCore.huaroNormNombre(boc);
             const ref = referenciaISO || _huaroSemanaSeleccionada();
-            const anio = parseInt(ref.slice(0, 4), 10);
+            const anio = parseInt(ref.slice(0, 4), 10), mes = parseInt(ref.slice(5, 7), 10);
             const hIni = _huaroMinDeHHMM(o.horaIni), hFin = _huaroMinDeHHMM(o.horaFin);
             const simDef = (HuaroCore.HUARO_SIMULTANEOS_TIAPARO || {})[norm] || perfil.simultaneos || 2;
             const simultaneos = Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || simDef);
@@ -4022,61 +4023,76 @@ const COMISIONES = {
             const horasPorTopo = horasManual ? parseFloat(o.horasTopo) : perfil.horasPorTopo;
             const aforo = (L.aforoLs || {})[norm] || null;
             const caudalEditado = o.caudal != null && o.caudal !== '' && isFinite(parseFloat(o.caudal)) && parseFloat(o.caudal) > 0;
-            const caudal = caudalEditado ? parseFloat(o.caudal) : (aforo || 0);
-            const qUsuario = caudal > 0 ? caudal / simultaneos : 0;
+            const caudalAforo = caudalEditado ? parseFloat(o.caudal) : (aforo || 0);
+            const qAforo = caudalAforo > 0 ? caudalAforo / simultaneos : 0;
+            // El volumen de la licencia se reparte entre TODAS las hectáreas del padrón (las dos fuentes).
+            const areaPadronHa = _huaroOrden.reduce((s, b2) => s + (_huaroPadron[b2] || []).reduce((a, u) => a + (u.areaHa || 0), 0), 0) || L.areaHa;
+            const qMensual = HuaroCore.huaroCaudalLicenciaPorTurnoMensual(horasPorTopo, areaPadronHa);
+            (L.mesesConAforo || []).forEach(m => { qMensual[m - 1] = qAforo; });
+            const qLicMax = Math.max.apply(null, qMensual.filter((q, i) => (L.mesesConAforo || []).indexOf(i + 1) < 0));
+            const qRef = qMensual[mes - 1] > 0 ? qMensual[mes - 1] : Math.max.apply(null, qMensual); // mes sin demanda (dic-feb)
             return {
-                caudal, caudalEditado,
+                caudal: simultaneos * qRef, caudalAforo, caudalEditado,
                 inicio: o.inicio || cfg.inicio[anio] || _huaroPatInicioDefecto(anio, perfil),
                 horaIniMin: hIni != null ? hIni : perfil.minInicio, horaFinMin: hFin != null ? hFin : perfil.minFin,
                 simultaneos, horasPorTopo, horasPorTopoEditado: horasManual, horasAuto: perfil.horasPorTopo,
-                qUsuario, caudalPorTurno: qUsuario, refQ: 0, refH: perfil.horasPorTopo,
-                licencia: true, qMensual: null, aforoLs: aforo,
+                qUsuario: qRef, caudalPorTurno: qRef, refQ: 0, refH: perfil.horasPorTopo,
+                licencia: true, qMensual, areaPadronHa, qAforo, caudalPicoLicLs: simultaneos * qLicMax, aforoLs: aforo,
             };
         }
-        // Celda "Caudal" de la tabla de parámetros. En Tiaparo se precarga el caudal aforado (editable) y debajo se ve
-        // la división entre los usuarios que riegan a la vez.
+        // Celda "Caudal" de la tabla de parámetros. En Tiaparo el campo es el caudal AFORADO (se usa en noviembre); debajo
+        // se ve cómo queda por usuario y el pico de los meses con licencia (y si pasa del aforo).
         function _huaroPatCeldaCaudal(b, p, inp, q) {
-            const campo = `<input type="number" min="0" step="0.001" value="${p.caudal || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)">`;
             if (!p.licencia) {
-                return `<td style="text-align:center;">${campo} ${p.caudalEditado ? '<span title="Editado (el del esquema era distinto)">✎</span>' : ''}</td>`;
+                return `<td style="text-align:center;"><input type="number" min="0" step="0.1" value="${p.caudal || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)"> ${p.caudalEditado ? '<span title="Editado (el del esquema era distinto)">✎</span>' : ''}</td>`;
             }
             const L = HuaroCore.HUARO_LICENCIA_TIAPARO;
-            return `<td style="text-align:center;">${campo} ${p.caudalEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al caudal aforado (${p.aforoLs} l/s)" onclick="huaroPatBocCfg('${q(b)}','caudal','')">↺ aforo</a>` : `<span style="font-size:10px;color:#1f6b3a;" title="Caudal aforado el ${L.aforoFecha}">aforo</span>`}<div style="font-size:10px;color:#6b7280;" title="Caudal ÷ usuarios que riegan a la vez">÷ ${p.simultaneos} = ${p.qUsuario.toFixed(2)} l/s c/u</div></td>`;
+            const meses = (L.mesesConAforo || []).map(m => _HUARO_MESES_CORTO[m]).join(', ');
+            const sobra = p.aforoLs && p.caudalPicoLicLs > p.caudalAforo + 1e-9;
+            return `<td style="text-align:center;font-size:12px;"><input type="number" min="0" step="0.001" value="${p.caudalAforo || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)" title="Caudal aforado (${L.aforoFecha}); se usa en ${meses}"> ${p.caudalEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al caudal aforado (${p.aforoLs} l/s)" onclick="huaroPatBocCfg('${q(b)}','caudal','')">↺ aforo</a>` : '<span style="font-size:10px;color:#1f6b3a;">aforo</span>'}`
+                + `<div style="font-size:10px;color:#6b7280;">${meses}: ÷ ${p.simultaneos} = ${p.qAforo.toFixed(2)} l/s c/u</div>`
+                + `<div style="font-size:10px;color:${sobra ? '#b26a00' : '#6b7280'};${sobra ? 'font-weight:700;' : ''}" title="En los meses con licencia el caudal de la fuente llega hasta ${p.caudalPicoLicLs.toFixed(1)} l/s; el aforo es ${p.caudalAforo} l/s.">licencia: hasta ${p.caudalPicoLicLs.toFixed(1)} l/s${sobra ? ' ⚠' : ''}</div></td>`;
         }
-        // TIAPARO: control del volumen programado contra la licencia (R.D. 310-2014), mes por mes. Con el caudal aforado
-        // el volumen programado puede pasar de lo licenciado: aquí se ve cuánto.
+        // TIAPARO: cuadro por mes — de dónde sale el caudal (licencia o aforo), caudal por usuario y por fuente, y control del
+        // volumen programado contra la licencia (R.D. 310-2014).
         function _huaroPatLicenciaHtml(bocs, semanaISO) {
             if (!_huaroEsTiaparo() || !bocs.length) return '';
             const L = HuaroCore.HUARO_LICENCIA_TIAPARO, perfil = HuaroCore.huaroPerfilActual();
             const fmt = (n, d) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
             const ps = bocs.map(b => ({ b, p: _huaroPatBoc(b, semanaISO) }));
-            // volumen programado por mes: se suma lo que ya quedó calculado de cada turno de la campaña
-            const prog = new Array(12).fill(0);
+            const prog = new Array(12).fill(0); // volumen programado por mes (suma de cada turno de la campaña)
             ps.forEach(({ b, p }) => {
                 try {
                     const { crono } = _huaroPatCronograma(b, p.caudal);
                     if (crono) Object.keys(crono.semanas).forEach(lun => crono.semanas[lun].programados.forEach(t => { prog[parseInt(t.fechaISO.slice(5, 7), 10) - 1] += t.volumenM3 || 0; }));
                 } catch (e) { /* sin cronograma */ }
             });
+            const conAforo = m => (L.mesesConAforo || []).indexOf(m) >= 0;
+            const qm = ps[0].p.qMensual, A = ps[0].p.areaPadronHa;
             let filas = '', totL = 0, totP = 0;
             for (let m = perfil.campanaMesIni; m <= perfil.campanaMesFin; m++) {
                 const v = L.mensualM3[m - 1], pv = prog[m - 1];
                 totL += v; totP += pv;
                 const pct = v > 0 ? pv / v * 100 : 0;
-                filas += `<tr><td style="text-align:left;">${_HUARO_MESES[m - 1]}</td><td style="text-align:right;">${fmt(v, 2)}</td><td style="text-align:right;">${fmt(pv, 2)}</td><td style="text-align:right;${pct > 100.5 ? 'color:#b26a00;font-weight:700;' : ''}">${pv > 0 ? fmt(pct, 1) + ' %' : '—'}</td></tr>`;
+                filas += `<tr><td style="text-align:left;">${_HUARO_MESES[m - 1]}</td><td>${conAforo(m) ? '<b>aforo</b>' : 'licencia'}</td><td style="text-align:right;">${fmt(v, 2)}</td><td style="text-align:right;">${fmt(ps[0].p.qMensual[m - 1], 2)}</td>`
+                    + ps.map(({ p }) => `<td style="text-align:right;">${fmt(p.qMensual[m - 1] * p.simultaneos, 1)}</td>`).join('')
+                    + `<td style="text-align:right;">${fmt(pv, 2)}</td><td style="text-align:right;${pct > 100.5 ? 'color:#b26a00;font-weight:700;' : ''}">${pv > 0 ? fmt(pct, 1) + ' %' : '—'}</td></tr>`;
             }
-            const lineas = ps.map(({ b, p }) => `<b>${escapeHtml(b)}</b>: ${fmt(p.caudal, 3)} l/s ${p.caudalEditado ? '(editado)' : '(aforo del ' + L.aforoFecha + ')'} ÷ ${p.simultaneos} a la vez = <b>${fmt(p.qUsuario, 2)} l/s</b> por usuario`).join(' · ');
-            const pasa = totP > totL * 1.005;
+            const meses = (L.mesesConAforo || []).map(m => _HUARO_MESES[m - 1]).join(', ');
+            const lineasAforo = ps.map(({ b, p }) => `${escapeHtml(b)}: ${fmt(p.caudalAforo, 3)} l/s ÷ ${p.simultaneos} a la vez = ${fmt(p.qAforo, 2)} l/s por usuario`).join(' · ');
+            const avisos = ps.filter(({ p }) => p.aforoLs && p.caudalPicoLicLs > p.caudalAforo + 1e-9)
+                .map(({ b, p }) => `${escapeHtml(b)}: con ${p.simultaneos} a la vez la licencia llega a ${p.caudalPicoLicLs.toFixed(1)} l/s y el aforo es ${p.caudalAforo} l/s`).join(' · ');
             return `
                     <div class="huaro-mini" style="margin:4px 0 8px;">
-                        <b>Caudal:</b> el caudal aforado de cada fuente se reparte entre los usuarios que riegan a la vez (caudal por usuario = caudal ÷ usuarios a la vez); el tiempo por topo es de ${perfil.horasPorTopo} h y el riego se repite cada 15 días.<br>${lineas}.
-                        <div style="margin-top:4px;"><b>Licencia — ${escapeHtml(L.resolucion)} (${L.fecha}):</b> ${fmt(L.volumenAnualM3, 2)} m³/año para ${L.areaHa} ha (${L.usuarios} usuarios).
-                        ${pasa ? `<span style="color:#b26a00;font-weight:700;">⚠ Con estos caudales se programan ${fmt(totP, 2)} m³ (marzo a la fecha), ${fmt(totP / totL * 100, 1)} % del volumen de la licencia.</span>` : `Programado: ${fmt(totP, 2)} m³ (${fmt(totP / totL * 100, 1)} % de la licencia).`}</div>
+                        <b>Caudal por mes:</b> de marzo a octubre sale del <b>volumen de la licencia</b> de cada mes (${escapeHtml(L.resolucion)}, ${L.fecha}: ${fmt(L.volumenAnualM3, 2)} m³/año para ${L.areaHa} ha; el padrón tiene ${fmt(A, 2)} ha, así que ese volumen se reparte entre todas):
+                        m³/ha del mes ÷ 2 riegos al mes, sobre las ${perfil.horasPorTopo} h de un topo. En <b>${meses}</b> se usa el <b>caudal aforado</b> (${L.aforoFecha}) dividido entre los usuarios que riegan a la vez: ${lineasAforo}.
+                        El riego se repite cada 15 días.
+                        ${avisos ? `<div style="margin-top:4px;color:#b26a00;font-weight:700;">⚠ ${avisos}.</div>` : ''}
                     </div>
                     <div style="overflow-x:auto;margin-bottom:8px;">
                     <table class="huaro-tabla">
-                        <thead><tr><th style="text-align:left;">Mes</th><th>Licencia (m³)</th><th>Programado (m³)</th><th>% de la licencia</th></tr></thead>
-                        <tbody>${filas}<tr style="font-weight:700;background:#f3ede6;"><td style="text-align:left;">TOTAL</td><td style="text-align:right;">${fmt(totL, 2)}</td><td style="text-align:right;">${fmt(totP, 2)}</td><td style="text-align:right;">${totL > 0 ? fmt(totP / totL * 100, 1) + ' %' : ''}</td></tr></tbody>
+                        <thead><tr><th style="text-align:left;">Mes</th><th>Caudal según</th><th>Licencia (m³)</th><th>Caudal por usuario (l/s)</th>${ps.map(({ b, p }) => `<th>${escapeHtml(b)} (l/s)<br><span style="font-weight:400;font-size:10px;">${p.simultaneos} a la vez</span></th>`).join('')}<th>Programado (m³)</th><th>% de la licencia</th></tr></thead>
+                        <tbody>${filas}<tr style="font-weight:700;background:#f3ede6;"><td style="text-align:left;">TOTAL</td><td></td><td style="text-align:right;">${fmt(totL, 2)}</td><td colspan="${1 + ps.length}"></td><td style="text-align:right;">${fmt(totP, 2)}</td><td style="text-align:right;">${totL > 0 ? fmt(totP / totL * 100, 1) + ' %' : ''}</td></tr></tbody>
                     </table>
                     </div>`;
         }

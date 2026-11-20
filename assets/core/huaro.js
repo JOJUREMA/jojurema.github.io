@@ -219,6 +219,7 @@ const HUARO_LICENCIA_TIAPARO = {
     mensualM3: [0, 0, 3382.64, 13986.19, 18577.96, 35857.56, 55349.26, 69371.27, 78480.82, 74591.26, 38491.45, 0],
     riegosPorMes: 2, // riego cada 15 días
     aforoLs: { 'RIORUNTUMAYO': 67.517, 'RIOHUAYTAMPO': 38.704 }, aforoFecha: '19/11/2026',
+    mesesConAforo: [11], // meses en que se usa el caudal aforado en vez del volumen de la licencia (solo noviembre)
 };
 // Usuarios que riegan a la vez por defecto en cada fuente (7 h por topo, jornada de 12 h):
 //   · Runtumayo (94.25 topos): 5 → recorrido de 13 días, cada 15 (necesita hasta ~64 l/s ≤ aforo de 67.5).
