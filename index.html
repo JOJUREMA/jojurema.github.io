@@ -4004,6 +4004,7 @@ const COMISIONES = {
         function _huaroPatCicloOpts() {
             const p = HuaroCore.huaroPerfilActual(), o = {};
             ['frecuenciaCortaDias', 'frecuenciaLargaDias', 'limiteCortoDias', 'maxDias'].forEach(k => { if (p[k] != null) o[k] = p[k]; });
+            if (p.ordenMayorPrimero) o.mayorPrimero = true;
             return o;
         }
         // TIAPARO: parámetros efectivos de una fuente (bocatoma). El caudal por usuario depende del mes:

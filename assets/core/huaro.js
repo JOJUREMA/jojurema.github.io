@@ -91,7 +91,8 @@ const HUARO_PERFILES = {
         prefijoStorage: 'tiaparo',
         horasPorTopo: 7, minInicio: 6 * 60, minFin: 18 * 60, refHorasPorTopo: 7,
         cicloContinuo: true, simultaneos: 2, simultaneosReferencia: 2,
-        frecuenciaDias: 15, frecuenciaCortaDias: 15, frecuenciaLargaDias: 15, limiteCortoDias: 15, maxDias: 16,
+        frecuenciaDias: 15, frecuenciaCortaDias: 15, frecuenciaLargaDias: 15, limiteCortoDias: 15, maxDias: 15,
+        ordenMayorPrimero: true, // cada usuario vuelve a regar a los 15 días exactos: turnos largos primero
         campanaMesIni: 3, campanaMesFin: 11, inicioPrimerLunes: true,
         modeloLicencia: true,
     },
@@ -223,8 +224,7 @@ const HUARO_LICENCIA_TIAPARO = {
 };
 // Usuarios que riegan a la vez por defecto en cada fuente (7 h por topo, jornada de 12 h):
 //   · Runtumayo (94.25 topos): 5 → recorrido de 13 días, cada 15 (necesita hasta ~64 l/s ≤ aforo de 67.5).
-//   · Huaytampo (57 topos): 3 → recorrido de 16 días (máx. aceptable). Con 4 saldría en 15 días pero pediría
-//     hasta ~51 l/s en agosto-octubre, más que el aforo de 38.7 l/s de la fuente.
+//   · Huaytampo (57 topos): 3 → recorrido de 14 días con los turnos largos primero (con el orden del padrón eran 16).
 const HUARO_SIMULTANEOS_TIAPARO = { 'RIORUNTUMAYO': 5, 'RIOHUAYTAMPO': 3 };
 // Caudal (l/s) que recibe UN usuario en cada mes según la licencia: el volumen por hectárea del mes
 // (demanda mensual ÷ 40.35 ha) repartido en los riegos del mes, sobre las horas de un topo:
@@ -577,6 +577,9 @@ function huaroCronogramaCampana(opts) {
     const excluidos = new Set(opts.excluidos || []);
     const usuarios = (opts.usuarios || []).filter(u => !excluidos.has(huaroClaveUsuario(u)))
         .slice().sort((a, b) => a.nOrden - b.nOrden);
+    // Turnos más largos primero (Tiaparo): un turno de 150+ horas que empieza tarde alargaría todo el recorrido más allá
+    // de los 15 días en que cada usuario debe volver a regar. Con este orden el recorrido es el más corto posible.
+    if (opts.mayorPrimero) usuarios.sort((a, b) => ((b.topos || 0) - (a.topos || 0)) || (a.nOrden - b.nOrden));
     const caudalLs = parseFloat(opts.caudalLs) || 0;
     const desdeISO = opts.desdeISO;
     const hastaISO = opts.hastaISO;
