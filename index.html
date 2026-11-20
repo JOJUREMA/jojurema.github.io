@@ -6237,7 +6237,7 @@ const COMISIONES = {
             // HUARO: modelo por topos — padrón sin cultivo/deuda, 13 bocatomas.
             // Va por su propio parser y panel (assets/core/huaro.js); no toca
             // consolidadoDemandas ni el motor de cultivo.
-            if (['HUARO', 'PATACANCHA'].includes(localStorage.getItem('cusshmi_comision') || '')) {
+            if (['HUARO', 'PATACANCHA', 'TIAPARO'].includes(localStorage.getItem('cusshmi_comision') || '')) {
                 huaroProcesarWorkbook();
                 return;
             }
