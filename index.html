@@ -3720,7 +3720,19 @@ const COMISIONES = {
             window._huaroAutoMsg = '';
             if (esPatacancha) _huaroPatMigrar();
             if (esPatacancha || esTiaparo) _huaroPatMostrarMesMarcado();
-            if (esPatacancha || esTiaparo) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
+            if (esPatacancha || esTiaparo) {
+                const cv = _huaroPatCfg();
+                if (cv.motorV !== HUARO_MOTOR_VERSION) {
+                    if (_huaroPatAuto()) {
+                        _huaroComitesLista().forEach(c => _huaroPatAutoProgramarComite(c, true));
+                        window._huaroAutoMsg = '♻ Se actualizó el cálculo del programa: la programación guardada se rehízo con las reglas nuevas.';
+                    } else {
+                        window._huaroAutoMsg = '⚠ Se actualizó el cálculo del programa. Estás en modo manual: pulsa "Programar" para rehacer la programación guardada.';
+                    }
+                    const c2 = _huaroPatCfg(); c2.motorV = HUARO_MOTOR_VERSION; _huaroPatGuardarCfg(c2);
+                }
+            }
+            if (esPatacancha || esTiaparo) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig && window._huaroAutoMsg !== msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
             renderPanelHuaro();
         }
 
@@ -4103,6 +4115,11 @@ const COMISIONES = {
         // (por defecto 1° de junio del año de la semana elegida), cada cuántos
         // días vuelve a regar cada usuario (8) y cuántos usuarios riegan a la
         // vez en la bocatoma (2; por bocatoma). Ver huaroCronogramaCampana.
+        // Versión del cálculo de la programación (turnos, ciclo, días de operación). La programación de cada semana se
+        // GUARDA en el navegador al programarla; cuando se cambia el cálculo hay que rehacerla, así que al cargar el padrón,
+        // si la versión guardada es otra, se reprograma sola (modo automático). Súbela cada vez que cambie el cálculo.
+        //   2 = turnos largos cuentan en las semanas siguientes; Tiaparo: 15 días exactos con turnos largos primero.
+        const HUARO_MOTOR_VERSION = 2;
         function _huaroPatCfg() {
             let c = {};
             try { c = JSON.parse(localStorage.getItem(_huaroPrefijoStorage() + 'cfg')) || {}; } catch (e) { c = {}; }
