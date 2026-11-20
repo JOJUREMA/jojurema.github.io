@@ -166,6 +166,10 @@ function huaroMasaDeAgua(bocatoma) {
         const q = HUARO_CAUDAL_ESQUEMA_PATACANCHA[huaroNormNombre(bocatoma)];
         return q != null ? { caudalLs: q, volumenAnualM3: null, bloque: 'Esquema hidráulico', desdeEsquema: true } : null;
     }
+    if (HUARO_PERFIL_KEY === 'TIAPARO') {
+        const q = HUARO_LICENCIA_TIAPARO.aforoLs[huaroNormNombre(bocatoma)];
+        return q != null ? { caudalLs: q, volumenAnualM3: null, bloque: 'Aforo ' + HUARO_LICENCIA_TIAPARO.aforoFecha, desdeAforo: true } : null;
+    }
     return HUARO_MASA_AGUA[huaroNormNombre(bocatoma)] || null;
 }
 // Usuarios que riegan a la vez por defecto: 2 en todas (según los tomeros). Aquí se podrían
