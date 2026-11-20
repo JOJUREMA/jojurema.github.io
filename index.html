@@ -4119,7 +4119,8 @@ const COMISIONES = {
         // GUARDA en el navegador al programarla; cuando se cambia el cálculo hay que rehacerla, así que al cargar el padrón,
         // si la versión guardada es otra, se reprograma sola (modo automático). Súbela cada vez que cambie el cálculo.
         //   2 = turnos largos cuentan en las semanas siguientes; Tiaparo: 15 días exactos con turnos largos primero.
-        const HUARO_MOTOR_VERSION = 2;
+        //   3 = pendientes en orden real de riego con su fecha; Tiaparo programa solo hasta la semana próxima.
+        const HUARO_MOTOR_VERSION = 3;
         function _huaroPatCfg() {
             let c = {};
             try { c = JSON.parse(localStorage.getItem(_huaroPrefijoStorage() + 'cfg')) || {}; } catch (e) { c = {}; }
@@ -4266,6 +4267,8 @@ const COMISIONES = {
             const finSemISO = _huaroSumarDiasHuaroHist(semanaISO, 6);
             const hoy = _huaroHoyISO();
             let hastaISO = hoy > finSemISO ? hoy : finSemISO;
+            // Tiaparo: solo hasta el domingo de la semana que entra en vigencia (la siguiente a la actual).
+            if (perfil.programarHastaProximaSemana && !cfg.meses) hastaISO = _huaroSumarDiasHuaroHist(HuaroCore.huaroLunesDeLaSemana(hoy), 13);
             if (hastaISO > finCampISO) hastaISO = finCampISO;
             // Modo "solo estos meses": hasta el último día del último mes marcado (completo).
             if (cfg.meses) {
@@ -4280,7 +4283,7 @@ const COMISIONES = {
         function _huaroPatCronograma(boc, caudalLs, hastaForzadoISO) {
             const semanaISO = _huaroSemanaSeleccionada();
             const rango = _huaroPatRango(semanaISO, boc);
-            if (hastaForzadoISO && !rango.meses) rango.hastaISO = hastaForzadoISO;
+            if (hastaForzadoISO && !rango.meses && !HuaroCore.huaroPerfilActual().programarHastaProximaSemana) rango.hastaISO = hastaForzadoISO;
             const camp = _huaroLeerCampana(boc);
             if (rango.hastaISO < rango.desdeISO) return { rango, crono: null };
             const p = _huaroPatBoc(boc, semanaISO);
@@ -5780,8 +5783,11 @@ const COMISIONES = {
                         bocatoma: b,
                         caudalLs: r.agregado.caudalLs,
                         programados: r.programados,
-                        pendientesUsuarios: r.pendientes.map(k => porClave[k]).filter(Boolean)
-                            .sort((x, y) => x.nOrden - y.nOrden),
+                        // Con cronograma de campaña (Patacancha, Tiaparo): en el orden real de riego, numerados a continuación
+                        // de los turnos de la tabla y con la fecha en que les toca. Si no (Huaro): por orden del padrón.
+                        pendientesUsuarios: (r.agregado.pendientesFechas
+                            ? r.pendientes.map((k, i) => porClave[k] && Object.assign({}, porClave[k], { nOrden: r.programados.length + i + 1, fechaISO: r.agregado.pendientesFechas[k] })).filter(Boolean)
+                            : r.pendientes.map(k => porClave[k]).filter(Boolean).sort((x, y) => x.nOrden - y.nOrden)),
                     };
                 }),
             };
@@ -6203,7 +6209,7 @@ const COMISIONES = {
                 r++;
                 if (bl.pendientesUsuarios && bl.pendientesUsuarios.length) {
                     const cP = ws.getCell(r, 1);
-                    cP.value = 'Pendientes para la próxima semana: ' + bl.pendientesUsuarios.map(u => 'N°' + u.nOrden + ' ' + u.nombre).join(' · ');
+                    cP.value = 'Pendientes para la próxima semana: ' + bl.pendientesUsuarios.map(u => 'N°' + u.nOrden + ' ' + u.nombre + (u.fechaISO ? ' (' + u.fechaISO.slice(8) + '/' + u.fechaISO.slice(5, 7) + ')' : '')).join(' · ');
                     cP.font = { size: 9, italic: true };
                     r++;
                 }

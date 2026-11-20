@@ -93,6 +93,7 @@ const HUARO_PERFILES = {
         cicloContinuo: true, simultaneos: 2, simultaneosReferencia: 2,
         frecuenciaDias: 15, frecuenciaCortaDias: 15, frecuenciaLargaDias: 15, limiteCortoDias: 15, maxDias: 15,
         ordenMayorPrimero: true, // cada usuario vuelve a regar a los 15 días exactos: turnos largos primero
+        programarHastaProximaSemana: true, // solo se programa hasta el domingo de la semana que entra en vigencia (la siguiente a la actual)
         campanaMesIni: 3, campanaMesFin: 11, inicioPrimerLunes: true,
         modeloLicencia: true,
     },
@@ -714,12 +715,18 @@ function huaroCronogramaCampana(opts) {
         // (siguen en las semanas siguientes). Se indican en Observaciones del G-2. Si la pasada
         // ya terminó (espera de 8 o 15 días) no hay pendientes.
         let pendientesKeys = [], areaPendienteHa = 0;
+        const pendientesFechas = {}; // clave del usuario → fecha (AAAA-MM-DD) en que le toca regar
         {
             const finSemAbs = Math.round((new Date(_huaroSumarDias(lunes, 6) + 'T00:00:00') - new Date(desdeISO + 'T00:00:00')) / 864e5);
             const kEnd = Math.max(0, Math.floor(finSemAbs / periodoDias));
-            plantilla.forEach(t => {
-                if (kEnd * periodoDias + t.dia0 > finSemAbs) { pendientesKeys.push(huaroClaveUsuario(t.u)); areaPendienteHa += (t.u.areaHa || 0); }
-            });
+            // En el ORDEN REAL de riego (día y hora de su turno en la vuelta en curso), no en el del padrón.
+            plantilla.filter(t => kEnd * periodoDias + t.dia0 > finSemAbs)
+                .sort((a, b) => (a.dia0 - b.dia0) || (a.inicioMin - b.inicioMin) || (a.lane - b.lane))
+                .forEach(t => {
+                    const k = huaroClaveUsuario(t.u);
+                    pendientesKeys.push(k); areaPendienteHa += (t.u.areaHa || 0);
+                    pendientesFechas[k] = _huaroSumarDias(desdeISO, kEnd * periodoDias + t.dia0);
+                });
         }
         const pIni = prog[0], pFin = prog.reduce((m, p) => (p.fechaTerminoISO > m.fechaTerminoISO || (p.fechaTerminoISO === m.fechaTerminoISO && p.terminoMin > m.terminoMin)) ? p : m, prog[0]);
         semanas[lunes] = {
@@ -736,7 +743,7 @@ function huaroCronogramaCampana(opts) {
                 tiempoTotalH: minOperacion / 60, // horas que el canal estuvo operando (no la suma de turnos simultáneos)
                 horasUsuarios: prog.reduce((s, p) => s + (p.tiempoH || 0), 0),
                 volumenTotalM3: prog.reduce((s, p) => s + (p.volumenM3 || 0), 0),
-                diasUsados, caudalPorDia, nPendientes: pendientesKeys.length, areaPendienteHa,
+                diasUsados, caudalPorDia, nPendientes: pendientesKeys.length, areaPendienteHa, pendientesFechas,
                 simultaneos: lanes, cicloContinuo: true, sinUsuarios: false,
                 usuariosPadron: usuarios.length, cicloDias: periodoDias, pasadaDias, excedeFrecuencia: pasadaDias > maxDias,
             },
@@ -1188,7 +1195,7 @@ function huaroConstruirG3Html(datos) {
         const pendHtml = pend.length ? `
             <div style="font-size:9.5px;color:#000;margin:4px 0 16px;">
                 <strong>Pendientes para la próxima semana (${pend.length} · ${_huaroFmtNum(pend.reduce((s, u) => s + (u.areaHa || 0), 0))} ha):</strong>
-                ${pend.map(u => 'N°' + u.nOrden + ' ' + _huaroEsc(u.nombre)).join(' · ')}
+                ${pend.map(u => 'N°' + u.nOrden + ' ' + _huaroEsc(u.nombre) + (u.fechaISO ? ' (' + u.fechaISO.slice(8) + '/' + u.fechaISO.slice(5, 7) + ')' : '')).join(' · ')}
             </div>` : '<div style="margin-bottom:16px;"></div>';
 
         return `
