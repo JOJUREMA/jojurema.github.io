@@ -1936,20 +1936,9 @@ const COMISIONES = {
 };
 
 
-        // === SISTEMA DE CONTRASEÑAS ===
-        const PASSWORDS = {
-            'PP-2025$riego':   'POECHOS_PELADOS',
-            'MC-2025$riego':   'MIGUEL_CHECA',
-            'DE-2025$riego':   'DANIEL_ESCOBAR',
-            'CI-2025$riego':   'CIENEGUILLO',
-            'MD-2025$riego':   'MARGEN_DERECHA',
-            'MI-2025$riego':   'MARGEN_IZQUIERDA',
-            'EA-2025$riego':   'EL_ARENAL',
-            'HU-2025$riego':   'HUARO',
-            'PA-2025$riego':   'PATACANCHA',
-            'TI-2025$riego':   'TIAPARO',
-            'CHIRA-admin$2025': 'ADMIN',
-        };
+        // === ACCESO ===
+        // El acceso es con usuario y contraseña de Supabase Auth (CusshmiAuth.iniciarSesion): la comisión sale del perfil
+        // del usuario (profiles.comision_id) o, si es admin, la elige en el modal. Aquí NO hay contraseñas.
 
         let esAdmin = false;
         let esAdminOProgramador = false; // admin o programador — para paneles administrativos que también usa el programador (ej. Orden de Riego)
