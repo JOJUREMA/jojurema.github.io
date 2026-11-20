@@ -1245,6 +1245,9 @@
                     <button onclick="seleccionarComision('PATACANCHA')" class="btn-comision" style="background:linear-gradient(135deg, #2f7d6d 0%, #1d5448 100%);">
                         🏔️ Sub Sector Hidráulico Quebrada Patacancha - Yuracmayu (Ollantaytambo)
                     </button>
+                    <button onclick="seleccionarComision('TIAPARO')" class="btn-comision" style="background:linear-gradient(135deg, #2b6f9e 0%, #17405f 100%);">
+                        🌊 Comité de Usuarios Tiaparo — Huaytampo y Runtumayo (Ollantaytambo)
+                    </button>
                 </div>
             </div>
         </div>
@@ -1917,6 +1920,19 @@ const COMISIONES = {
         colorBtnHover: "#1d5448",
         colorStatCard: "linear-gradient(135deg, #5fae9c 0%, #2f7d6d 100%)",
     },
+    // Comité de Usuarios Tiaparo (Bloque de Riego III) — Comisión de Usuarios de Agua de las Microcuencas
+    // Huaytampo y Runtumayo, Ollantaytambo (Cusco). Mismo motor por topos (assets/core/huaro.js, perfil
+    // 'TIAPARO'); caudal por usuario según la licencia R.D. 310-2014-ANA/AAA XII.UV.
+    TIAPARO: {
+        nombre: "COMISIÓN DE USUARIOS DE AGUA DE LAS MICROCUENCAS HUAYTAMPO Y RUNTUMAYO — COMITÉ DE USUARIOS TIAPARO",
+        unidad: "Junta de Usuarios del Sector Hidráulico Menor Medio Vilcanota Mapacho",
+        logo: null,
+        colorHeader: "linear-gradient(135deg, #2b6f9e 0%, #17405f 100%)",
+        colorBg: "linear-gradient(135deg, #5b9bc4 0%, #2b6f9e 100%)",
+        colorBtn: "#2b6f9e",
+        colorBtnHover: "#17405f",
+        colorStatCard: "linear-gradient(135deg, #5b9bc4 0%, #2b6f9e 100%)",
+    },
 };
 
 
@@ -1931,6 +1947,7 @@ const COMISIONES = {
             'EA-2025$riego':   'EL_ARENAL',
             'HU-2025$riego':   'HUARO',
             'PA-2025$riego':   'PATACANCHA',
+            'TI-2025$riego':   'TIAPARO',
             'CHIRA-admin$2025': 'ADMIN',
         };
 
@@ -2171,7 +2188,7 @@ const COMISIONES = {
             iniciarLatidoPresencia(key);
 
             // HUARO: modelo por topos, flujo propio (assets/core/huaro.js).
-            if (key === 'HUARO' || key === 'PATACANCHA') activarModoHuaro(key);
+            if (key === 'HUARO' || key === 'PATACANCHA' || key === 'TIAPARO') activarModoHuaro(key);
             else desactivarModoHuaro();
 
             // CIENEGUILLO: barra lateral simplificada (ver _aplicarModoCieneguilloSidebar).
@@ -3607,8 +3624,8 @@ const COMISIONES = {
             if (_huaroOrden.length) renderPanelHuaro();
             else {
                 const ca = document.getElementById('contentArea');
-                if (ca) ca.innerHTML = '<div class="welcome-screen"><div class="welcome-icon">' + (key === 'PATACANCHA' ? '🏔️' : '🌾') + '</div>'
-                    + '<h2>' + (key === 'PATACANCHA' ? 'Comisión de Usuarios — Quebrada Patacancha · Yuracmayu · Ollantaytambo' : 'Comisión de Regantes de Huaro') + '</h2>'
+                if (ca) ca.innerHTML = '<div class="welcome-screen"><div class="welcome-icon">' + (key === 'PATACANCHA' ? '🏔️' : key === 'TIAPARO' ? '🌊' : '🌾') + '</div>'
+                    + '<h2>' + (key === 'PATACANCHA' ? 'Comisión de Usuarios — Quebrada Patacancha · Yuracmayu · Ollantaytambo' : key === 'TIAPARO' ? 'Comité de Usuarios Tiaparo — Microcuencas Huaytampo y Runtumayo · Ollantaytambo' : 'Comisión de Regantes de Huaro') + '</h2>'
                     + '<p>Carga el padrón <strong>' + escapeHtml(perfil.archivoPadron) + '</strong> para programar el PDA por topos<br>'
                     + 'y generar los Anexos G-2, G-3 y G-4.</p></div>';
             }
@@ -3685,15 +3702,18 @@ const COMISIONES = {
             tomaSelect.innerHTML = '<option value="">-- Selecciona una bocatoma --</option>';
 
             window._huaroComitePorBoc = {};
-            const esPatacancha = window._huaroPerfilKey === 'PATACANCHA';
-            (workbook.SheetNames || []).forEach(sn => {
+            const esPatacancha = _huaroEsPat();
+            const esTiaparo = window._huaroPerfilKey === 'TIAPARO';
+            (esTiaparo ? [(workbook.SheetNames || [])[0]] : (workbook.SheetNames || [])).forEach(sn => {
                 const data = XLSX.utils.sheet_to_json(workbook.Sheets[sn], { header: 1 });
                 if (!data || data.length < 3) return;
                 // Huaro: una hoja = una bocatoma. Patacancha: una hoja = un comité
                 // con VARIAS bocatomas ("BOCATOMA …" separa cada una).
-                const parsedLista = esPatacancha
-                    ? HuaroCore.huaroParsearPadronPatacancha(data, sn)
-                    : [HuaroCore.huaroParsearPadronHoja(data, sn)];
+                const parsedLista = esTiaparo
+                    ? HuaroCore.huaroParsearPadronTiaparo(data)
+                    : esPatacancha
+                        ? HuaroCore.huaroParsearPadronPatacancha(data, sn)
+                        : [HuaroCore.huaroParsearPadronHoja(data, sn)];
                 parsedLista.forEach(parsed => {
                     if (!parsed.usuarios.length) return;
                     let boc = parsed.bocatoma;
@@ -3710,8 +3730,8 @@ const COMISIONES = {
             btnLimpiar.disabled = false;
             window._huaroAutoMsg = '';
             if (esPatacancha) _huaroPatMigrar();
-            if (esPatacancha) _huaroPatMostrarMesMarcado();
-            if (esPatacancha) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
+            if (esPatacancha || esTiaparo) _huaroPatMostrarMesMarcado();
+            if (esPatacancha || esTiaparo) { const msgMig = window._huaroAutoMsg; _huaroPatAutoProgramarComite(_huaroComiteActivo()); if (msgMig) window._huaroAutoMsg = msgMig + (window._huaroAutoMsg ? '  ' + window._huaroAutoMsg : ''); }
             renderPanelHuaro();
         }
 
@@ -3720,9 +3740,9 @@ const COMISIONES = {
         // siempre ('cusshmi_huaro_…'); Patacancha usa las suyas para no mezclar
         // campañas ni PDA guardados entre las dos.
         function _huaroPrefijoStorage() {
-            return (window._huaroPerfilKey === 'PATACANCHA') ? 'cusshmi_patacancha_' : 'cusshmi_huaro_';
+            return 'cusshmi_' + ((window.HuaroCore && HuaroCore.huaroPerfilActual().prefijoStorage) || 'huaro') + '_';
         }
-        function _huaroKeyCampana(boc) { return _huaroPrefijoStorage() + 'campana__' + (window._huaroPerfilKey === 'PATACANCHA' ? 'PATACANCHA' : 'HUARO') + '__' + boc; }
+        function _huaroKeyCampana(boc) { return _huaroPrefijoStorage() + 'campana__' + (window._huaroPerfilKey || 'HUARO') + '__' + boc; }
         function _huaroKeyPda(iso) { return _huaroPrefijoStorage() + 'pda__' + iso; }
         function _huaroLeerCampana(boc) {
             // El PDA es semanal (se reprograman los usuarios elegibles cada
@@ -3809,7 +3829,7 @@ const COMISIONES = {
             const modalHtml = `
             <div id="modalHuaroHistorial" class="modal-overlay active" style="z-index:99996;">
                 <div class="modal-container" style="max-width:760px;max-height:85vh;overflow-y:auto;text-align:left;">
-                    <h3 style="margin-top:0;">🕒 Historial — Semanas trabajadas (${window._huaroPerfilKey === 'PATACANCHA' ? 'Patacancha' : 'Huaro'})</h3>
+                    <h3 style="margin-top:0;">🕒 Historial — Semanas trabajadas (${HuaroCore.huaroPerfilActual().titulo})</h3>
                     <p class="huaro-mini" style="margin-top:0;">Guardado en este navegador (no se sincroniza con otros dispositivos). Elige "Ver" para abrir esa semana en el PDA.</p>
                     <div style="overflow-x:auto;">
                         <table class="huaro-tabla" style="width:100%;">
@@ -3857,7 +3877,7 @@ const COMISIONES = {
         }
         // Patacancha numera sus semanas con la semana del año; Huaro conserva Semana 1…k del mes.
         function _huaroNumSem(w) {
-            return window._huaroPerfilKey === 'PATACANCHA' ? _huaroSemanaDelAnio(w.lunesISO) : w.n;
+            return _huaroEsPat() ? _huaroSemanaDelAnio(w.lunesISO) : w.n;
         }
         function _huaroSemanasDelMes(anio, mes0) {
             const ultimo = new Date(anio, mes0 + 1, 0);
@@ -3912,7 +3932,7 @@ const COMISIONES = {
         // Comité elegido: el seleccionado en pantalla; si no hay (o ya no existe),
         // el primero que tenga bocatomas programadas esta semana, o el primero.
         function _huaroComiteActivo() {
-            if (window._huaroPerfilKey !== 'PATACANCHA') return '';
+            if (!_huaroEsPat()) return '';
             const lista = _huaroComitesLista();
             if (_huaroComiteSel && lista.indexOf(_huaroComiteSel) >= 0) return _huaroComiteSel;
             const m = window._huaroComitePorBoc || {};
@@ -3929,14 +3949,14 @@ const COMISIONES = {
         // en Huaro, todas. También fija el comité en los encabezados de los anexos.
         function _huaroBocsParaAnexo() {
             const bocs = _huaroBocsConDatos();
-            if (window._huaroPerfilKey !== 'PATACANCHA') { HuaroCore.huaroSetComiteActivo(''); return bocs; }
+            if (!_huaroEsPat()) { HuaroCore.huaroSetComiteActivo(''); return bocs; }
             const com = _huaroComiteActivo();
             HuaroCore.huaroSetComiteActivo(com);
             const m = window._huaroComitePorBoc || {};
             return bocs.filter(b => m[b] === com);
         }
         function _huaroSufijoComite() {
-            const c = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroComiteActivo() : '';
+            const c = (_huaroEsPat()) ? _huaroComiteActivo() : '';
             return c ? ' - ' + c.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) : '';
         }
         function _huaroMsgSinBocsComite() {
@@ -3980,6 +4000,100 @@ const COMISIONES = {
         // Corrida "en seco" del programador para una bocatoma con el caudal y los
         // días/horas actuales — NO persiste nada. Se programan TODOS los usuarios
         // (menos los excluidos); el volumen depende del caudal y los días/horas.
+        // ══ Perfiles que usan el motor de CAMPAÑA con ciclos continuos (Patacancha y Tiaparo) ══
+        function _huaroEsPat() { return window._huaroPerfilKey === 'PATACANCHA' || window._huaroPerfilKey === 'TIAPARO'; }
+        function _huaroEsTiaparo() { return window._huaroPerfilKey === 'TIAPARO'; }
+        // Inicio de campaña por defecto: el 1° del primer mes (Tiaparo: el primer lunes de marzo, el mes de la R.D.).
+        function _huaroPatInicioDefecto(anio, perfil) {
+            const mm = String(perfil.campanaMesIni).padStart(2, '0');
+            if (!perfil.inicioPrimerLunes) return anio + '-' + mm + '-01';
+            const d = new Date(anio, perfil.campanaMesIni - 1, 1);
+            d.setDate(d.getDate() + ((8 - d.getDay()) % 7)); // primer lunes (si el día 1 ya es lunes, ese)
+            return _huaroISOd(d);
+        }
+        // Reglas de ciclo propias del perfil (si las tiene): cada cuántos días vuelve a regar, máximo del recorrido.
+        function _huaroPatCicloOpts() {
+            const p = HuaroCore.huaroPerfilActual(), o = {};
+            ['frecuenciaCortaDias', 'frecuenciaLargaDias', 'limiteCortoDias', 'maxDias'].forEach(k => { if (p[k] != null) o[k] = p[k]; });
+            return o;
+        }
+        // TIAPARO: parámetros efectivos de una fuente (bocatoma). El caudal por usuario NO se escribe: sale del
+        // volumen de la licencia (R.D. 310-2014) mes por mes, con las horas por topo de la comunidad (7 h).
+        function _huaroPatBocLicencia(boc, referenciaISO, o, cfg, perfil) {
+            const L = HuaroCore.HUARO_LICENCIA_TIAPARO;
+            const norm = HuaroCore.huaroNormNombre(boc);
+            const ref = referenciaISO || _huaroSemanaSeleccionada();
+            const anio = parseInt(ref.slice(0, 4), 10), mes = parseInt(ref.slice(5, 7), 10);
+            const hIni = _huaroMinDeHHMM(o.horaIni), hFin = _huaroMinDeHHMM(o.horaFin);
+            const simDef = (HuaroCore.HUARO_SIMULTANEOS_TIAPARO || {})[norm] || perfil.simultaneos || 2;
+            const simultaneos = Math.max(1, parseInt(o.simultaneos != null ? o.simultaneos : cfg.simultaneos[boc], 10) || simDef);
+            const horasManual = parseFloat(o.horasTopo) > 0;
+            const horasPorTopo = horasManual ? parseFloat(o.horasTopo) : perfil.horasPorTopo;
+            // El volumen de la licencia se reparte entre TODAS las hectáreas del padrón (las dos fuentes).
+            const areaPadronHa = _huaroOrden.reduce((s, b2) => s + (_huaroPadron[b2] || []).reduce((a, u) => a + (u.areaHa || 0), 0), 0) || L.areaHa;
+            const qMensual = HuaroCore.huaroCaudalLicenciaPorTurnoMensual(horasPorTopo, areaPadronHa);
+            const qMax = Math.max.apply(null, qMensual);
+            const qRef = qMensual[mes - 1] > 0 ? qMensual[mes - 1] : qMax; // mes sin demanda (dic-feb): se muestra el pico
+            return {
+                caudal: simultaneos * qRef, caudalEditado: false,
+                inicio: o.inicio || cfg.inicio[anio] || _huaroPatInicioDefecto(anio, perfil),
+                horaIniMin: hIni != null ? hIni : perfil.minInicio, horaFinMin: hFin != null ? hFin : perfil.minFin,
+                simultaneos, horasPorTopo, horasPorTopoEditado: horasManual, horasAuto: perfil.horasPorTopo,
+                qUsuario: qRef, caudalPorTurno: qRef, refQ: 0, refH: perfil.horasPorTopo,
+                licencia: true, qMensual, areaPadronHa, caudalPicoLs: simultaneos * qMax, aforoLs: (L.aforoLs || {})[norm] || null,
+            };
+        }
+        // Celda "Caudal" de la tabla de parámetros: en Tiaparo es de solo lectura (sale de la licencia) y avisa si
+        // el caudal pico supera lo que mide la fuente.
+        function _huaroPatCeldaCaudal(b, p, inp, q) {
+            if (!p.licencia) {
+                return `<td style="text-align:center;"><input type="number" min="0" step="0.1" value="${p.caudal || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)"> ${p.caudalEditado ? '<span title="Editado (el del esquema era distinto)">✎</span>' : ''}</td>`;
+            }
+            const sobra = p.aforoLs && p.caudalPicoLs > p.aforoLs + 1e-9;
+            return `<td style="text-align:center;font-size:12px;"><b>${(+p.caudal.toFixed(2)).toLocaleString('en-US')}</b> l/s<div style="font-size:10px;color:#6b7280;" title="Caudal de la licencia por usuario × usuarios a la vez. Cambia cada mes según la demanda de la R.D. 310-2014.">licencia · pico ${p.caudalPicoLs.toFixed(1)}</div>${sobra ? `<div style="font-size:10px;color:#b26a00;font-weight:700;" title="El pico de agosto-octubre pide ${p.caudalPicoLs.toFixed(1)} l/s y el aforo de la fuente (${HuaroCore.HUARO_LICENCIA_TIAPARO.aforoFecha}) es ${p.aforoLs} l/s.">⚠ aforo ${p.aforoLs}</div>` : (p.aforoLs ? `<div style="font-size:10px;color:#1f6b3a;">✔ aforo ${p.aforoLs}</div>` : '')}</td>`;
+        }
+        // TIAPARO: cuadro de la licencia por mes (volumen, m³/ha, caudal por usuario y por fuente) y control del
+        // volumen programado contra la licencia. Solo aparece en Tiaparo.
+        function _huaroPatLicenciaHtml(bocs, semanaISO) {
+            if (!_huaroEsTiaparo() || !bocs.length) return '';
+            const L = HuaroCore.HUARO_LICENCIA_TIAPARO, perfil = HuaroCore.huaroPerfilActual();
+            const fmt = (n, d) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+            const ps = bocs.map(b => ({ b, p: _huaroPatBoc(b, semanaISO) }));
+            // volumen programado por mes: se suma lo que ya quedó calculado de cada turno de la campaña
+            const prog = new Array(12).fill(0);
+            ps.forEach(({ b, p }) => {
+                try {
+                    const { crono } = _huaroPatCronograma(b, p.caudal);
+                    if (crono) Object.keys(crono.semanas).forEach(lun => crono.semanas[lun].programados.forEach(t => { prog[parseInt(t.fechaISO.slice(5, 7), 10) - 1] += t.volumenM3 || 0; }));
+                } catch (e) { /* sin cronograma */ }
+            });
+            const qm = ps[0].p.qMensual;
+            let filas = '', totL = 0, totP = 0;
+            for (let m = perfil.campanaMesIni; m <= perfil.campanaMesFin; m++) {
+                const v = L.mensualM3[m - 1], pv = prog[m - 1];
+                totL += v; totP += pv;
+                const pct = v > 0 ? pv / v * 100 : 0;
+                filas += `<tr><td style="text-align:left;">${_HUARO_MESES[m - 1]}</td><td style="text-align:right;">${fmt(v, 2)}</td><td style="text-align:right;">${fmt(v / ps[0].p.areaPadronHa, 1)}</td><td style="text-align:right;">${fmt(qm[m - 1], 2)}</td>`
+                    + ps.map(({ p }) => `<td style="text-align:right;">${fmt(p.simultaneos * qm[m - 1], 1)}</td>`).join('')
+                    + `<td style="text-align:right;">${fmt(pv, 2)}</td><td style="text-align:right;${pct > 100.5 ? 'color:#b26a00;font-weight:700;' : ''}">${pv > 0 ? fmt(pct, 1) + ' %' : '—'}</td></tr>`;
+            }
+            const aviso = ps.filter(({ p }) => p.aforoLs && p.caudalPicoLs > p.aforoLs + 1e-9)
+                .map(({ b, p }) => `${escapeHtml(b)}: con ${p.simultaneos} a la vez el pico es ${p.caudalPicoLs.toFixed(1)} l/s y el aforo es ${p.aforoLs} l/s`).join(' · ');
+            return `
+                    <div class="huaro-mini" style="margin:4px 0 8px;">
+                        <b>Licencia de uso de agua — ${escapeHtml(L.resolucion)} (${L.fecha}):</b> ${fmt(L.volumenAnualM3, 2)} m³/año para ${L.areaHa} ha (${L.usuarios} usuarios); el padrón tiene <b>${fmt(ps[0].p.areaPadronHa, 2)} ha</b>${ps[0].p.areaPadronHa > L.areaHa + 0.005 ? ' (más que la licencia: el volumen de la licencia se reparte entre todas, para no pasarse)' : ''}. El <b>caudal por usuario</b> se calcula con el volumen de la licencia de cada mes
+                        (m³/ha del mes ÷ 2 riegos al mes, sobre las ${perfil.horasPorTopo} h de un topo), así cada hectárea recibe lo que dice la licencia. El tiempo por topo es la regla de la comunidad (${perfil.horasPorTopo} h) y el riego se repite cada 15 días.
+                        Los caudales por fuente = usuarios a la vez × caudal por usuario; los aforos del ${L.aforoFecha} son solo una comparación.
+                        ${aviso ? `<div style="margin-top:4px;color:#b26a00;font-weight:700;">⚠ ${aviso}.</div>` : ''}
+                    </div>
+                    <div style="overflow-x:auto;margin-bottom:8px;">
+                    <table class="huaro-tabla">
+                        <thead><tr><th style="text-align:left;">Mes</th><th>Licencia (m³)</th><th>m³/ha</th><th>Caudal por usuario (l/s)</th>${ps.map(({ b, p }) => `<th>${escapeHtml(b)} (l/s)<br><span style="font-weight:400;font-size:10px;">${p.simultaneos} a la vez${p.aforoLs ? ' · aforo ' + p.aforoLs : ''}</span></th>`).join('')}<th>Programado (m³)</th><th>% de la licencia</th></tr></thead>
+                        <tbody>${filas}<tr style="font-weight:700;background:#f3ede6;"><td style="text-align:left;">TOTAL</td><td style="text-align:right;">${fmt(totL, 2)}</td><td colspan="${3 + ps.length - 1}"></td><td style="text-align:right;">${fmt(totP, 2)}</td><td style="text-align:right;">${totL > 0 ? fmt(totP / totL * 100, 1) + ' %' : ''}</td></tr></tbody>
+                    </table>
+                    </div>`;
+        }
+
         // ══ PATACANCHA — rol de CAMPAÑA con ciclos continuos ══
         // Parámetros editables (guardados en este navegador): inicio de campaña
         // (por defecto 1° de junio del año de la semana elegida), cada cuántos
@@ -3987,7 +4101,7 @@ const COMISIONES = {
         // vez en la bocatoma (2; por bocatoma). Ver huaroCronogramaCampana.
         function _huaroPatCfg() {
             let c = {};
-            try { c = JSON.parse(localStorage.getItem('cusshmi_patacancha_cfg')) || {}; } catch (e) { c = {}; }
+            try { c = JSON.parse(localStorage.getItem(_huaroPrefijoStorage() + 'cfg')) || {}; } catch (e) { c = {}; }
             c.frecuencia = parseInt(c.frecuencia, 10) || 8;
             c.simultaneos = c.simultaneos || {}; // (formato anterior) { boc: n }
             c.inicio = c.inicio || {};           // { 'AAAA': 'AAAA-MM-DD' } inicio de campaña por año
@@ -3995,7 +4109,7 @@ const COMISIONES = {
             c.boc = c.boc || {};                 // { boc: { caudal, inicio, horaIni, horaFin, simultaneos } } — lo editado por bocatoma
             return c;
         }
-        function _huaroPatGuardarCfg(c) { try { localStorage.setItem('cusshmi_patacancha_cfg', JSON.stringify(c)); } catch (e) { /* noop */ } }
+        function _huaroPatGuardarCfg(c) { try { localStorage.setItem(_huaroPrefijoStorage() + 'cfg', JSON.stringify(c)); } catch (e) { /* noop */ } }
         function _huaroMinDeHHMM(t) {
             const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ''));
             return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : null;
@@ -4008,6 +4122,7 @@ const COMISIONES = {
             const cfg = _huaroPatCfg();
             const perfil = HuaroCore.huaroPerfilActual();
             const o = sinOverrides ? {} : (cfg.boc[boc] || {});
+            if (perfil.modeloLicencia) return _huaroPatBocLicencia(boc, referenciaISO, o, cfg, perfil);
             const masa = HuaroCore.huaroMasaDeAgua(boc);
             const anio = parseInt((referenciaISO || _huaroSemanaSeleccionada()).slice(0, 4), 10);
             const inicioDef = cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01');
@@ -4125,7 +4240,7 @@ const COMISIONES = {
             const anio = parseInt(semanaISO.slice(0, 4), 10);
             const cfg = _huaroPatCfg();
             const desdeISO = boc ? _huaroPatBoc(boc, semanaISO).inicio
-                : (cfg.inicio[anio] || (anio + '-' + String(perfil.campanaMesIni).padStart(2, '0') + '-01'));
+                : (cfg.inicio[anio] || _huaroPatInicioDefecto(anio, perfil));
             const finCampISO = anio + '-' + String(perfil.campanaMesFin).padStart(2, '0') + '-30';
             const finSemISO = _huaroSumarDiasHuaroHist(semanaISO, 6);
             const hoy = _huaroHoyISO();
@@ -4148,14 +4263,14 @@ const COMISIONES = {
             const camp = _huaroLeerCampana(boc);
             if (rango.hastaISO < rango.desdeISO) return { rango, crono: null };
             const p = _huaroPatBoc(boc, semanaISO);
-            const crono = HuaroCore.huaroCronogramaCampana({
+            const crono = HuaroCore.huaroCronogramaCampana(Object.assign({
                 usuarios: _huaroPadron[boc] || [], caudalLs: parseFloat(caudalLs) || 0, bocatoma: boc,
                 desdeISO: rango.desdeISO, hastaISO: rango.hastaISO,
                 caudalPorTurnoLs: p.qUsuario, simultaneos: p.simultaneos, horasPorTopo: p.horasPorTopo,
                 ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
                 excluidos: camp.excluidos,
                 mesesIncluidos: rango.meses || null,
-            });
+            }, _huaroPatCicloOpts(), { caudalPorTurnoMensualLs: p.licencia ? p.qMensual : null }));
             return { rango, crono };
         }
         // Caja con los parámetros del ciclo de la bocatoma elegida (reemplaza "Días y horas de la semana").
@@ -4179,7 +4294,7 @@ const COMISIONES = {
                                     <span>Hora de término</span>
                                     <input type="time" id="huaroPatHFin" value="${hh(p.horaFinMin)}" step="900" onchange="huaroPatCfgCambio('HFin')" class="huaro-sel" style="${inpStyle}">
                                     <span>Se repite</span>
-                                    <span style="font-size:11px;line-height:1.3;">cada <b>8 días</b> si el recorrido de todos dura hasta 7; si dura más, cada <b>15</b></span>
+                                    <span style="font-size:11px;line-height:1.3;">${_huaroEsTiaparo() ? 'cada <b>15 días</b> (si el recorrido de todos dura más, se alarga)' : 'cada <b>8 días</b> si el recorrido de todos dura hasta 7; si dura más, cada <b>15</b>'}</span>
                                     <span>Riegan a la vez</span>
                                     <span><input type="number" id="huaroPatSimul" value="${p.simultaneos}" min="1" max="60" step="1" onchange="huaroPatCfgCambio('Simul')" class="huaro-sel" style="${inpStyle}width:62px;"> usuarios</span>
                                 </div>
@@ -4204,7 +4319,7 @@ const COMISIONES = {
             renderPanelHuaro();
         }
         function _huaroPatAutoProgramar(boc) {
-            if (!boc || window._huaroPerfilKey !== 'PATACANCHA') return null;
+            if (!boc || !_huaroEsPat()) return null;
             if (!_huaroPatAuto()) return null; // modo manual: no se programa solo
             const q = _huaroPatBoc(boc).caudal;
             if (!(q > 0)) return null; // sin caudal no hay qué programar
@@ -4218,7 +4333,7 @@ const COMISIONES = {
         // Cada bocatoma se auto-programa una sola vez (marca cfg.auto): si luego se "Quita" o
         // se edita, no se vuelve a pisar sola; para rehacerla se usan los botones de programar.
         function _huaroPatAutoProgramarComite(comite, forzar) {
-            if (window._huaroPerfilKey !== 'PATACANCHA' || !comite) return;
+            if (!_huaroEsPat() || !comite) return;
             if (!forzar && !_huaroPatAuto()) return; // modo manual
             const m = window._huaroComitePorBoc || {};
             const cfg0 = _huaroPatCfg();
@@ -4243,7 +4358,7 @@ const COMISIONES = {
         // El G-1 resume TODA la comisión (los 4 comités por semana), no solo el comité elegido: en modo automático,
         // antes de armarlo se programan los comités que aún no lo estén (lo que se eliminó a mano no se vuelve a crear).
         function _huaroPatProgramarTodosComitesAuto() {
-            if (window._huaroPerfilKey !== 'PATACANCHA' || !_huaroPatAuto()) return;
+            if (!_huaroEsPat() || !_huaroPatAuto()) return;
             const msg = window._huaroAutoMsg;
             _huaroComitesLista().forEach(c => _huaroPatAutoProgramarComite(c));
             window._huaroAutoMsg = msg;
@@ -4252,7 +4367,7 @@ const COMISIONES = {
         // Caudal escrito en el detalle de la bocatoma: al confirmarlo (Enter / salir del campo)
         // se guarda y re-programa solo; mientras se teclea solo se actualiza la vista previa.
         function huaroPatCaudalDetalle(valor) {
-            if (window._huaroPerfilKey !== 'PATACANCHA' || !_huaroBocSel) return;
+            if (!_huaroEsPat() || !_huaroBocSel) return;
             const q = parseFloat(valor);
             if (!(q > 0)) return;
             const cfg = _huaroPatCfg();
@@ -4278,7 +4393,7 @@ const COMISIONES = {
         // (jornada, usuarios a la vez, horas por topo) y esos valores tapaban los nuevos por defecto.
         // Se limpian y se restablece Choquebamba Pumamarca a lo acordado (30 l/s, 3 a la vez, 02:00–22:00).
         function _huaroPatMigrar() {
-            if (window._huaroPerfilKey !== 'PATACANCHA') return;
+            if (!_huaroEsPat()) return;
             const cfg = _huaroPatCfg();
             if (cfg.mig2) return;
             Object.keys(cfg.boc).forEach(b => { delete cfg.boc[b].horasTopo; });
@@ -4422,18 +4537,18 @@ const COMISIONES = {
                 const p = _huaroPatBoc(b, semanaISO);
                 const us = _huaroPadron[b] || [];
                 // ciclo: se calcula con un solo día de campaña (solo importa la plantilla de una pasada)
-                const r = HuaroCore.huaroCronogramaCampana({
+                const r = HuaroCore.huaroCronogramaCampana(Object.assign({
                     usuarios: us, caudalLs: p.caudal, desdeISO: p.inicio, hastaISO: p.inicio,
                     caudalPorTurnoLs: p.qUsuario, simultaneos: p.simultaneos, horasPorTopo: p.horasPorTopo,
                     ventanaIniMin: p.horaIniMin, ventanaFinMin: (p.horaFinMin > p.horaIniMin ? p.horaFinMin : p.horaIniMin + 60),
                     excluidos: _huaroLeerCampana(b).excluidos,
-                });
+                }, _huaroPatCicloOpts(), { caudalPorTurnoMensualLs: p.licencia ? p.qMensual : null }));
                 const ciclo = r.excedeFrecuencia
                     ? (() => {
                         // Sin horas a mano, el tiempo es inverso al caudal por usuario → más usuarios a la vez NO acortan
                         // el recorrido (el caudal total es el mismo): hace falta más caudal.
                         const qNec = Math.ceil(p.caudal * r.pasadaDias / r.maxDias);
-                        const aviso = p.horasPorTopoEditado && r.simultaneosNecesarios
+                        const aviso = (p.horasPorTopoEditado || p.licencia) && r.simultaneosNecesarios
                             ? `<a href="javascript:void(0)" onclick="huaroPatBocCfg('${q(b)}','simultaneos',${r.simultaneosNecesarios})" title="Poner los usuarios a la vez necesarios para que el recorrido no pase de ${r.maxDias} días">(usar ${r.simultaneosNecesarios})</a>`
                             : `<span style="font-size:10px;color:#6b7280;" title="Con ${p.caudal} l/s el recorrido toma ${r.pasadaDias} días; para ${r.maxDias} días harían falta ~${qNec} l/s.">(~${qNec} l/s)</span>`;
                         return `<span style="color:#b26a00;font-weight:700;" title="Recorrer a todos los usuarios toma ${r.pasadaDias} días (máximo ${r.maxDias}). El caudal total (${p.caudal} l/s) no alcanza para menos: quedan usuarios pendientes cada semana.">⚠ recorrido ${r.pasadaDias} d</span> ${aviso}`;
@@ -4442,11 +4557,11 @@ const COMISIONES = {
                 return `<tr>
                     <td style="text-align:left;">${escapeHtml(b)}</td>
                     <td style="text-align:center;">${us.length}</td>
-                    <td style="text-align:center;"><input type="number" min="0" step="0.1" value="${p.caudal || ''}" style="${inp}width:70px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','caudal',this.value)"> ${p.caudalEditado ? '<span title="Editado (el del esquema era distinto)">✎</span>' : ''}</td>
+                    ${_huaroPatCeldaCaudal(b, p, inp, q)}
                     <td style="text-align:center;"><input type="date" value="${p.inicio}" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','inicio',this.value)"></td>
                     <td style="text-align:center;"><input type="time" value="${hh(p.horaIniMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaIni',this.value)"></td>
                     <td style="text-align:center;"><input type="time" value="${hh(p.horaFinMin)}" step="900" style="${inp}" onchange="huaroPatBocCfg('${q(b)}','horaFin',this.value)"></td>
-                    <td style="text-align:center;"><input type="number" min="0.05" max="24" step="0.01" value="${+p.horasPorTopo.toFixed(2)}" style="${inp}width:64px;text-align:right;" title="${(p.horasPorTopo / 0.33).toFixed(2)} h por hectárea" onchange="huaroPatBocCfg('${q(b)}','horasTopo',this.value)"> ${p.horasPorTopoEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al tiempo automático (proporcional al caudal)" onclick="huaroPatBocCfg('${q(b)}','horasTopo','')">↺ auto</a>` : '<span style="font-size:10px;color:#1f6b3a;" title="Calculado: proporcional al caudal por usuario">auto</span>'}<div style="font-size:10px;color:#6b7280;">${(p.horasPorTopo / 0.33).toFixed(2)} h/ha</div></td>
+                    <td style="text-align:center;"><input type="number" min="0.05" max="24" step="0.01" value="${+p.horasPorTopo.toFixed(2)}" style="${inp}width:64px;text-align:right;" title="${(p.horasPorTopo / 0.33).toFixed(2)} h por hectárea" onchange="huaroPatBocCfg('${q(b)}','horasTopo',this.value)"> ${p.horasPorTopoEditado ? `<a href="javascript:void(0)" style="font-size:10px;" title="Volver al tiempo automático (proporcional al caudal)" onclick="huaroPatBocCfg('${q(b)}','horasTopo','')">↺ auto</a>` : ('<span style="font-size:10px;color:#1f6b3a;" title="' + (p.licencia ? 'Regla de la comunidad: 1 topo = ' + p.horasAuto + ' h' : 'Calculado: proporcional al caudal por usuario') + '">' + (p.licencia ? 'regla' : 'auto') + '</span>')}<div style="font-size:10px;color:#6b7280;">${(p.horasPorTopo / 0.33).toFixed(2)} h/ha</div></td>
                     <td style="text-align:center;"><input type="number" min="1" max="60" step="1" value="${p.simultaneos}" style="${inp}width:56px;text-align:right;" onchange="huaroPatBocCfg('${q(b)}','simultaneos',this.value)"></td>
                     <td style="text-align:center;font-size:11px;white-space:nowrap;">${ciclo}</td>
                     <td style="text-align:center;white-space:nowrap;">
@@ -4458,7 +4573,8 @@ const COMISIONES = {
             return `
                 <div class="huaro-card">
                     <label style="font-weight:700;font-size:13px;">⚙️ Parámetros por bocatoma del comité (editables)</label>
-                    <div class="huaro-mini" style="margin:4px 0 8px;">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>En modo automático cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); en manual, pulsa "Programar". Se guarda en este navegador. El caudal precargado es el del esquema hidráulico.<br>
+                    ${_huaroPatLicenciaHtml(bocs, semanaISO)}
+                    <div class="huaro-mini" style="margin:4px 0 8px;${_huaroEsTiaparo() ? 'display:none;' : ''}">Caudal (l/s), día y hora de inicio, hora de término de cada día, horas por topo y cuántos usuarios riegan a la vez. <b>En modo automático cada cambio re-programa solo esa bocatoma</b> (días de riego y usuarios de cada semana); en manual, pulsa "Programar". Se guarda en este navegador. El caudal precargado es el del esquema hidráulico.<br>
                         <b>Tiempo de riego proporcional al caudal:</b> tomando Huaro como base (1.5 h por topo = 4.55 h/ha con <input type="number" min="0.1" step="0.1" value="${+_huaroPatBoc(bocs[0], semanaISO).refQ.toFixed(2)}" style="${inp}width:64px;" onchange="huaroPatRefQ(this.value)" title="Caudal por usuario de referencia en Huaro (promedio de sus bocatomas)"> l/s por usuario), en cada bocatoma las horas por topo = 1.5 × referencia ÷ (caudal ÷ usuarios a la vez). A más caudal por usuario, menos horas; mismo volumen por hectárea. Si escribes "Horas/topo" a mano, esa cifra manda (↺ auto la deja otra vez automática).</div>
                     <div style="overflow-x:auto;">
                     <table class="huaro-tabla">
@@ -4514,7 +4630,7 @@ const COMISIONES = {
         // en pantalla si lo hay; si no, el del esquema hidráulico) → deja listos
         // los Anexos G-1…G-4 de cada semana sin tener que ir bocatoma por bocatoma.
         function huaroProgramarTodasPat(soloComite) {
-            if (!window.HuaroCore || !_huaroOrden.length) { alert('Primero carga el padrón de Patacancha.'); return; }
+            if (!window.HuaroCore || !_huaroOrden.length) { alert('Primero carga el padrón de ' + HuaroCore.huaroPerfilActual().titulo + '.'); return; }
             const sinCaudal = [], excede = [];
             let ok = 0, semanas = 0, rango = null;
             const comiteAct = soloComite ? _huaroComiteActivo() : '';
@@ -4546,7 +4662,7 @@ const COMISIONES = {
         }
 
         function _huaroPreviewBocatoma(boc, caudalLs) {
-            if (window._huaroPerfilKey === 'PATACANCHA') {
+            if (_huaroEsPat()) {
                 // Vista previa de la semana elegida dentro del rol de campaña
                 const semanaISO = _huaroSemanaSeleccionada();
                 const { crono } = _huaroPatCronograma(boc, caudalLs);
@@ -4642,13 +4758,13 @@ const COMISIONES = {
             }
             const _optMes = _HUARO_MESES.map((m, i) => `<option value="${i}"${i === _mes0 ? ' selected' : ''}>${m}</option>`).join('');
             const _semLbl = _semN
-                ? `Semana ${_semN} ${window._huaroPerfilKey === 'PATACANCHA' ? 'del año · ' : 'de '}${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
+                ? `Semana ${_semN} ${_huaroEsPat() ? 'del año · ' : 'de '}${_HUARO_MESES[_mes0]} ${_anio} · Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)}`
                 : `Semana del Lun ${_fc(semanaISO)} al Dom ${_fc(semanaFinISO)} (fuera de ${_HUARO_MESES[_mes0]} ${_anio})`;
 
             // Selector de bocatoma — marca ✓ las ya programadas esta semana.
             const progSet = new Set(_huaroBocsConDatos());
             if (_huaroBocSel && _huaroOrden.indexOf(_huaroBocSel) < 0) _huaroBocSel = null;
-            const _esPat = window._huaroPerfilKey === 'PATACANCHA';
+            const _esPat = _huaroEsPat();
             const _comiteAct = _esPat ? _huaroComiteActivo() : '';
             const _bocsDelComite = _esPat ? _huaroOrden.filter(b => (window._huaroComitePorBoc || {})[b] === _comiteAct) : _huaroOrden;
             if (_huaroBocSel && _bocsDelComite.indexOf(_huaroBocSel) < 0) _huaroBocSel = null; // la bocatoma elegida es de otro comité
@@ -4675,7 +4791,7 @@ const COMISIONES = {
 
                 const caudalIni = (_huaroCaudalTemp[boc] != null && _huaroCaudalTemp[boc] !== '')
                     ? _huaroCaudalTemp[boc]
-                    : (window._huaroPerfilKey === 'PATACANCHA' && _huaroPatBoc(boc).caudal > 0) ? _huaroPatBoc(boc).caudal
+                    : (_huaroEsPat() && _huaroPatBoc(boc).caudal > 0) ? _huaroPatBoc(boc).caudal
                     : (pdaGuardado && pdaGuardado.caudales && pdaGuardado.caudales[boc] != null)
                         ? pdaGuardado.caudales[boc]
                         : (masa && masa.caudalLs != null ? masa.caudalLs : '');
@@ -4723,7 +4839,7 @@ const COMISIONES = {
                                 <input type="number" class="huaro-caudal" id="huaroCaudalBoc" min="0" step="0.001" onchange="huaroPatCaudalDetalle(this.value)"
                                     value="${caudalIni}" placeholder="l/s" oninput="huaroRecalcularBoc()" style="margin-top:4px;">
                             </div>
-                            ${window._huaroPerfilKey === 'PATACANCHA' ? _huaroPatCajaCicloHtml(boc, semanaISO) : `
+                            ${_huaroEsPat() ? _huaroPatCajaCicloHtml(boc, semanaISO) : `
                             <div class="huaro-box">
                                 <div class="k">Días y horas de riego de la semana</div>
                                 <div style="margin-top:5px;">
@@ -4765,12 +4881,12 @@ const COMISIONES = {
                 <div class="huaro-card" id="huaroResumenResultados" ${hayAnexos ? '' : 'style="display:none;"'}>
                     <h3 style="margin:0 0 8px;font-size:15px;">📋 Bocatomas programadas — Semana ${_semN || ''} (${_fc(semanaISO)} al ${_fc(semanaFinISO)})</h3>
                     <div id="huaroResumenTexto"></div>
-                    ${window._huaroPerfilKey === 'PATACANCHA' ? `<div class="huaro-mini" style="margin-top:10px;padding:8px 10px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:6px;">
+                    ${_huaroEsPat() ? `<div class="huaro-mini" style="margin-top:10px;padding:8px 10px;background:#f1f8f6;border:1px solid #b9d9d1;border-radius:6px;">
                         Anexos <b>G-2, G-3 y G-4</b> del comité: <b>${escapeHtml(_huaroComiteActivo())}</b> (cámbialo en "1) Selecciona el comité"). El <b>G-1</b> reúne los comités que tengan algo programado esa semana.
                     </div>` : ''}
                     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="huaro-btn ok" onclick="huaroNuevaBocatoma()">➕ Programar otra bocatoma</button>
-                        <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 ${window._huaroPerfilKey === 'PATACANCHA' ? '(los comités)' : '(canales de derivación)'}</button>
+                        <button class="huaro-btn" onclick="huaroMostrarG1()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-1 ${_huaroEsPat() ? '(los comités)' : '(canales de derivación)'}</button>
                         <button class="huaro-btn" onclick="huaroMostrarG2()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-2 (toda la semana)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG3()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-3 (por bocatoma)</button>
                         <button class="huaro-btn" onclick="huaroMostrarG4()" ${hayAnexos ? '' : 'disabled'}>📄 Anexo G-4 (por usuario)</button>
@@ -4779,12 +4895,13 @@ const COMISIONES = {
                     <div class="huaro-mini" style="margin-top:8px;">El <b>Anexo G-1</b> y el <b>Anexo G-2</b> reúnen <b>todas</b> las bocatomas programadas esta semana (en esta comisión cada bocatoma es su propio canal de derivación, así que ambos anexos muestran las mismas filas con columnas distintas). El G-3 y el G-4 se eligen por bocatoma. Con <b>🗑 Quitar</b> sacas una bocatoma de la programación; con <b>🗑 Borrar todas</b> dejas la semana sin ninguna.</div>
                 </div>`;
 
-            const resumenHtml = window._huaroPerfilKey === 'PATACANCHA' ? _huaroResumenMesPatHtml(_anio, _mes0) : resumenHtmlBase;
+            const resumenHtml = _huaroEsPat() ? _huaroResumenMesPatHtml(_anio, _mes0) : resumenHtmlBase;
 
             ca.innerHTML = `
             <div id="panelHuaro">
-                <h2>${window._huaroPerfilKey === 'PATACANCHA' ? '🏔️ PDA — Sub Sector Hidráulico Quebrada Patacancha · Yuracmayu · Ollantaytambo' : '🌾 PDA — Comisión de Regantes de Huaro'}</h2>
-                <p class="huaro-mini" style="margin-top:0;">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${window._huaroPerfilKey === 'PATACANCHA' ? 'horas por topo (proporcional al caudal por usuario)' : HuaroCore.HUARO_H_POR_TOPO + ' h'} · se programa una bocatoma a la vez.${window._huaroPerfilKey === 'PATACANCHA' ? ' Riego de ' + HuaroCore.huaroPerfilActual().minInicio / 60 + ':00 a ' + HuaroCore.huaroPerfilActual().minFin / 60 + ':00, varios usuarios a la vez por bocatoma, repitiendo cada N días; la campaña (jun–nov) se programa de una vez desde su inicio hasta la fecha.' : ''}</p>
+                <h2>${window._huaroPerfilKey === 'PATACANCHA' ? '🏔️ PDA — Sub Sector Hidráulico Quebrada Patacancha · Yuracmayu · Ollantaytambo' : window._huaroPerfilKey === 'TIAPARO' ? '🌊 PDA — Comité de Usuarios Tiaparo · Comisión de Usuarios de Agua de las Microcuencas Huaytampo y Runtumayo' : '🌾 PDA — Comisión de Regantes de Huaro'}</h2>
+                ${_huaroEsTiaparo() ? '<p class="huaro-mini" style="margin-top:0;">Tiaparo: modelo por topos · 1 topo = ' + HuaroCore.HUARO_HA_POR_TOPO + ' ha · turno = n° topos × ' + HuaroCore.huaroPerfilActual().horasPorTopo + ' h · las dos fuentes (Runtumayo y Huaytampo) riegan a la vez · cada usuario vuelve a regar cada 15 días · jornada de 06:00 a 18:00 · campaña de marzo a noviembre, programada desde su inicio hasta la semana en curso. El caudal sale del volumen de la licencia (R.D. 310-2014).</p>' : ''}
+                <p class="huaro-mini" style="margin-top:0;${_huaroEsTiaparo() ? 'display:none;' : ''}">Modelo por topos · 1 topo = ${HuaroCore.HUARO_HA_POR_TOPO} ha · turno = n° topos × ${_huaroEsPat() ? 'horas por topo (proporcional al caudal por usuario)' : HuaroCore.HUARO_H_POR_TOPO + ' h'} · se programa una bocatoma a la vez.${_huaroEsPat() ? ' Riego de ' + HuaroCore.huaroPerfilActual().minInicio / 60 + ':00 a ' + HuaroCore.huaroPerfilActual().minFin / 60 + ':00, varios usuarios a la vez por bocatoma, repitiendo cada N días; la campaña (jun–nov) se programa de una vez desde su inicio hasta la fecha.' : ''}</p>
 
                 <div class="huaro-card">
                     <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
@@ -4826,7 +4943,7 @@ const COMISIONES = {
                     <div class="huaro-mini" style="margin-top:5px;">Elige el comité y luego programa sus bocatomas una por una (o todas las del comité). Los Anexos G-2, G-3 y G-4 son por comité; el G-1 reúne los comités programados.</div>
                 </div>` : ''}
                 ${_esPat ? _huaroPatTablaBocatomasHtml(_comiteAct) : ''}
-                ${window._huaroPerfilKey === 'PATACANCHA' ? `
+                ${_huaroEsPat() ? `
                 <div class="huaro-card" style="border-color:#2f7d6d;background:#f1f8f6;">
                     <label style="font-weight:700;font-size:14px;">⚙️ Generar los Anexos G-1, G-2, G-3 y G-4 de toda la campaña<br>
                         <span style="font-weight:400;font-size:12px;color:#355;">No necesitas ningún anexo previo: el sistema los crea a partir del padrón. Con un clic programa las ${_huaroOrden.length} bocatomas (campaña completa, con el caudal del esquema hidráulico) y deja listos los 4 anexos de cada semana. También puedes programar una bocatoma a la vez, más abajo.</span>
@@ -4857,9 +4974,9 @@ const COMISIONES = {
                 ${resumenHtml}
             </div>`;
 
-            if (hayAnexos && window._huaroPerfilKey !== 'PATACANCHA') _huaroPintarResumen();
+            if (hayAnexos && !_huaroEsPat()) _huaroPintarResumen();
             // Patacancha: mostrar de entrada el aviso del ciclo (cada cuántos días riega cada usuario)
-            if (window._huaroPerfilKey === 'PATACANCHA' && _huaroBocSel) {
+            if (_huaroEsPat() && _huaroBocSel) {
                 const inpQ = document.getElementById('huaroCaudalBoc');
                 if (inpQ && parseFloat(inpQ.value) > 0) huaroRecalcularBoc();
             }
@@ -5050,7 +5167,7 @@ const COMISIONES = {
 
             // PATACANCHA: se programa TODA la campaña (inicio → hoy) con ciclos
             // continuos, no una sola semana.
-            if (window._huaroPerfilKey === 'PATACANCHA') {
+            if (_huaroEsPat()) {
                 const r = _huaroProgramarCampanaPat(boc, caudalLs);
                 delete _huaroCaudalTemp[boc];
                 _huaroBocFlash = boc; _huaroBocFlashSemanas = null;
@@ -5354,8 +5471,8 @@ const COMISIONES = {
         // semana que cruza dos meses (ej. 29/06 – 05/07) sale UNA sola vez, en el mes donde empieza.
         function _huaroPeriodoMostrado() {
             const { anio, mes0 } = _huaroMesAnioMostrado();
-            let meses = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroPatCfg().meses : null;
-            if (!meses && window._huaroPerfilKey === 'PATACANCHA') { // modo 'inicio de campaña hasta hoy': los meses desde el inicio hasta el mes de hoy
+            let meses = (_huaroEsPat()) ? _huaroPatCfg().meses : null;
+            if (!meses && _huaroEsPat()) { // modo 'inicio de campaña hasta hoy': los meses desde el inicio hasta el mes de hoy
                 const hoy = new Date(), ini = HuaroCore.huaroPerfilActual().campanaMesIni;
                 if (hoy.getFullYear() === anio && hoy.getMonth() + 1 > ini) { meses = []; for (let m = ini; m <= hoy.getMonth() + 1; m++) meses.push(m); }
             }
@@ -5556,7 +5673,7 @@ const COMISIONES = {
 
         function _huaroDatosG2() {
             const bocs = _huaroBocsParaAnexo();
-            const comiteNombre = (window._huaroPerfilKey === 'PATACANCHA') ? _huaroComiteActivo() : '';
+            const comiteNombre = (_huaroEsPat()) ? _huaroComiteActivo() : '';
             const iso = _huaroResultados[bocs[0]].agregado.semanaInicioISO;
             return {
                 semanaInicioISO: iso,
@@ -5572,7 +5689,7 @@ const COMISIONES = {
         // riegan en paralelo; caudal por día = suma). Un comité sin nada programado
         // no aparece. En otras comisiones, igual que el G-2.
         function _huaroDatosG1() {
-            if (window._huaroPerfilKey !== 'PATACANCHA') return _huaroDatosG2();
+            if (!_huaroEsPat()) return _huaroDatosG2();
             HuaroCore.huaroSetComiteActivo(''); // el G-1 es de toda la comisión, no de un comité
             const bocs = _huaroBocsConDatos();
             const m = window._huaroComitePorBoc || {};
@@ -5607,7 +5724,7 @@ const COMISIONES = {
         // cómo se renderiza (huaroConstruirG1Html).
         function huaroMostrarG1() {
             _huaroPatProgramarTodosComitesAuto();
-            if (window._huaroPerfilKey === 'PATACANCHA') { const pda = _huaroLeerPda(_huaroSemanaSeleccionada()); if (pda && pda.resultados && Object.keys(pda.resultados).length) _huaroResultados = pda.resultados; }
+            if (_huaroEsPat()) { const pda = _huaroLeerPda(_huaroSemanaSeleccionada()); if (pda && pda.resultados && Object.keys(pda.resultados).length) _huaroResultados = pda.resultados; }
             if (!_huaroBocsConDatos().length) { alert('No hay bocatomas con usuarios programados esta semana.'); return; }
             const datos = _huaroDatosG1();
             const html = HuaroCore.huaroConstruirG1Html(datos);

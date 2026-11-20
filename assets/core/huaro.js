@@ -74,6 +74,27 @@ const HUARO_PERFILES = {
         cicloContinuo: true, simultaneos: 2, frecuenciaDias: 8, simultaneosReferencia: 2,
         campanaMesIni: 6, campanaMesFin: 11,
     },
+    // Comité de Usuarios TIAPARO (Bloque de Riego III) — Comisión de Usuarios de Agua de las Microcuencas
+    // Huaytampo y Runtumayo (Ollantaytambo, Urubamba, Cusco). Datos de la R.D. N° 310-2014-ANA/AAA XII.UV
+    // (licencia de uso de agua: 388,088.40 m³/año con demanda mensual) y del padrón de predios de la Comunidad.
+    // Reglas de la comunidad: riego cada 15 días, 1 topo = 7 h, jornada de 06:00 a 18:00. A diferencia de
+    // Patacancha, el caudal por usuario sale del VOLUMEN de la licencia (modeloLicencia), mes por mes.
+    TIAPARO: {
+        titulo: 'Tiaparo', archivoPadron: 'Predios_Comunidad_Tiaparo.xlsx', toposDesdeArea: 'cuarto',
+        junta: 'JUNTA DE USUARIOS DEL SECTOR HIDRAULICO MENOR MEDIO VILCANOTA MAPACHO',
+        subsector: 'COMISION DE USUARIOS DE AGUA DE LAS MICROCUENCAS HUAYTAMPO Y RUNTUMAYO',
+        comisionNombre: 'COMISION DE USUARIOS DE AGUA DE LAS MICROCUENCAS HUAYTAMPO Y RUNTUMAYO',
+        comiteNombre: 'COMITE DE USUARIOS TIAPARO - BLOQUE DE RIEGO III',
+        fuente: 'RIOS HUAYTAMPO Y RUNTUMAYO',
+        aaa: 'AUTORIDAD ADMINISTRATIVA DEL AGUA URUBAMBA - VILCANOTA',
+        ala: 'ADMINISTRACION LOCAL DE AGUA CUSCO',
+        prefijoStorage: 'tiaparo',
+        horasPorTopo: 7, minInicio: 6 * 60, minFin: 18 * 60, refHorasPorTopo: 7,
+        cicloContinuo: true, simultaneos: 2, simultaneosReferencia: 2,
+        frecuenciaDias: 15, frecuenciaCortaDias: 15, frecuenciaLargaDias: 15, limiteCortoDias: 15, maxDias: 16,
+        campanaMesIni: 3, campanaMesFin: 11, inicioPrimerLunes: true,
+        modeloLicencia: true,
+    },
 };
 let HUARO_PERFIL_KEY = 'HUARO';
 // Comité cuyo anexo se está generando (Patacancha: cada comité de usuarios
@@ -183,6 +204,35 @@ const HUARO_CAUDAL_ESQUEMA_PATACANCHA = {
     'TRANCAPUNCO': 30,
     'UNCATRANCA': 30,
 };
+
+// ── TIAPARO — licencia de uso de agua (R.D. N° 310-2014-ANA/AAA XII.UV, 07/04/2014) ──
+// areaHa = área del bloque de riego aprobada (40.35 ha, 56 usuarios); volumenAnualM3 = volumen de la licencia;
+// mensualM3 = "Demanda M3" por mes (Ene…Dic) del Art. 3°. aforoLs = caudal disponible medido en cada fuente
+// (aforo por flotador del 19/11/2026) — solo para avisar si el caudal programado lo supera.
+const HUARO_LICENCIA_TIAPARO = {
+    resolucion: 'R.D. N° 310-2014-ANA/AAA XII.UV', fecha: '07/04/2014',
+    areaHa: 40.35, usuarios: 56, volumenAnualM3: 388088.40,
+    mensualM3: [0, 0, 3382.64, 13986.19, 18577.96, 35857.56, 55349.26, 69371.27, 78480.82, 74591.26, 38491.45, 0],
+    riegosPorMes: 2, // riego cada 15 días
+    aforoLs: { 'RIORUNTUMAYO': 67.517, 'RIOHUAYTAMPO': 38.704 }, aforoFecha: '19/11/2026',
+};
+// Usuarios que riegan a la vez por defecto en cada fuente (7 h por topo, jornada de 12 h):
+//   · Runtumayo (94.25 topos): 5 → recorrido de 13 días, cada 15 (necesita hasta ~64 l/s ≤ aforo de 67.5).
+//   · Huaytampo (57 topos): 3 → recorrido de 16 días (máx. aceptable). Con 4 saldría en 15 días pero pediría
+//     hasta ~51 l/s en agosto-octubre, más que el aforo de 38.7 l/s de la fuente.
+const HUARO_SIMULTANEOS_TIAPARO = { 'RIORUNTUMAYO': 5, 'RIOHUAYTAMPO': 3 };
+// Caudal (l/s) que recibe UN usuario en cada mes según la licencia: el volumen por hectárea del mes
+// (demanda mensual ÷ 40.35 ha) repartido en los riegos del mes, sobre las horas de un topo:
+//   q = (V_mes ÷ área_licencia) × ha_por_topo ÷ (riegos_por_mes × horas_por_topo × 3.6)
+// Así cada hectárea recibe exactamente el volumen de la licencia sin cambiar el tiempo por topo.
+// 'areaHa' = hectáreas entre las que se reparte el volumen: las del padrón actual (si pasan de las 40.35 ha de la
+// licencia, el volumen de la licencia se reparte entre todas y NO se programa más de lo permitido).
+function huaroCaudalLicenciaPorTurnoMensual(horasPorTopo, areaHa) {
+    const L = HUARO_LICENCIA_TIAPARO;
+    const A = parseFloat(areaHa) > 0 ? parseFloat(areaHa) : L.areaHa;
+    const h = parseFloat(horasPorTopo) > 0 ? parseFloat(horasPorTopo) : 7;
+    return L.mensualM3.map(v => (v / A) * HUARO_HA_POR_TOPO / (L.riegosPorMes * h * 3.6));
+}
 
 // ── Canal de conducción / derivación por bocatoma ──
 // Nombres tal cual el inventario GIS de la comisión (COMISIÓN DE REGANTES
@@ -409,6 +459,43 @@ function huaroToposDesdeArea(areaHa) {
     return Math.max(0.25, Math.round((a / HUARO_HA_POR_TOPO) * 4) / 4);
 }
 
+// ── Parser del padrón de TIAPARO ──
+// Una sola hoja: N° | PROPIETARIO | NOMBRE PREDIO | ÁREA (ha) | FUENTE DE AGUA (Runtumayo / Huaytampo).
+// Cada FUENTE es una bocatoma (riegan en paralelo). Un propietario con varios predios en la MISMA fuente es
+// UN usuario (suma sus áreas); si tiene predios en las dos fuentes, queda como usuario en cada una según
+// dónde esté su predio. El nombre del predio no se usa. Todo en MAYÚSCULAS.
+// Devuelve [{ bocatoma, comite, usuarios:[{nOrden,nombre,apellidos,nombres,areaHa,topos,toposTexto,predios}] }].
+function huaroParsearPadronTiaparo(filas2D) {
+    const filas = Array.isArray(filas2D) ? filas2D : [];
+    const limpiar = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+    const clave = (v) => limpiar(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const numero = (v) => { if (typeof v === 'number') return v; const t = limpiar(v).replace(',', '.'); return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN; };
+    const comite = HUARO_PERFILES.TIAPARO.comiteNombre;
+    const porFuente = new Map(); // 'RIO RUNTUMAYO' → Map(claveNombre → usuario)
+    filas.forEach(fila => {
+        if (!fila) return;
+        const c = Array.from(fila);
+        // columnas: [n, propietario, predio, área, fuente] (SheetJS puede traer una columna vacía a la izquierda)
+        const i0 = c.findIndex(x => typeof x === 'number' && Number.isFinite(x));
+        if (i0 < 0) return;
+        const nombre = limpiar(c[i0 + 1]), area = numero(c[i0 + 3]), fuente = clave(c[i0 + 4]);
+        if (!nombre || !isFinite(area) || area <= 0 || !fuente) return;
+        const boc = 'RIO ' + fuente;
+        if (!porFuente.has(boc)) porFuente.set(boc, new Map());
+        const m = porFuente.get(boc), k = clave(nombre);
+        if (m.has(k)) { const u = m.get(k); u.areaHa += area; u.predios++; }
+        else m.set(k, { nombre: nombre.toUpperCase(), apellidos: nombre.toUpperCase(), nombres: '', areaHa: area, toposTexto: '', predios: 1 });
+    });
+    const out = [];
+    porFuente.forEach((m, boc) => {
+        const usuarios = Array.from(m.values()).map((u, i) => {
+            u.areaHa = Math.round(u.areaHa * 10000) / 10000; u.nOrden = i + 1; u.topos = huaroToposDesdeArea(u.areaHa); return u;
+        });
+        out.push({ bocatoma: boc, comite, usuarios });
+    });
+    return out;
+}
+
 // ── Parser de una hoja del padrón de PATACANCHA ──
 // Cada hoja es un comité de usuarios y puede traer VARIAS bocatomas, una tras
 // otra, cada una anunciada por una fila "BOCATOMA <nombre>" (o "BOCATOMA - <nombre>"
@@ -501,6 +588,9 @@ function huaroCronogramaCampana(opts) {
     const fin = (opts.ventanaFinMin != null) ? opts.ventanaFinMin : HUARO_MIN_FIN_DIA;
     const hxt = (opts.horasPorTopo != null) ? opts.horasPorTopo : HUARO_H_POR_TOPO;
     const win = fin - ini;
+    // Caudal por turno MES A MES (Tiaparo: sale del volumen de la licencia). null = caudal fijo.
+    const qMes = (iso) => Array.isArray(opts.caudalPorTurnoMensualLs)
+        ? (parseFloat(opts.caudalPorTurnoMensualLs[parseInt(String(iso).slice(5, 7), 10) - 1]) || 0) : null;
 
     // ── 1) Plantilla de UNA pasada (días relativos al inicio de la pasada) ──
     const plantillaPara = (nLanes) => {
@@ -554,7 +644,8 @@ function huaroCronogramaCampana(opts) {
                 opts.mesesIncluidos.indexOf(parseInt(fechaISO.slice(5, 7), 10)) < 0) return;
             const fechaTerminoISO = _huaroSumarDias(desdeISO, k * periodoDias + t.diaFin);
             const tiempoH = t.u.topos * hxt;
-            const caudalTurno = (opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) : caudalLs / lanes;
+            const qm = qMes(fechaISO);
+            const caudalTurno = (qm != null) ? qm : ((opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) : caudalLs / lanes);
             turnos.push({
                 nOrden: t.u.nOrden, nombre: t.u.nombre, apellidos: t.u.apellidos, nombres: t.u.nombres,
                 areaHa: t.u.areaHa, topos: t.u.topos, toposTexto: t.u.toposTexto,
@@ -601,7 +692,8 @@ function huaroCronogramaCampana(opts) {
             const idx = dow(iso);
             if (idx >= 0 && idx < HUARO_DIAS_SEMANA) {
                 minOperacion += suma;
-                caudalPorDia[idx] = (opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) * lanes : caudalLs;
+                const qd = qMes(iso);
+                caudalPorDia[idx] = (qd != null) ? qd * lanes : ((opts.caudalPorTurnoLs != null) ? (parseFloat(opts.caudalPorTurnoLs) || 0) * lanes : caudalLs);
                 diasUsados = Math.max(diasUsados, idx + 1);
             }
         });
@@ -621,7 +713,7 @@ function huaroCronogramaCampana(opts) {
         semanas[lunes] = {
             programados: prog, pendientes: pendientesKeys,
             agregado: {
-                bocatoma: opts.bocatoma || '', caudalLs, semanaInicioISO: lunes,
+                bocatoma: opts.bocatoma || '', caudalLs: (qMes(lunes) != null) ? lanes * qMes(_huaroSumarDias(lunes, 3)) : caudalLs, semanaInicioISO: lunes,
                 semanaFinISO: _huaroSumarDias(lunes, HUARO_DIAS_SEMANA - 1),
                 diasRiego: huaroDiasRiegoDefault(),
                 periodoInicioISO: pIni.fechaISO, periodoInicioHora: pIni.inicioTexto,
@@ -1237,7 +1329,7 @@ if (typeof window !== 'undefined') {
         get HUARO_JUNTA() { return HUARO_JUNTA; }, get HUARO_SUBSECTOR() { return HUARO_SUBSECTOR; },
         get HUARO_COMISION_NOMBRE() { return HUARO_COMISION_NOMBRE; }, get HUARO_FUENTE() { return HUARO_FUENTE; },
         get HUARO_AAA() { return HUARO_AAA; }, get HUARO_ALA() { return HUARO_ALA; },
-        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroParsearPadronTiaparo, HUARO_LICENCIA_TIAPARO, HUARO_SIMULTANEOS_TIAPARO, huaroCaudalLicenciaPorTurnoMensual, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
@@ -1250,7 +1342,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         HUARO_HA_POR_TOPO, HUARO_H_POR_TOPO, HUARO_DIAS_SEMANA,
         HUARO_JUNTA, HUARO_SUBSECTOR, HUARO_COMISION_NOMBRE, HUARO_FUENTE, HUARO_AAA, HUARO_ALA,
-        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
+        HUARO_VENTANA_PATACANCHA, HUARO_SIMULTANEOS_PATACANCHA, huaroCaudalReferenciaHuaro, huaroSetComiteActivo, huaroComiteActivo, huaroSubsectorTexto, huaroParsearTopos, huaroParsearPadronHoja, huaroParsearPadronPatacancha, huaroParsearPadronTiaparo, HUARO_LICENCIA_TIAPARO, HUARO_SIMULTANEOS_TIAPARO, huaroCaudalLicenciaPorTurnoMensual, huaroCronogramaCampana, HUARO_CAUDAL_ESQUEMA_PATACANCHA, huaroToposDesdeArea, huaroAplicarPerfil, huaroPerfilActual, HUARO_PERFILES, huaroClaveUsuario, huaroMasaDeAgua, huaroNormNombre, HUARO_MASA_AGUA, huaroCanalBocatoma, HUARO_CANAL_BOCATOMA,
         huaroDiasRiegoDefault, huaroNormalizarDiasRiego, huaroResumenDiasRiego, HUARO_MIN_INICIO_DIA, HUARO_MIN_FIN_DIA,
         HUARO_DIAS_NOMBRE, HUARO_DIAS_ABREV,
         huaroProgramarBocatoma, huaroLunesDeLaSemana,
