@@ -676,9 +676,13 @@ function huaroCronogramaCampana(opts) {
         const dow = (iso) => Math.round((new Date(iso + 'T00:00:00') - new Date(lunes + 'T00:00:00')) / 864e5); // 0..6 (puede pasar de 6 si termina la semana siguiente)
         prog.forEach((p, i) => { p.ordenSuministro = i + 1; p.dia = dow(p.fechaISO) + 1; p.nombreDia = HUARO_DIAS_NOMBRE[p.dia - 1]; });
 
-        // Intervalos de funcionamiento por día (para horas de operación y días usados)
+        // Intervalos de funcionamiento por día (para horas de operación y días usados). Cuentan TAMBIÉN los turnos
+        // que empezaron en una semana anterior y siguen corriendo en esta (un turno largo, p. ej. 159 h = 13 días de
+        // 12 h, ocupa varios días de varias semanas): si no, esos días salían con caudal 0 aunque el agua estaba corriendo.
+        const domSemISO = _huaroSumarDias(lunes, 6);
+        const turnosDeLaSemana = turnos.filter(p => p.fechaTerminoISO >= lunes && p.fechaISO <= domSemISO);
         const intervalos = {}; // fechaISO → [[a,b], …]
-        prog.forEach(p => {
+        turnosDeLaSemana.forEach(p => {
             const nDias = Math.round((new Date(p.fechaTerminoISO + 'T00:00:00') - new Date(p.fechaISO + 'T00:00:00')) / 864e5);
             for (let d = 0; d <= nDias; d++) {
                 const iso = _huaroSumarDias(p.fechaISO, d);
