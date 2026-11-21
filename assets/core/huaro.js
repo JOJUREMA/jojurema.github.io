@@ -667,9 +667,40 @@ function huaroCronogramaCampana(opts) {
         });
     }
 
+    // ── 2b) Cada semana es una unidad cerrada: un turno que cruza del domingo al lunes se PARTE en dos tramos ──
+    // (el de esta semana termina el domingo al cierre de la jornada; el de la siguiente sigue el lunes desde su apertura).
+    // Así el período, las horas, el caudal por día y el volumen de cada semana son SOLO de esa semana, y el G-3 / G-4
+    // muestran cada tramo con su propio número de orden. Los dos tramos llevan el mismo usuario (y se marca la continuación).
+    const diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+    const turnosSeg = [];
+    turnos.forEach(t => {
+        const lunIni = huaroLunesDeLaSemana(t.fechaISO), lunFin = huaroLunesDeLaSemana(t.fechaTerminoISO);
+        if (lunIni === lunFin) { turnosSeg.push(t); return; }
+        for (let lun = lunIni, primera = true; lun <= lunFin; lun = _huaroSumarDias(lun, 7), primera = false) {
+            const ultima = (lun === lunFin);
+            const fIni = primera ? t.fechaISO : lun, fFin = ultima ? t.fechaTerminoISO : _huaroSumarDias(lun, 6);
+            const iniMin = primera ? t.inicioMin : ini, finMin = ultima ? t.terminoMin : fin;
+            const nD = diasEntre(fIni, fFin);
+            let minutos = 0, vol = 0;
+            for (let d = 0; d <= nD; d++) {
+                const iso = _huaroSumarDias(fIni, d);
+                const m = Math.max(0, (d === nD ? finMin : fin) - (d === 0 ? iniMin : ini));
+                const qd = qMes(iso);
+                minutos += m; vol += ((qd != null) ? qd : t.caudalLs) * (m / 60) * 3.6;
+            }
+            const q0 = qMes(fIni);
+            turnosSeg.push(Object.assign({}, t, {
+                fechaISO: fIni, fechaTerminoISO: fFin, inicioMin: iniMin, terminoMin: finMin,
+                inicioTexto: _huaroHHMM(iniMin), terminoTexto: _huaroHHMM(finMin),
+                tiempoH: minutos / 60, volumenM3: vol, caudalLs: (q0 != null) ? q0 : t.caudalLs,
+                continuaDeSemanaAnterior: !primera, continuaSemanaSiguiente: !ultima,
+            }));
+        }
+    });
+
     // ── 3) Agrupar por semana (lunes–domingo) ──
     const porSemana = {};
-    turnos.forEach(t => {
+    turnosSeg.forEach(t => {
         const lunes = huaroLunesDeLaSemana(t.fechaISO);
         (porSemana[lunes] = porSemana[lunes] || []).push(t);
     });
@@ -684,7 +715,7 @@ function huaroCronogramaCampana(opts) {
         // que empezaron en una semana anterior y siguen corriendo en esta (un turno largo, p. ej. 159 h = 13 días de
         // 12 h, ocupa varios días de varias semanas): si no, esos días salían con caudal 0 aunque el agua estaba corriendo.
         const domSemISO = _huaroSumarDias(lunes, 6);
-        const turnosDeLaSemana = turnos.filter(p => p.fechaTerminoISO >= lunes && p.fechaISO <= domSemISO);
+        const turnosDeLaSemana = prog; // cada tramo ya cae dentro de esta semana
         const intervalos = {}; // fechaISO → [[a,b], …]
         turnosDeLaSemana.forEach(p => {
             const nDias = Math.round((new Date(p.fechaTerminoISO + 'T00:00:00') - new Date(p.fechaISO + 'T00:00:00')) / 864e5);
@@ -1183,7 +1214,7 @@ function huaroConstruirG3Html(datos) {
                 <td style="${td}">${p.inicioTexto}</td>
                 <td style="${td}white-space:nowrap;">${_huaroFechaCorta(p.fechaTerminoISO || p.fechaISO)}</td>
                 <td style="${td}">${p.terminoTexto}</td>
-                <td style="${td}"></td>
+                <td style="${td}font-size:8.5px;">${p.continuaSemanaSiguiente ? 'Continúa la semana siguiente' : (p.continuaDeSemanaAnterior ? 'Viene de la semana anterior' : '')}</td>
             </tr>`).join('');
         if (!filas) filas = `<tr><td style="${td}" colspan="11">Sin usuarios programados.</td></tr>`;
 

@@ -4120,7 +4120,8 @@ const COMISIONES = {
         // si la versión guardada es otra, se reprograma sola (modo automático). Súbela cada vez que cambie el cálculo.
         //   2 = turnos largos cuentan en las semanas siguientes; Tiaparo: 15 días exactos con turnos largos primero.
         //   3 = pendientes en orden real de riego con su fecha; Tiaparo programa solo hasta la semana próxima.
-        const HUARO_MOTOR_VERSION = 3;
+        //   4 = los turnos que cruzan el domingo se parten: cada semana tiene solo su tramo (período, horas y volumen).
+        const HUARO_MOTOR_VERSION = 4;
         function _huaroPatCfg() {
             let c = {};
             try { c = JSON.parse(localStorage.getItem(_huaroPrefijoStorage() + 'cfg')) || {}; } catch (e) { c = {}; }
@@ -6224,7 +6225,7 @@ const COMISIONES = {
                     const _ft = (p.fechaTerminoISO || p.fechaISO || '').split('-').reverse().join('/');
                     const vals = [i + 1, p.nombre, +(p.areaHa || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2),
                         +(p.tiempoH || 0).toFixed(2), +((p.caudalLs != null ? p.caudalLs : (bl.caudalLs || 0))).toFixed(2),
-                        _fd, p.inicioTexto, _ft, p.terminoTexto, ''];
+                        _fd, p.inicioTexto, _ft, p.terminoTexto, p.continuaSemanaSiguiente ? 'Continúa la semana siguiente' : (p.continuaDeSemanaAnterior ? 'Viene de la semana anterior' : '')];
                     vals.forEach((v, j) => { const c = ws.getCell(r, j + 1); c.value = v; if (j >= 2 && j <= 5) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, j); });
                     r++;
                 });
