@@ -6245,51 +6245,81 @@ const COMISIONES = {
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, ('Anexo G3 ' + _bocG3).trim() + _huaroSufijoComite() + '.xlsx');
         }
 
-        // Excel del G-4 — una fila por usuario (todos los programados de la
-        // bocatoma elegida, igual alcance que "Imprimir todas (bocatoma)"), con
-        // los mismos campos del formato individual (orden, canal, caudal,
-        // período, volumen) más columnas en blanco para firmas/observaciones.
+        // Excel del G-4 — MISMO formato que la vista previa (huaroConstruirG4Html): una hoja de "Orden de Suministro de Agua" POR
+        // USUARIO (cuadro de título, N°, texto del usuario, casillas con líneas para nombre del canal / caudal / período / horas /
+        // volumen, fecha, firma del Jefe de Subsector, firmas del tomero y del usuario, y Observaciones), una por página, de todos
+        // los usuarios programados de la bocatoma elegida (mismo alcance que "Imprimir todas (bocatoma)").
         async function _huaroExcelG4(boc, ctx) {
             const r = _huaroResultados[boc];
             if (!r || !r.programados.length) { alert('No hay usuarios programados en esta bocatoma.'); return; }
-            const semanaInicioISO = r.agregado.semanaInicioISO;
-            const fechaTexto = (semanaInicioISO || '').split('-').reverse().join('/');
-            const heads = ['N° Orden de Suministro', 'El Usuario Sr.(a)', 'Nombre del Canal', 'Caudal (l/s)',
-                'A partir del día', 'Hora inicio', 'Hasta el día', 'Hora término',
-                'Horas total del uso del agua', 'Volumen de agua a entregar (m³)', 'Fecha',
-                'Entregué conforme — Tomero (firma)', 'Recibí conforme — Usuario (firma)', 'Observaciones'];
-            const alinear = (c, i) => { c.alignment = { horizontal: i === 1 ? 'left' : 'center', vertical: 'middle' }; };
+            const cx = _huaroCtxG4(boc);
+            const NC = 14, ALTO = 21, FUENTE = 'Arial';
+            const fcorta = iso => (iso || '').split('-').reverse().join('/');
+            const fechaLarga = new Date(cx.fechaInicioSemanaISO + 'T00:00:00').toLocaleDateString('es-PE', { day: 'numeric', month: 'long', year: 'numeric' });
             const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
-            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-4', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
-            ws.columns = heads.map((h, i) => ({ width: i === 1 ? 32 : (i === 11 || i === 12 ? 26 : (i === 13 ? 24 : 14)) }));
-            const poner = (fila, et, val) => {
-                ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
-                ws.mergeCells(fila, 2, fila, heads.length);
-                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-4', { views: [{ showGridLines: false }], pageSetup: { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.5, right: 0.5, top: 0.6, bottom: 0.6, header: 0.3, footer: 0.3 } } });
+            ws.columns = Array.from({ length: NC }, () => ({ width: 8.6 }));
+            const fmt2 = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const borde = (f1, c1, f2, c2, estilo) => { // recuadro alrededor de un rango
+                for (let f = f1; f <= f2; f++) for (let c = c1; c <= c2; c++) {
+                    const cel = ws.getCell(f, c), b = Object.assign({}, cel.border || {});
+                    if (f === f1) b.top = { style: estilo }; if (f === f2) b.bottom = { style: estilo };
+                    if (c === c1) b.left = { style: estilo }; if (c === c2) b.right = { style: estilo };
+                    cel.border = b;
+                }
             };
-            ws.mergeCells(1, 1, 1, heads.length);
-            ws.getCell(1, 1).value = 'Formato G-4: Orden de Suministro de Agua';
-            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
-            poner(3, 'Sector hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(4, 'Subsector hidráulico:', HuaroCore.huaroSubsectorTexto());
-            const cmG4 = HuaroCore.huaroComiteActivo() ? 1 : 0;
-            if (cmG4) poner(5, 'Comité:', HuaroCore.huaroComiteActivo());
-            poner(5 + cmG4, 'Canal de abastecimiento de agua:', HuaroCore.huaroCanalBocatoma(boc));
-            poner(6 + cmG4, 'Caudal:', (r.agregado.caudalLs || 0).toFixed(2) + ' (l/s)');
-            poner(7 + cmG4, 'Fecha:', fechaTexto);
-            let fila = 9 + cmG4;
-            heads.forEach((h, i) => { const c = ws.getCell(fila, i + 1); c.value = h; _huaroEstiloEnc(c); });
-            fila++;
-            r.programados.forEach(p => {
-                const _fd = (p.fechaISO || '').split('-').reverse().join('/');
-                const _ft = (p.fechaTerminoISO || p.fechaISO || '').split('-').reverse().join('/');
-                const vals = [p.ordenSuministro != null ? p.ordenSuministro : '', p.nombre, HuaroCore.huaroCanalBocatoma(boc),
-                    +((p.caudalLs != null ? p.caudalLs : (r.agregado.caudalLs || 0))).toFixed(2),
-                    _fd, p.inicioTexto, _ft, p.terminoTexto,
-                    +(p.tiempoH || 0).toFixed(2), +(p.volumenM3 || 0).toFixed(2), fechaTexto,
-                    '', '', ''];
-                vals.forEach((v, i) => { const c = ws.getCell(fila, i + 1); c.value = v; if (i === 3 || i === 8 || i === 9) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
-                fila++;
+            const celda = (f, c1, c2, valor, op) => { // celda (o rango combinado) con texto
+                op = op || {};
+                if (c2 > c1) ws.mergeCells(f, c1, f, c2);
+                const cel = ws.getCell(f, c1);
+                cel.value = valor;
+                cel.font = { name: FUENTE, size: op.size || 10, bold: !!op.bold };
+                cel.alignment = { horizontal: op.h || 'left', vertical: 'middle', wrapText: !!op.wrap };
+                if (op.linea) for (let c = c1; c <= c2; c++) { const x = ws.getCell(f, c); x.border = Object.assign({}, x.border || {}, { bottom: { style: 'medium' } }); }
+                return cel;
+            };
+
+            r.programados.forEach((p, idx) => {
+                const b = 1 + idx * ALTO; // primera fila del bloque
+                const F = k => b + k;
+                // Cuadro del título
+                celda(F(0), 1, NC, 'Formato G-4.', { bold: true, size: 13, h: 'center' });
+                celda(F(1), 1, NC, 'Orden de Suministro de Agua', { bold: true, size: 13, h: 'center' });
+                borde(F(0), 1, F(1), NC, 'medium');
+                ws.getRow(F(0)).height = 22; ws.getRow(F(1)).height = 22; ws.getRow(F(2)).height = 8;
+                // Cuerpo
+                celda(F(3), 1, 1, 'N°', { bold: true });
+                celda(F(3), 2, 4, p.ordenSuministro != null ? p.ordenSuministro : '', { h: 'center', linea: true });
+                const par = ws.getCell(F(4), 1); ws.mergeCells(F(4), 1, F(4), NC);
+                par.value = { richText: [
+                    { font: { name: FUENTE, size: 10 }, text: 'El Usuario Sr.(a): ' },
+                    { font: { name: FUENTE, size: 10, bold: true, underline: true }, text: String(p.nombre || '') },
+                    { font: { name: FUENTE, size: 10 }, text: ', según el Plan de Aprovechamiento de la Disponibilidad Hídrica aprobado, utilizará el agua según el detalle siguiente:' }] };
+                par.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+                ws.getRow(F(4)).height = 36;
+                const caja = '☐';
+                celda(F(5), 1, 1, caja, { size: 12, h: 'center' }); celda(F(5), 2, 5, 'Nombre del canal:'); celda(F(5), 6, NC, boc, { linea: true, h: 'center' });
+                celda(F(6), 1, 1, caja, { size: 12, h: 'center' }); celda(F(6), 2, 4, 'Caudal:'); celda(F(6), 5, 7, fmt2(p.caudalLs != null ? p.caudalLs : cx.caudalLs), { linea: true, h: 'center' }); celda(F(6), 8, 8, 'l/s.');
+                celda(F(7), 1, 1, caja, { size: 12, h: 'center' }); celda(F(7), 2, 4, 'A partir del día:'); celda(F(7), 5, 6, fcorta(p.fechaISO), { linea: true, h: 'center' });
+                celda(F(7), 7, 7, 'hora:', { h: 'right' }); celda(F(7), 8, 8, p.inicioTexto, { linea: true, h: 'center' });
+                celda(F(7), 9, 10, 'hasta el día:', { h: 'right' }); celda(F(7), 11, 12, fcorta(p.fechaTerminoISO || p.fechaISO), { linea: true, h: 'center' });
+                celda(F(7), 13, 13, 'hora:', { h: 'right' }); celda(F(7), 14, 14, p.terminoTexto, { linea: true, h: 'center' });
+                celda(F(8), 1, 1, caja, { size: 12, h: 'center' }); celda(F(8), 2, 6, 'Horas total del uso del agua:'); celda(F(8), 7, 9, fmt2(p.tiempoH), { linea: true, h: 'center' });
+                celda(F(9), 1, 1, caja, { size: 12, h: 'center' }); celda(F(9), 2, 7, 'Volumen de agua a entregar (m³):'); celda(F(9), 8, 10, fmt2(p.volumenM3), { linea: true, h: 'center' });
+                for (let k = 5; k <= 9; k++) ws.getRow(F(k)).height = 22;
+                ws.getRow(F(10)).height = 10;
+                celda(F(11), 1, NC, fechaLarga, { h: 'right' });
+                ws.getRow(F(12)).height = 30; celda(F(12), 6, 9, '', { linea: true });
+                celda(F(13), 6, 9, 'Jefe de Subsector Hidráulico', { h: 'center' });
+                ws.getRow(F(14)).height = 14;
+                ws.getRow(F(15)).height = 30; celda(F(15), 2, 6, '', { linea: true }); celda(F(15), 9, 13, '', { linea: true });
+                celda(F(16), 2, 6, 'Entregué conforme — Tomero (firma)', { h: 'center', size: 9 }); celda(F(16), 9, 13, 'Recibí conforme — Usuario (firma)', { h: 'center', size: 9 });
+                ws.getRow(F(17)).height = 10;
+                celda(F(18), 1, 4, 'Observaciones:', { bold: true });
+                ws.getRow(F(19)).height = 24; celda(F(19), 1, NC, '', { linea: true });
+                borde(F(3), 1, F(19), NC, 'medium'); // recuadro del cuerpo
+                ws.getRow(F(20)).addPageBreak(); // una hoja por usuario
             });
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, ('Anexo G4 ' + boc).trim() + _huaroSufijoComite() + '.xlsx');
         }
