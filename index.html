@@ -5923,15 +5923,14 @@ const COMISIONES = {
             // (el valor real, por el merge de celdas del exportador, queda en
             // la columna B de esa misma fila).
             let semanaInicioISO = '', semanaFinISO = '';
-            for (let i = 0; i < filaHeader; i++) {
-                const fila = grid[i] || [];
-                if (normCelda(fila[0]) === 'SEMANA:') {
-                    const m = (fila[1] || '').toString().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s*AL\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
-                    if (m) {
-                        semanaInicioISO = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
-                        semanaFinISO = m[6] + '-' + m[5].padStart(2, '0') + '-' + m[4].padStart(2, '0');
-                    }
-                    break;
+            // El rango "DEL dd/mm/aaaa AL dd/mm/aaaa" puede estar en cualquier celda de las filas de arriba (en el Excel nuevo
+            // va a la derecha; en los antiguos, junto a "Semana:" en la columna B).
+            for (let i = 0; i < filaHeader && !semanaInicioISO; i++) {
+                const txt = (grid[i] || []).map(v => (v == null ? '' : v.toString())).join(' | ');
+                const m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s*AL\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+                if (m) {
+                    semanaInicioISO = m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+                    semanaFinISO = m[6] + '-' + m[5].padStart(2, '0') + '-' + m[4].padStart(2, '0');
                 }
             }
 
@@ -6086,68 +6085,94 @@ const COMISIONES = {
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, 'Anexo G1.xlsx');
         }
 
+        // Excel del G-2: MISMA estructura que la vista previa (huaroConstruirG2Html) — título, datos institucionales a la
+        // izquierda con MES y SEMANA a la derecha, encabezado en DOS niveles (PERÍODO y CAUDAL PROGRAMADO POR DÍAS agrupan
+        // sus sub-columnas), columnas con el texto completo y fila TOTAL con fondo gris. El importador G-2 → G-1
+        // (_huaroParsearG2ExcelParaG1) depende de: la celda "N° DE USUARIOS" del encabezado y las 19 columnas en este orden.
         async function _huaroExcelGOficial(datos, formato, ctx) {
-            const semTxt = 'DEL ' + (datos.semanaInicioISO || '').split('-').reverse().join('/') + ' AL ' + (datos.semanaFinISO || '').split('-').reverse().join('/');
-            const _abv = ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'];
-            const _diaHeads = _abv.map((a, i) => a + ' ' + HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i) + ' (l/s)');
-            const heads = [
-                'NOMBRE DEL CANAL DE DERIVACIÓN', 'NOMBRE DE LA TOMA', 'NOMBRE DEL CANAL DE DISTRIBUCIÓN',
-                'N° DE USUARIOS', 'VOLUMEN DE AGUA PROGRAMADO (m³)', 'ÁREA BAJO RIEGO (Ha)',
-                'TIEMPO DE OPERACIÓN DEL CANAL (HORAS)',
-                'PERÍODO — INICIO', 'PERÍODO — HORA', 'PERÍODO — TÉRMINO', 'PERÍODO — HORA',
-                ..._diaHeads,
-                'OBSERVACIONES',
-            ];
-            const COLS_NUM_2DEC = new Set([4, 5, 6, 11, 12, 13, 14, 15, 16, 17]);
+            const NC = 19; // 3 de texto, usuarios, volumen, área, tiempo, 4 de período, 7 días, observaciones
+            const fcorta = iso => (iso || '').split('-').reverse().join('/');
+            const semTxt = 'DEL ' + fcorta(datos.semanaInicioISO) + ' AL ' + fcorta(datos.semanaFinISO);
             const wb = (ctx && ctx.wb) || new ExcelJS.Workbook();
-            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
-            ws.columns = heads.map((h, i) => ({ width: (i === 0 || i === 1 || i === 2 || i === 18) ? 22 : 12 }));
+            const ws = wb.addWorksheet((ctx && ctx.hoja) || 'Anexo G-2', { views: [{ showGridLines: false }], pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 } } });
+            ws.columns = [30, 18, 18, 11, 14, 10, 14, 12, 8, 12, 8, 9, 9, 9, 9, 9, 9, 9, 40].map(w => ({ width: w }));
+            const FUENTE = 'Arial';
 
-            const poner = (fila, et, val) => {
-                ws.getCell(fila, 1).value = et; ws.getCell(fila, 1).font = { bold: true, size: 10 };
-                ws.mergeCells(fila, 2, fila, heads.length);
-                ws.getCell(fila, 2).value = val; ws.getCell(fila, 2).font = { size: 10 };
-            };
-            ws.mergeCells(1, 1, 1, heads.length);
-            ws.getCell(1, 1).value = 'ANEXO G2: Programación de Distribución del Agua a nivel de canales de distribución';
-            ws.getCell(1, 1).font = { bold: true, size: 12 }; ws.getCell(1, 1).alignment = { horizontal: 'center' };
-            poner(3, 'AAA:', HuaroCore.HUARO_AAA);
-            poner(4, 'ALA:', HuaroCore.HUARO_ALA);
-            poner(5, 'Sector Hidráulico:', HuaroCore.HUARO_JUNTA);
-            poner(6, 'Subsector Hidráulico:', HuaroCore.huaroSubsectorTexto());
-            const cmG2 = HuaroCore.huaroComiteActivo() ? 1 : 0; // con comité (Patacancha) va una fila más: "Comité:"
-            if (cmG2) poner(7, 'Comité:', HuaroCore.huaroComiteActivo());
-            poner(7 + cmG2, 'Mes:', datos.mesTexto || '');
-            poner(8 + cmG2, 'Semana:', semTxt);
-            let r = 10 + cmG2;
-            // Centrado: columnas de texto (canal/toma/canal, observaciones) a la
-            // izquierda; todo lo demás (números) centrado.
-            const alinear = (c, i) => {
-                c.alignment = { horizontal: (i <= 2 || i === heads.length - 1) ? 'left' : 'center', vertical: 'middle' };
-            };
-            heads.forEach((h, i) => { const c = ws.getCell(r, i + 1); c.value = h; _huaroEstiloEnc(c); });
-            r++;
+            // Título
+            ws.mergeCells(1, 1, 1, NC);
+            const cT = ws.getCell(1, 1);
+            cT.value = 'ANEXO G2: Programación de Distribución del Agua a nivel de canales de distribución';
+            cT.font = { name: FUENTE, bold: true, size: 13 }; cT.alignment = { horizontal: 'center', vertical: 'middle' };
+            ws.getRow(1).height = 24;
 
-            let tU = 0, tV = 0, tA = 0, tHmax = 0;
+            // Datos institucionales (izquierda) y Mes / Semana (derecha), como en la vista previa
+            const izq = [['AAA:', HuaroCore.HUARO_AAA], ['ALA:', HuaroCore.HUARO_ALA], ['Sector Hidráulico:', HuaroCore.HUARO_JUNTA], ['Subsector Hidráulico:', HuaroCore.huaroSubsectorTexto()]];
+            if (HuaroCore.huaroComiteActivo()) izq.push(['Comité:', HuaroCore.huaroComiteActivo()]);
+            const rt = (et, val) => ({ richText: [{ font: { name: FUENTE, bold: true, size: 10 }, text: et + ' ' }, { font: { name: FUENTE, size: 10 }, text: String(val || '') }] });
+            izq.forEach(([et, val], i) => {
+                ws.mergeCells(3 + i, 1, 3 + i, 15);
+                const c = ws.getCell(3 + i, 1); c.value = rt(et, val); c.alignment = { horizontal: 'left', vertical: 'middle' };
+            });
+            [['Mes:', datos.mesTexto || ''], ['Semana:', semTxt]].forEach(([et, val], i) => {
+                ws.mergeCells(3 + i, 16, 3 + i, NC);
+                const c = ws.getCell(3 + i, 16); c.value = rt(et, val); c.alignment = { horizontal: 'right', vertical: 'middle' };
+            });
+
+            // Encabezado de la tabla en 2 niveles
+            const h1 = 3 + izq.length + 1, h2 = h1 + 1;
+            [[1, 'NOMBRE DEL\nCANAL DE\nDERIVACIÓN'], [2, 'NOMBRE DE\nLA TOMA'], [3, 'NOMBRE DEL\nCANAL DE\nDISTRIBUCIÓN'], [4, 'N° DE\nUSUARIOS'],
+                [5, 'VOLUMEN\nDE AGUA\nPROGRAMADO\n(m³)'], [6, 'ÁREA\nBAJO\nRIEGO\n(Ha)'], [7, 'TIEMPO DE\nOPERACIÓN\nDEL CANAL\n(HORAS)'], [NC, 'OBSERVACIONES']
+            ].forEach(([col, texto]) => { ws.mergeCells(h1, col, h2, col); const c = ws.getCell(h1, col); c.value = texto; _huaroEstiloEnc(c); });
+            ws.mergeCells(h1, 8, h1, 11); const cP = ws.getCell(h1, 8); cP.value = 'PERÍODO'; _huaroEstiloEnc(cP);
+            ws.mergeCells(h1, 12, h1, 18); const cD = ws.getCell(h1, 12); cD.value = 'CAUDAL PROGRAMADO POR DÍAS (l/s)'; _huaroEstiloEnc(cD);
+            [[8, 'INICIO'], [9, 'HORA'], [10, 'TÉRMINO'], [11, 'HORA']].forEach(([col, texto]) => { const c = ws.getCell(h2, col); c.value = texto; _huaroEstiloEnc(c); });
+            ['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'].forEach((ab, i) => { const c = ws.getCell(h2, 12 + i); c.value = ab + '\n' + HuaroCore._huaroDiaDelMes(datos.semanaInicioISO, i); _huaroEstiloEnc(c); });
+            ws.getRow(h1).height = 58; ws.getRow(h2).height = 30;
+
+            // Filas de datos
+            const NUM2 = '#,##0.00';
+            let r = h2 + 1, tU = 0, tV = 0, tA = 0, tHmax = 0;
             const tDia = new Array(7).fill(0);
-            datos.filas.forEach(f => {
+            (datos.filas || []).forEach(f => {
                 tU += f.nUsuarios; tV += f.volumenTotalM3; tA += f.areaProgramadaHa;
                 tHmax = Math.max(tHmax, f.tiempoTotalH);
                 (f.caudalPorDia || []).forEach((c, i) => { tDia[i] += c; });
+                const obs = f.nPendientes
+                    ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha') : '';
                 const vals = [
                     HuaroCore.HUARO_FUENTE, f.bocatoma, HuaroCore.huaroCanalBocatoma(f.bocatoma),
-                    f.nUsuarios, +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(2),
-                    (f.periodoInicioISO || f.semanaInicioISO || '').split('-').reverse().join('/'), (f.periodoInicioHora || '04:00'),
-                    (f.periodoFinISO || f.semanaFinISO || '').split('-').reverse().join('/'), (f.periodoFinHora || '20:00'),
-                    ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)),
-                    f.nPendientes ? ('Pendientes: ' + f.nPendientes + ' usuario(s) / ' + f.areaPendienteHa.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha') : '',
+                    f.nUsuarios > 0 ? f.nUsuarios : '-', +f.volumenTotalM3.toFixed(2), +f.areaProgramadaHa.toFixed(2), +f.tiempoTotalH.toFixed(2),
+                    fcorta(f.periodoInicioISO || f.semanaInicioISO), (f.periodoInicioHora || '04:00'),
+                    fcorta(f.periodoFinISO || f.semanaFinISO), (f.periodoFinHora || '20:00'),
+                    ...f.caudalPorDia.map(c => +(c || 0).toFixed(2)), obs,
                 ];
-                vals.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
+                vals.forEach((v, i) => {
+                    const c = ws.getCell(r, i + 1); c.value = v;
+                    c.font = { name: FUENTE, size: 10, bold: i === 0 };
+                    const texto = i <= 2 || i === NC - 1;
+                    c.alignment = { horizontal: texto ? 'left' : 'center', vertical: 'middle', wrapText: true };
+                    if ((i >= 4 && i <= 6) || (i >= 11 && i <= 17)) c.numFmt = NUM2;
+                    _huaroBorde(c);
+                });
+                ws.getRow(r).height = 32;
                 r++;
             });
-            const tot = ['TOTAL', '', '', tU, +tV.toFixed(2), +tA.toFixed(2), +tHmax.toFixed(2), '', '', '', '',
-                ...tDia.map(c => +(c || 0).toFixed(2)), '-'];
-            tot.forEach((v, i) => { const c = ws.getCell(r, i + 1); c.value = v; c.font = { bold: true }; if (COLS_NUM_2DEC.has(i)) c.numFmt = '#,##0.00'; _huaroBorde(c); alinear(c, i); });
+            // Fila TOTAL (fondo gris, negrita)
+            ws.mergeCells(r, 1, r, 3);
+            const tot = [['TOTAL', null], [4, tU], [5, +tV.toFixed(2)], [6, +tA.toFixed(2)], [7, +tHmax.toFixed(2)], [8, '-'], [9, '-'], [10, '-'], [11, '-']];
+            for (let col = 1; col <= NC; col++) {
+                const c = ws.getCell(r, col);
+                c.font = { name: FUENTE, size: 10, bold: true };
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6E6E6' } };
+                c.alignment = { horizontal: 'center', vertical: 'middle' };
+                if (col >= 5 && col <= 7) c.numFmt = NUM2;
+                if (col >= 12 && col <= 18) { c.value = +(tDia[col - 12] || 0).toFixed(2); c.numFmt = NUM2; }
+                if (col === NC) c.value = '-';
+                _huaroBorde(c);
+            }
+            ws.getCell(r, 1).value = 'TOTAL';
+            tot.slice(1).forEach(([col, v]) => { ws.getCell(r, col).value = v; });
+            ws.getRow(r).height = 22;
             if (!(ctx && ctx.wb)) await _descargarWorkbook(wb, 'Anexo G2' + _huaroSufijoComite() + '.xlsx');
         }
 
